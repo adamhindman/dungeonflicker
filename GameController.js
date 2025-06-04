@@ -1,128 +1,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import Level from './Level.js';
+import Disc from './Disc.js';
 
-class Disc {
-  constructor(radius, height, color, startX, startZ, scene) {
-    this.radius = radius;
-    this.height = height;
-    this.mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(radius, radius, height, 64),
-      new THREE.MeshStandardMaterial({ color: color, opacity: 0.9, transparent: true })
-    );
-    this.mesh.position.y = height / 2;
-    this.mesh.position.x = startX;
-    this.mesh.position.z = startZ;
-    scene.add(this.mesh);
-
-    this.velocity = new THREE.Vector3(0, 0, 0);
-    this.moving = false;
-  }
-
-  updatePosition() {
-    this.mesh.position.add(this.velocity);
-  }
-
-  handleWallCollision(fieldWidth, fieldDepth, bounceDamping) {
-    if (this.mesh.position.x + this.radius > fieldWidth / 2) {
-      this.mesh.position.x = fieldWidth / 2 - this.radius;
-      this.velocity.x = -this.velocity.x * bounceDamping;
-    } else if (this.mesh.position.x - this.radius < -fieldWidth / 2) {
-      this.mesh.position.x = -fieldWidth / 2 + this.radius;
-      this.velocity.x = -this.velocity.x * bounceDamping;
-    }
-
-    if (this.mesh.position.z + this.radius > fieldDepth / 2) {
-      this.mesh.position.z = fieldDepth / 2 - this.radius;
-      this.velocity.z = -this.velocity.z * bounceDamping;
-    } else if (this.mesh.position.z - this.radius < -fieldDepth / 2) {
-      this.mesh.position.z = -fieldDepth / 2 + this.radius;
-      this.velocity.z = -this.velocity.z * bounceDamping;
-    }
-  }
-
-  applyFriction(friction) {
-    this.velocity.multiplyScalar(friction);
-    if (this.velocity.length() < 0.0001) {
-      this.velocity.set(0, 0, 0);
-      this.moving = false;
-    }
-  }
-}
-
-class Level {
-  constructor(scene) {
-    this.scene = scene;
-    this.fieldWidth = 30;
-    this.fieldDepth = 20;
-    this.wallHeight = 2;
-    this.wallMaterial = new THREE.MeshStandardMaterial({
-      color: 0x555555,
-      roughness: 0.4,
-      metalness: 0.5,
-    });
-    this.walls = {};
-    this.floor = null;
-  }
-
-  load() {
-    // Create field floor
-    const fieldGeometry = new THREE.PlaneGeometry(this.fieldWidth, this.fieldDepth);
-    const fieldMaterial = new THREE.MeshStandardMaterial({
-      color: 0x408040,
-      roughness: 0.6,
-      metalness: 0.2,
-      side: THREE.DoubleSide,
-    });
-    this.floor = new THREE.Mesh(fieldGeometry, fieldMaterial);
-    this.floor.rotation.x = -Math.PI / 2;
-    this.scene.add(this.floor);
-
-    // Create walls
-    const northGeometry = new THREE.BoxGeometry(this.fieldWidth, this.wallHeight, 0.5);
-    this.walls.north = new THREE.Mesh(northGeometry, this.wallMaterial);
-    this.walls.north.position.set(0, this.wallHeight / 2, -this.fieldDepth / 2);
-    this.scene.add(this.walls.north);
-
-    const southGeometry = new THREE.BoxGeometry(this.fieldWidth, this.wallHeight, 0.5);
-    this.walls.south = new THREE.Mesh(southGeometry, this.wallMaterial);
-    this.walls.south.position.set(0, this.wallHeight / 2, this.fieldDepth / 2);
-    this.scene.add(this.walls.south);
-
-    const eastGeometry = new THREE.BoxGeometry(0.5, this.wallHeight, this.fieldDepth);
-    this.walls.east = new THREE.Mesh(eastGeometry, this.wallMaterial);
-    this.walls.east.position.set(this.fieldWidth / 2, this.wallHeight / 2, 0);
-    this.scene.add(this.walls.east);
-
-    const westGeometry = new THREE.BoxGeometry(0.5, this.wallHeight, this.fieldDepth);
-    this.walls.west = new THREE.Mesh(westGeometry, this.wallMaterial);
-    this.walls.west.position.set(-this.fieldWidth / 2, this.wallHeight / 2, 0);
-    this.scene.add(this.walls.west);
-
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
-    this.scene.add(ambientLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    directionalLight.position.set(10, 20, 10);
-    this.scene.add(directionalLight);
-  }
-
-  unload() {
-    if (this.floor) {
-      this.scene.remove(this.floor);
-      this.floor.geometry.dispose();
-      this.floor.material.dispose();
-      this.floor = null;
-    }
-    for (const key in this.walls) {
-      this.scene.remove(this.walls[key]);
-      this.walls[key].geometry.dispose();
-      this.walls[key].material.dispose();
-    }
-    this.walls = {};
-  }
-}
-
-class GameController {
+export default class GameController {
   constructor() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x202025);
@@ -163,7 +44,6 @@ class GameController {
   }
 
   initDiscs() {
-    // Initialize discs here. For example:
     const disc1 = new Disc(1.5, 0.5, 0x0088ff, -this.level.fieldWidth / 2 + 1.5 + 1.0, -this.level.fieldDepth / 2 + 1.5 + 1.0, this.scene);
     const disc2 = new Disc(2.0, 0.4, 0xff0000, this.level.fieldWidth / 2 - 2.0 - 1.0, this.level.fieldDepth / 2 - 2.0 - 1.0, this.scene);
     const disc3 = new Disc(1.0, 0.3, 0xffff00, 0, 0, this.scene);
@@ -315,51 +195,78 @@ class GameController {
     requestAnimationFrame(() => this.animate());
     this.controls.update();
 
-    // Update and move all discs
-    this.discs.forEach((d) => {
-      if (d.moving) {
-        d.updatePosition();
-        d.handleWallCollision(this.level.fieldWidth, this.level.fieldDepth, 0.8);
-        d.applyFriction(0.98);
-      }
-    });
+    const substeps = 5;
+    const deltaMoveFactor = 1 / substeps;
 
-    // Collision detection and response between discs (pairwise)
-    const minDist = this.discs.length > 0 ? this.discs[0].radius * 2 : 0;
-    let colliding = false;
+    for (let step = 0; step < substeps; step++) {
+      // Update and move all discs
+      this.discs.forEach((d) => {
+        if (d.moving) {
+          // Scale velocity for substep
+          const substepVelocity = d.velocity.clone().multiplyScalar(deltaMoveFactor);
+          d.mesh.position.add(substepVelocity);
 
-    for (let i = 0; i < this.discs.length; i++) {
-      for (let j = i + 1; j < this.discs.length; j++) {
-        const d1 = this.discs[i];
-        const d2 = this.discs[j];
-        const diff = new THREE.Vector3().subVectors(d1.mesh.position, d2.mesh.position);
-        const dist = diff.length();
+          // Clamp position after movement to avoid overshoot
+          d.mesh.position.x = this.clamp(
+            d.mesh.position.x,
+            -this.level.fieldWidth / 2 + d.radius,
+            this.level.fieldWidth / 2 - d.radius,
+          );
+          d.mesh.position.z = this.clamp(
+            d.mesh.position.z,
+            -this.level.fieldDepth / 2 + d.radius,
+            this.level.fieldDepth / 2 - d.radius,
+          );
 
-        if (dist < minDist && dist > 0) {
-          colliding = true;
-          const normal = diff.clone().divideScalar(dist);
+          d.handleWallCollision(this.level.fieldWidth, this.level.fieldDepth, 0.8);
 
-          // Clamp collision normal to horizontal plane to preserve y altitude
-          normal.y = 0;
-          normal.normalize();
+          // Cap velocity magnitude to prevent tunneling
+          const maxVelocity = 0.6;
+          if (d.velocity.length() > maxVelocity) {
+            d.velocity.setLength(maxVelocity);
+          }
 
-          const relativeVelocity = d1.velocity.clone().sub(d2.velocity);
-          const velocityAlongNormal = relativeVelocity.dot(normal);
+          d.applyFriction(0.98);
+        }
+      });
 
-          if (velocityAlongNormal <= 0) {
-            const restitution = 1;
-            const impulse = (-(1 + restitution) * velocityAlongNormal) / 2;
-            const impulseVector = normal.clone().multiplyScalar(impulse);
+      // Collision detection and response between discs (pairwise)
+      const minDist = this.discs.length > 0 ? this.discs[0].radius * 2 : 0;
+      let colliding = false;
 
-            d1.velocity.add(impulseVector);
-            d2.velocity.sub(impulseVector);
+      for (let i = 0; i < this.discs.length; i++) {
+        for (let j = i + 1; j < this.discs.length; j++) {
+          const d1 = this.discs[i];
+          const d2 = this.discs[j];
+          const diff = new THREE.Vector3().subVectors(d1.mesh.position, d2.mesh.position);
+          const dist = diff.length();
 
-            d1.moving = true;
-            d2.moving = true;
+          if (dist < minDist && dist > 0) {
+            colliding = true;
+            const normal = diff.clone().divideScalar(dist);
 
-            const overlap = minDist - dist;
-            d1.mesh.position.add(normal.clone().multiplyScalar(overlap / 2));
-            d2.mesh.position.sub(normal.clone().multiplyScalar(overlap / 2));
+            // Clamp collision normal to horizontal plane to preserve y altitude
+            normal.y = 0;
+            normal.normalize();
+
+            const relativeVelocity = d1.velocity.clone().sub(d2.velocity);
+            const velocityAlongNormal = relativeVelocity.dot(normal);
+
+            if (velocityAlongNormal <= 0) {
+              const restitution = 1;
+              const impulse = (-(1 + restitution) * velocityAlongNormal) / 2;
+              const impulseVector = normal.clone().multiplyScalar(impulse);
+
+              d1.velocity.add(impulseVector);
+              d2.velocity.sub(impulseVector);
+
+              d1.moving = true;
+              d2.moving = true;
+
+              const overlap = minDist - dist;
+              d1.mesh.position.add(normal.clone().multiplyScalar(overlap / 2));
+              d2.mesh.position.sub(normal.clone().multiplyScalar(overlap / 2));
+            }
           }
         }
       }
