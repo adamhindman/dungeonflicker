@@ -15,9 +15,15 @@
                 height: 100%;
             }
         </style>
+    <link rel="stylesheet" href="/styles/main.css" />
     </head>
     <body>
         <script type="module" src="/main.js"></script>
-        <div id="throw-info" style="position: fixed; top: 10px; left: 10px; padding: 5px 10px; background: rgba(0, 0, 0, 0.6); color: white; font-family: monospace; font-size: 14px; border-radius: 4px; pointer-events: none; user-select: none; z-index: 1000; visibility: hidden;"></div>
+        <div id="throw-info"></div>
+        
+        <div id="disc-names">
+            <h3>Discs on Field</h3>
+            <ul id="disc-names-list"></ul>
+        </div>
     </body>
 </html>
