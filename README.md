@@ -1,5 +1,7 @@
 # dungeonflicker
 
+*This entire game, including this README, was vibe coded with GPT-4.1.mini.*
+
 ## Introduction
 
 Dungeonflicker is a 3D physics-based disc throwing game implemented using Three.js. Players take turns throwing discs across a bounded field littered with internal walls. The discs collide with each other and obstacles, taking damage when hit. The goal is to strategically throw discs to outmaneuver and disable opponents' discs while protecting your own.
