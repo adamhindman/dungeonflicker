@@ -30,6 +30,27 @@ export default class GameController {
     this.pointerDisc = null;
 
     this.throwInfoDiv = null;
+
+    // Add keydown listener for Escape to cancel drag
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" || event.key === "Esc") {
+        if (this.isPointerDown) {
+          this.isPointerDown = false;
+          this.pointerDownPos = null;
+          this.pointerDisc = null;
+          this.controls.enabled = true;
+          this.throwInfoDiv.style.visibility = "hidden";
+          this.throwInfoDiv.textContent = "";
+          if (this.throwDirectionLine) {
+            this.throwDirectionLine.visible = false;
+          }
+        }
+      }
+    });
+
+    window.addEventListener("resize", () => this.onWindowResize());
+    this.animate = this.animate.bind(this);
+    this.animate();
   }
 
   get currentDisc() {
@@ -67,39 +88,37 @@ export default class GameController {
 
   logCurrentTurn() {
     if (this.currentDisc) {
-      // logging removed
+      // Implement logging if needed
+      // console.log(`Current turn: ${this.currentDisc.discName}`);
     }
   }
 
   init() {
-    // Initialize all properties needed for the game controller
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x202025);
 
+    // Setup camera
     this.camera = new THREE.PerspectiveCamera(
-      75,
+      60,
       window.innerWidth / window.innerHeight,
       0.1,
       1000,
     );
-    this.camera.position.set(0, 15, 15);
-    this.camera.lookAt(0, 0, 0);
+    this.camera.position.set(0, 20, 20);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    // Setup renderer
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(this.renderer.domElement);
 
+    // Setup controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(0, 0, 0);
-    this.controls.minPolarAngle = 0;
-    this.controls.maxPolarAngle = Math.PI / 2 - 0.35;
     this.controls.update();
 
     this.level = new Level(this.scene);
     this.level.load();
 
     this.discs = [];
-    this.initDiscs();
 
     this.currentTurnIndex = 0;
 
@@ -113,31 +132,30 @@ export default class GameController {
 
     this.throwInfoDiv = document.getElementById("throw-info");
 
+    // Add pointer event listeners
     this.addEventListeners();
 
-    // Add keydown listener for Escape to cancel drag
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" || event.key === "Esc") {
-        if (this.isPointerDown) {
-          this.isPointerDown = false;
-          this.pointerDownPos = null;
-          this.pointerDisc = null;
-          this.controls.enabled = true;
-          this.throwInfoDiv.style.visibility = "hidden";
-          this.throwInfoDiv.textContent = "";
-        }
-      }
+    // Initialize throw direction line helper
+    const material = new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      linewidth: 2,
     });
+    const vertices = new Float32Array(6); // 2 points * 3 coords
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    geometry.setDrawRange(0, 2);
+    this.throwDirectionLine = new THREE.Line(geometry, material);
+    this.throwDirectionLine.visible = false;
+    this.scene.add(this.throwDirectionLine);
 
-    window.addEventListener("resize", () => this.onWindowResize());
-    this.animate = this.animate.bind(this);
-    this.animate();
+    this.initDiscs();
   }
 
   initDiscs() {
+    // Example discs with labeled parameters for easy tweaking
     const disc1 = new Disc(
-      /* radius: */ 2.0,
-      /* height: */ 0.8,
+      /* radius: */ 1.5,
+      /* height: */ 0.6,
       /* color: */ 0x0088ff,
       /* startX: */ -this.level.fieldWidth / 2 + 1.5 + 1.0,
       /* startZ: */ -this.level.fieldDepth / 2 + 1.5 + 1.0,
@@ -147,8 +165,8 @@ export default class GameController {
       /* hitPoints: */ 3,
     );
     const disc2 = new Disc(
-      /* radius: */ 2.0,
-      /* height: */ 0.8,
+      /* radius: */ 1.5,
+      /* height: */ 0.6,
       /* color: */ 0xff0000,
       /* startX: */ this.level.fieldWidth / 2 - 2.0 - 1.0,
       /* startZ: */ this.level.fieldDepth / 2 - 2.0 - 1.0,
@@ -158,8 +176,8 @@ export default class GameController {
       /* hitPoints: */ 3,
     );
     const disc3 = new Disc(
-      /* radius: */ 2.0,
-      /* height: */ 0.5,
+      /* radius: */ 1.5,
+      /* height: */ 0.6,
       /* color: */ 0xffff00,
       /* startX: */ 0,
       /* startZ: */ 0,
@@ -171,7 +189,7 @@ export default class GameController {
 
     this.discs.push(disc1, disc2, disc3);
 
-    // Initialize turn with first 'player' disc (ensure player starts first)
+    // Initialize turn with first 'player' disc
     this.currentTurnIndex = this.discs.findIndex(
       (d) => d.type === "player" && d.hitPoints > 0 && !d.dead,
     );
@@ -189,15 +207,6 @@ export default class GameController {
         }
       }
     }
-    // Force currentDisc to be first player disc at start of game for clarity
-    const firstPlayerDisc = this.discs.find(
-      (d) => d.type === "player" && d.hitPoints > 0 && !d.dead,
-    );
-    if (firstPlayerDisc) {
-      this.currentDisc = firstPlayerDisc;
-      this.currentTurnIndex = this.discs.indexOf(firstPlayerDisc);
-      this.logCurrentTurn();
-    }
   }
 
   addEventListeners() {
@@ -208,18 +217,6 @@ export default class GameController {
       this.onPointerMove(event),
     );
     window.addEventListener("pointerup", (event) => this.onPointerUp(event));
-
-    this.controls.addEventListener("start", () => {
-      if (!this.controlsEnabled) {
-        this.controls.enabled = false;
-      } else {
-        this.controls.enabled = true;
-      }
-    });
-
-    this.controls.addEventListener("end", () => {
-      this.controls.enabled = true;
-    });
   }
 
   onPointerDown(event) {
@@ -251,6 +248,20 @@ export default class GameController {
       this.pointerDownPos = { x: event.clientX, y: event.clientY };
       this.throwInfoDiv.style.visibility = "visible";
       this.throwInfoDiv.textContent = "Magnitude: 0 Angle: 0°";
+
+      // Initialize throw direction line previous positions to disc position to prevent jump
+      if (this.throwDirectionLine && this.pointerDisc) {
+        this._prevLineStart = new THREE.Vector3(
+          this.pointerDisc.mesh.position.x,
+          this.pointerDisc.mesh.position.y + this.pointerDisc.height / 2,
+          this.pointerDisc.mesh.position.z,
+        );
+        this._prevLineEnd = new THREE.Vector3(
+          this.pointerDisc.mesh.position.x,
+          this.pointerDisc.mesh.position.y + this.pointerDisc.height / 2,
+          this.pointerDisc.mesh.position.z,
+        );
+      }
     } else {
       this.controlsEnabled = true;
       this.controls.enabled = true;
@@ -262,21 +273,104 @@ export default class GameController {
   }
 
   onPointerMove(event) {
-    if (!this.isPointerDown || this.pointerDownPos === null) return;
+    if (!this.isPointerDown || !this.pointerDownPos) return;
 
     const deltaX = event.clientX - this.pointerDownPos.x;
     const deltaY = event.clientY - this.pointerDownPos.y;
 
     const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-
     if (dragLength > 0) {
       const angleRadians = Math.atan2(-deltaY, deltaX);
       let angleDegrees = angleRadians * (180 / Math.PI);
       if (angleDegrees < 0) angleDegrees += 360;
 
       this.throwInfoDiv.textContent = `Magnitude: ${dragLength.toFixed(1)} Angle: ${angleDegrees.toFixed(1)}°`;
+
+      // Update throw direction line
+      if (this.pointerDisc && this.throwDirectionLine) {
+        const normX = deltaX / dragLength;
+        const normY = deltaY / dragLength;
+
+        const forward = new THREE.Vector3();
+        this.camera.getWorldDirection(forward);
+        forward.y = 0;
+        forward.normalize();
+
+        const up = new THREE.Vector3(0, 1, 0);
+        const cameraRight = new THREE.Vector3();
+        cameraRight.crossVectors(forward, up).normalize();
+
+        let direction = new THREE.Vector3();
+        direction.add(cameraRight.clone().multiplyScalar(normX));
+        direction.add(forward.clone().multiplyScalar(-normY));
+        direction.normalize();
+        direction.negate();
+
+        const maxLineLength = 8;
+        const lineLength = Math.min(dragLength / 10, 1) * maxLineLength;
+
+        const startPos = this.pointerDisc.mesh.position.clone();
+        const endPos = startPos
+          .clone()
+          .add(direction.multiplyScalar(lineLength));
+
+        const positions = this.throwDirectionLine.geometry.attributes.position;
+
+        // Initialize previous positions if not present
+        if (!this._prevLineStart) {
+          this._prevLineStart = new THREE.Vector3(
+            startPos.x,
+            startPos.y + this.pointerDisc.height / 2,
+            startPos.z,
+          );
+        }
+        if (!this._prevLineEnd) {
+          this._prevLineEnd = new THREE.Vector3(
+            endPos.x,
+            endPos.y + this.pointerDisc.height / 2,
+            endPos.z,
+          );
+        }
+
+        // Lerp previous positions towards current positions for smooth movement
+        this._prevLineStart.lerp(
+          new THREE.Vector3(
+            startPos.x,
+            startPos.y + this.pointerDisc.height / 2,
+            startPos.z,
+          ),
+          0.2,
+        );
+        this._prevLineEnd.lerp(
+          new THREE.Vector3(
+            endPos.x,
+            endPos.y + this.pointerDisc.height / 2,
+            endPos.z,
+          ),
+          0.2,
+        );
+
+        positions.setXYZ(
+          0,
+          this._prevLineStart.x,
+          this._prevLineStart.y,
+          this._prevLineStart.z,
+        );
+        positions.setXYZ(
+          1,
+          this._prevLineEnd.x,
+          this._prevLineEnd.y,
+          this._prevLineEnd.z,
+        );
+        positions.needsUpdate = true;
+
+        this.throwDirectionLine.visible = true;
+      }
     } else {
       this.throwInfoDiv.textContent = "Magnitude: 0 Angle: 0°";
+      if (this.throwDirectionLine) {
+        this.throwDirectionLine.visible = false;
+      }
     }
   }
 
@@ -284,8 +378,13 @@ export default class GameController {
     if (!this.isPointerDown) return;
     this.isPointerDown = false;
     this.controls.enabled = true;
-    this.throwInfoDiv.style.visibility = "hidden";
-    this.throwInfoDiv.textContent = "";
+    if (this.throwInfoDiv) {
+      this.throwInfoDiv.style.visibility = "hidden";
+      this.throwInfoDiv.textContent = "";
+    }
+    if (this.throwDirectionLine) {
+      this.throwDirectionLine.visible = false;
+    }
 
     // Block throw input while waiting for disc to stop
     if (this.waitingForDiscToStop) {
@@ -313,7 +412,12 @@ export default class GameController {
       const deltaY = event.clientY - this.pointerDownPos.y;
 
       const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      if (dragLength > 5) {
+      const dragThreshold = 2; // Lower threshold to allow shorter drags
+      const minSpeed = 0.05; // Minimum throw speed
+
+      if (dragLength > dragThreshold) {
+        const sensitivity = 1; // Sensitivity factor, less than 1 for finer control
+        const adjustedLength = dragLength * sensitivity;
         const normX = deltaX / dragLength;
         const normY = deltaY / dragLength;
 
@@ -336,7 +440,10 @@ export default class GameController {
         const directionZ = direction.z;
 
         const maxSpeed = 1;
-        const speed = Math.min(dragLength / 150, 1) * maxSpeed;
+        const normLength = Math.min(adjustedLength / 10, 1);
+        const scaledLength = normLength * normLength;
+        let speed = maxSpeed * scaledLength;
+        if (speed < minSpeed) speed = minSpeed;
 
         this.pointerDisc.velocity.set(
           directionX * speed,
@@ -349,9 +456,6 @@ export default class GameController {
       }
     }
     this.pointerDownPos = null;
-    this.pointerDisc = null;
-    // Start waiting for disc to stop moving before advancing turn
-    this.waitingForDiscToStop = true;
   }
 
   onWindowResize() {
@@ -386,7 +490,9 @@ export default class GameController {
 
   animate() {
     requestAnimationFrame(() => this.animate());
-    this.controls.update();
+    if (this.controls) {
+      this.controls.update();
+    }
 
     if (this.currentDisc) {
       // Remove pulsing height animation, reset scale and position.y to default
@@ -402,6 +508,19 @@ export default class GameController {
         );
         this.currentDisc.edgeHelper.scale.copy(this.currentDisc.mesh.scale);
       }
+
+      // Set dead disc appearance (gray and semi-transparent)
+      this.discs.forEach((disc) => {
+        if (disc.dead) {
+          disc.mesh.material.color.set(0x888888); // gray color
+          disc.mesh.material.opacity = 0.4;
+          disc.mesh.material.transparent = true;
+        } else {
+          disc.mesh.material.color.set(disc.mesh.material.color.getHex());
+          disc.mesh.material.opacity = 0.9;
+          disc.mesh.material.transparent = false;
+        }
+      });
     }
 
     // Update and move all discs
@@ -477,7 +596,9 @@ export default class GameController {
       }
     }
 
-    this.renderer.render(this.scene, this.camera);
+    if (this.renderer) {
+      this.renderer.render(this.scene, this.camera);
+    }
 
     // Update disc names display
     this.updateDiscNames();
@@ -504,7 +625,16 @@ export default class GameController {
       const li = document.createElement("li");
       const hitPointsText =
         disc.hitPoints <= 0 ? "(Dead)" : `(HP: ${disc.hitPoints})`;
+      if (disc === this.currentDisc) {
+        li.style.fontWeight = "bold";
+      } else {
+        li.style.opacity = "0.5";
+      }
       li.textContent = `${disc.discName} ${hitPointsText}`;
+      if (disc.hitPoints <= 0 || disc.dead) {
+        li.style.color = "gray";
+        li.style.opacity = "0.5";
+      }
       discNamesList.appendChild(li);
     });
   }
