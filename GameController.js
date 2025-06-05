@@ -103,7 +103,13 @@ export default class GameController {
       0.1,
       1000,
     );
-    this.camera.position.set(0, 20, 20);
+    // Calculate camera position to achieve approximately 60 degrees tilt downward
+    const distance = 34; // distance from center
+    const angleRadians = Math.PI / 3;
+    const y = distance * Math.sin(angleRadians);
+    const z = distance * Math.cos(angleRadians);
+    this.camera.position.set(0, y, z);
+    this.camera.lookAt(0, 0, 0);
 
     // Setup renderer
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -620,17 +626,38 @@ export default class GameController {
     // Clear current list
     discNamesList.innerHTML = "";
 
-    // Add all discs with their name and hit points status
+    // Add all discs with their name, hit points, and color circle
     this.discs.forEach((disc) => {
       const li = document.createElement("li");
+
+      // Create color circle
+      const colorCircle = document.createElement("span");
+      colorCircle.style.display = "inline-block";
+      colorCircle.style.width = "12px";
+      colorCircle.style.height = "12px";
+      colorCircle.style.marginRight = "8px";
+      colorCircle.style.borderRadius = "50%";
+      colorCircle.style.verticalAlign = "middle";
+      colorCircle.style.backgroundColor =
+        "#" + disc.mesh.material.color.getHexString();
+      if (disc.hitPoints <= 0 || disc.dead) {
+        colorCircle.style.backgroundColor = "gray";
+      }
+      li.appendChild(colorCircle);
+
       const hitPointsText =
         disc.hitPoints <= 0 ? "(Dead)" : `(HP: ${disc.hitPoints})`;
+
       if (disc === this.currentDisc) {
         li.style.fontWeight = "bold";
       } else {
         li.style.opacity = "0.5";
       }
-      li.textContent = `${disc.discName} ${hitPointsText}`;
+
+      li.appendChild(
+        document.createTextNode(disc.discName + " " + hitPointsText),
+      );
+
       if (disc.hitPoints <= 0 || disc.dead) {
         li.style.color = "gray";
         li.style.opacity = "0.5";

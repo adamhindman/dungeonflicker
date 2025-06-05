@@ -3,8 +3,8 @@ import * as THREE from "three";
 export default class Level {
   constructor(scene) {
     this.scene = scene;
-    this.fieldWidth = 30;
-    this.fieldDepth = 20;
+    this.fieldWidth = 32;
+    this.fieldDepth = 24;
     this.wallHeight = 2;
     this.wallMaterial = new THREE.MeshStandardMaterial({
       color: 0x555555,
@@ -73,8 +73,8 @@ export default class Level {
 
     // Add two internal walls perpendicular to long walls (north and south)
     // Wall length: 1 unit thickness, 2 units height, 5 units long
-    const internalWallLength = 13;
-    const internalWallThickness = 1;
+    const internalWallLength = this.fieldDepth * 0.7;
+    const internalWallThickness = 0.75;
 
     // Internal wall along north long wall, perpendicular to it, offset on x by halfWidth
     const internalWall1Geometry = new THREE.BoxGeometry(
