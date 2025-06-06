@@ -88,18 +88,20 @@ export default class Disc {
       baseMesh.receiveShadow = true;
       this.mesh.add(baseMesh);
 
-      // Load texture with error handling
+      // Load texture with error handling and Chrome compatibility
       const texture = textureLoader.load(
-        imagePath,
+        `./${imagePath}`,
         // onLoad
         (loadedTexture) => {
+          console.log(`Successfully loaded disc texture: ${imagePath}`);
           loadedTexture.colorSpace = THREE.SRGBColorSpace;
         },
         // onProgress
         undefined,
         // onError
         (error) => {
-          console.warn(`Failed to load texture: ${imagePath}`, error);
+          console.error(`Failed to load disc texture: ${imagePath}`, error);
+          console.log(`Browser: ${navigator.userAgent}`);
         }
       );
 

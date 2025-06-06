@@ -24,8 +24,28 @@ export default class Level {
       this.fieldWidth,
       this.fieldDepth,
     );
+    
+    // Enhanced texture loading with error handling for Chrome compatibility
+    const loadTextureWithFallback = (path, onSuccess, onError) => {
+      console.log(`Attempting to load texture: ${path}`);
+      const texture = this.textureLoader.load(
+        path,
+        (loadedTexture) => {
+          console.log(`Successfully loaded texture: ${path}`);
+          if (onSuccess) onSuccess(loadedTexture);
+        },
+        undefined, // onProgress
+        (error) => {
+          console.error(`Failed to load texture: ${path}`, error);
+          console.log(`Browser: ${navigator.userAgent}`);
+          if (onError) onError(error);
+        }
+      );
+      return texture;
+    };
+
     // Load tile texture and set repeating
-    const tileTexture = this.textureLoader.load("images/tile-stone-1.png");
+    const tileTexture = loadTextureWithFallback("./images/tile-stone-1.png");
     tileTexture.wrapS = THREE.RepeatWrapping;
     tileTexture.wrapT = THREE.RepeatWrapping;
 
@@ -41,7 +61,7 @@ export default class Level {
     });
 
     // Create wall texture with different repeat settings
-    const wallTileTexture = this.textureLoader.load("images/tile-stone-1.png");
+    const wallTileTexture = loadTextureWithFallback("./images/tile-stone-1.png");
     wallTileTexture.wrapS = THREE.RepeatWrapping;
     wallTileTexture.wrapT = THREE.RepeatWrapping;
     wallTileTexture.repeat.set(2, 1); // Adjust repeat for wall proportions
