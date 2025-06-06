@@ -7,31 +7,52 @@ let instance = null;
 
 export default class GameController {
   constructor() {
-    if (instance) {
-      return instance;
-    }
+    if (instance) return instance;
     instance = this;
 
+    // Core Three.js scene components
     this.scene = null;
     this.camera = null;
     this.renderer = null;
     this.controls = null;
+
+    // Game level and discs
     this.level = null;
     this.discs = [];
+
+    // Turn-based game state
     this.currentTurnIndex = 0;
     this._currentDisc = null;
 
+    // Input and interaction state
     this.raycaster = null;
-    this.mouse = null;
-
+    this.mouse = new THREE.Vector2();
     this.controlsEnabled = true;
     this.isPointerDown = false;
     this.pointerDownPos = null;
     this.pointerDisc = null;
 
+    // UI elements
     this.throwInfoDiv = null;
 
-    // Add keydown listener for Escape to cancel drag
+    // Visual helpers
+    this.throwDirectionLine = null;
+    this._prevLineStart = null;
+    this._prevLineEnd = null;
+
+    // Game state flags
+    this.waitingForDiscToStop = false;
+
+    // Panning controls state
+    this.panningKeys = {
+      up: false,
+      down: false,
+      left: false,
+      right: false
+    };
+    this.panSpeed = 0.5;
+
+    // Setup event listeners and start animation loop
     window.addEventListener("keydown", (event) => {
       if (event.key === "Escape" || event.key === "Esc") {
         if (this.isPointerDown) {
@@ -39,16 +60,61 @@ export default class GameController {
           this.pointerDownPos = null;
           this.pointerDisc = null;
           this.controls.enabled = true;
-          this.throwInfoDiv.style.visibility = "hidden";
-          this.throwInfoDiv.textContent = "";
+          if (this.throwInfoDiv) {
+            this.throwInfoDiv.style.visibility = "hidden";
+            this.throwInfoDiv.textContent = "";
+          }
           if (this.throwDirectionLine) {
             this.throwDirectionLine.visible = false;
           }
         }
       }
+
+      // Handle panning controls
+      switch(event.key.toLowerCase()) {
+        case 'w':
+        case 'arrowup':
+          this.panningKeys.up = true;
+          break;
+        case 's':
+        case 'arrowdown':
+          this.panningKeys.down = true;
+          break;
+        case 'a':
+        case 'arrowleft':
+          this.panningKeys.left = true;
+          break;
+        case 'd':
+        case 'arrowright':
+          this.panningKeys.right = true;
+          break;
+      }
+    });
+
+    window.addEventListener("keyup", (event) => {
+      // Handle panning controls release
+      switch(event.key.toLowerCase()) {
+        case 'w':
+        case 'arrowup':
+          this.panningKeys.up = false;
+          break;
+        case 's':
+        case 'arrowdown':
+          this.panningKeys.down = false;
+          break;
+        case 'a':
+        case 'arrowleft':
+          this.panningKeys.left = false;
+          break;
+        case 'd':
+        case 'arrowright':
+          this.panningKeys.right = false;
+          break;
+      }
     });
 
     window.addEventListener("resize", () => this.onWindowResize());
+
     this.animate = this.animate.bind(this);
     this.animate();
   }
@@ -58,74 +124,54 @@ export default class GameController {
   }
 
   set currentDisc(value) {
-    // Remove previous edge helper highlight if present
-    if (this._currentDisc && this._currentDisc.edgeHelper) {
-      this.scene.remove(this._currentDisc.edgeHelper);
-      this._currentDisc.edgeHelper.geometry.dispose();
-      this._currentDisc.edgeHelper.material.dispose();
-      this._currentDisc.edgeHelper = null;
-    }
+    // Update spotlight intensities for all discs
+    this.discs.forEach(disc => {
+      disc.setSpotlightIntensity(disc === value);
+    });
 
     this._currentDisc = value;
-
-    // Add edge highlight to new current disc
-    if (this._currentDisc && this._currentDisc.mesh) {
-      const edges = new THREE.EdgesGeometry(this._currentDisc.mesh.geometry);
-      const lineMaterial = new THREE.LineBasicMaterial({
-        color: 0xffffff,
-        linewidth: 4,
-      });
-      const edgeLines = new THREE.LineSegments(edges, lineMaterial);
-
-      edgeLines.position.copy(this._currentDisc.mesh.position);
-      edgeLines.rotation.copy(this._currentDisc.mesh.rotation);
-      edgeLines.scale.copy(this._currentDisc.mesh.scale);
-
-      this.scene.add(edgeLines);
-      this._currentDisc.edgeHelper = edgeLines;
-    }
   }
 
   logCurrentTurn() {
-    if (this.currentDisc) {
-      // Implement logging if needed
-      // console.log(`Current turn: ${this.currentDisc.discName}`);
-    }
+    // Stub method to avoid undefined error
   }
 
   init() {
+    // Initialize scene and rendering
     this.scene = new THREE.Scene();
 
-    // Setup camera
+    // Setup camera with 60 degree FOV, aspect ratio, near & far planes
     this.camera = new THREE.PerspectiveCamera(
       60,
       window.innerWidth / window.innerHeight,
       0.1,
       1000,
     );
-    // Calculate camera position to achieve approximately 60 degrees tilt downward
-    const distance = 34; // distance from center
-    const angleRadians = Math.PI / 3;
+
+    // Position camera to get approx 60 degree downward tilt to encompass field
+    const distance = 40; // DO NOT CHANGE THE DISTANCE GOD DAMNIT
+    const angleRadians = Math.PI / 3; // 60 degrees
     const y = distance * Math.sin(angleRadians);
     const z = distance * Math.cos(angleRadians);
     this.camera.position.set(0, y, z);
     this.camera.lookAt(0, 0, 0);
 
-    // Setup renderer
+    // Setup renderer and add canvas to DOM
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(this.renderer.domElement);
 
-    // Setup controls
+    // Setup orbit controls for camera interaction
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
 
+    // Load the level and walls
     this.level = new Level(this.scene);
     this.level.load();
 
+    // Initialize disc array and turn index
     this.discs = [];
-
     this.currentTurnIndex = 0;
 
     this.raycaster = new THREE.Raycaster();
@@ -136,17 +182,17 @@ export default class GameController {
     this.pointerDownPos = null;
     this.pointerDisc = null;
 
+    // Setup throw info UI element
     this.throwInfoDiv = document.getElementById("throw-info");
 
-    // Add pointer event listeners
     this.addEventListeners();
 
-    // Initialize throw direction line helper
+    // Initialize throw direction line helper for drag aim visualization
     const material = new THREE.LineBasicMaterial({
       color: 0xffffff,
       linewidth: 2,
     });
-    const vertices = new Float32Array(6); // 2 points * 3 coords
+    const vertices = new Float32Array(6); // 2 vertices * 3 coords each
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geometry.setDrawRange(0, 2);
@@ -154,48 +200,151 @@ export default class GameController {
     this.throwDirectionLine.visible = false;
     this.scene.add(this.throwDirectionLine);
 
+    // Initialize discs for gameplay
     this.initDiscs();
   }
 
+  // Helper method to check if a position is valid (not inside obstacles)
+  isPositionValid(x, z, discRadius) {
+    const padding = discRadius + 0.5; // Extra padding for safety
+
+    // Check field boundaries
+    if (x - padding < -this.level.fieldWidth / 2 || x + padding > this.level.fieldWidth / 2) {
+      return false;
+    }
+    if (z - padding < -this.level.fieldDepth / 2 || z + padding > this.level.fieldDepth / 2) {
+      return false;
+    }
+
+    // Check internal wall 1: x around -fieldWidth/6, z from -fieldDepth/2 + 0.25 to -fieldDepth/2 + 13 + 0.25
+    const internal1X = -this.level.fieldWidth / 6;
+    const internal1ZStart = -this.level.fieldDepth / 2 + 0.25;
+    const internal1ZEnd = internal1ZStart + 13;
+    if (Math.abs(x - internal1X) < padding && z >= internal1ZStart - padding && z <= internal1ZEnd + padding) {
+      return false;
+    }
+
+    // Check internal wall 2: x around fieldWidth/6, z from fieldDepth/2 - 13 - 0.25 to fieldDepth/2 - 0.25
+    const internal2X = this.level.fieldWidth / 6;
+    const internal2ZEnd = this.level.fieldDepth / 2 - 0.25;
+    const internal2ZStart = internal2ZEnd - 13;
+    if (Math.abs(x - internal2X) < padding && z >= internal2ZStart - padding && z <= internal2ZEnd + padding) {
+      return false;
+    }
+
+    // Check obstacle 1: centered at (-10, 8) with size 6x6
+    const obs1X = -10, obs1Z = 8, obsSize = 6;
+    if (Math.abs(x - obs1X) < obsSize / 2 + padding && Math.abs(z - obs1Z) < obsSize / 2 + padding) {
+      return false;
+    }
+
+    // Check obstacle 2: centered at (10, -8) with size 6x6
+    const obs2X = 10, obs2Z = -8;
+    if (Math.abs(x - obs2X) < obsSize / 2 + padding && Math.abs(z - obs2Z) < obsSize / 2 + padding) {
+      return false;
+    }
+
+    return true;
+  }
+
   initDiscs() {
-    // Example discs with labeled parameters for easy tweaking
+    // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
+    // Create discs with explicit parameters:
+    // (radius, height, color, startX, startZ, scene, discName, type, hitPoints, skillLevel, imagePath)
+    
+    // Helper function to generate random positions for NPC discs
+    const generateRandomPosition = (discRadius, existingPositions, minDistance = 4) => {
+      const maxAttempts = 100;
+      let attempts = 0;
+      
+      while (attempts < maxAttempts) {
+        // Generate random position within field bounds, accounting for disc radius
+        const x = (Math.random() - 0.5) * (this.level.fieldWidth - discRadius * 4);
+        const z = (Math.random() - 0.5) * (this.level.fieldDepth - discRadius * 4);
+        
+        // Check if position conflicts with obstacles
+        if (this.isPositionValid(x, z, discRadius)) {
+          // Check distance from existing discs
+          let validDistance = true;
+          for (const pos of existingPositions) {
+            const distance = Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2);
+            if (distance < minDistance) {
+              validDistance = false;
+              break;
+            }
+          }
+          
+          if (validDistance) {
+            return { x, z };
+          }
+        }
+        
+        attempts++;
+      }
+      
+      // Fallback to original positions if random generation fails
+      console.warn("Could not find valid random position, using fallback");
+      return null;
+    };
+
+    // Create player disc at center position
     const disc1 = new Disc(
       /* radius: */ 1.5,
       /* height: */ 0.6,
       /* color: */ 0x0088ff,
-      /* startX: */ -this.level.fieldWidth / 2 + 1.5 + 1.0,
-      /* startZ: */ -this.level.fieldDepth / 2 + 1.5 + 1.0,
-      /* scene: */ this.scene,
-      /* discName: */ "blue",
-      /* type: */ "player",
-      /* hitPoints: */ 3,
-    );
-    const disc2 = new Disc(
-      /* radius: */ 1.5,
-      /* height: */ 0.6,
-      /* color: */ 0xff0000,
-      /* startX: */ this.level.fieldWidth / 2 - 2.0 - 1.0,
-      /* startZ: */ this.level.fieldDepth / 2 - 2.0 - 1.0,
-      /* scene: */ this.scene,
-      /* discName: */ "red",
-      /* type: */ "NPC",
-      /* hitPoints: */ 3,
-    );
-    const disc3 = new Disc(
-      /* radius: */ 1.5,
-      /* height: */ 0.6,
-      /* color: */ 0xffff00,
       /* startX: */ 0,
       /* startZ: */ 0,
       /* scene: */ this.scene,
-      /* discName: */ "yellow",
-      /* type: */ "NPC",
-      /* hitPoints: */ 3,
+      /* discName: */ "player",
+      /* type: */ "player",
+      /* hitPoints: */ 5,
+      /* skillLevel: */ 100,
+      /* imagePath: */ "images/barbarian-nobg.png",
     );
 
-    this.discs.push(disc1, disc2, disc3);
+    // Track positions for collision avoidance
+    const existingPositions = [{ x: 0, z: 0 }];
 
-    // Initialize turn with first 'player' disc
+    // Generate random positions for NPC discs
+    const npcData = [
+      { name: "skeleton1", color: 0xff0000, skillLevel: 100 },
+      { name: "skeleton2", color: 0xffff00, skillLevel: 30 },
+      { name: "skeleton3", color: 0xff8800, skillLevel: 60 },
+      { name: "skeleton4", color: 0x8800ff, skillLevel: 80 }
+    ];
+
+    const npcDiscs = [];
+    for (const npc of npcData) {
+      const position = generateRandomPosition(1.5, existingPositions);
+      const finalX = position ? position.x : (Math.random() - 0.5) * this.level.fieldWidth * 0.7;
+      const finalZ = position ? position.z : (Math.random() - 0.5) * this.level.fieldDepth * 0.7;
+      
+      const disc = new Disc(
+        /* radius: */ 1.5,
+        /* height: */ 0.6,
+        /* color: */ npc.color,
+        /* startX: */ finalX,
+        /* startZ: */ finalZ,
+        /* scene: */ this.scene,
+        /* discName: */ npc.name,
+        /* type: */ "NPC",
+        /* hitPoints: */ 2,
+        /* skillLevel: */ npc.skillLevel,
+        /* imagePath: */ "images/skeleton-nobg.png",
+      );
+      
+      npcDiscs.push(disc);
+      existingPositions.push({ x: finalX, z: finalZ });
+    }
+
+    this.discs.push(disc1, ...npcDiscs);
+
+    // Initialize all spotlight intensities to inactive state
+    this.discs.forEach(disc => {
+      disc.setSpotlightIntensity(false);
+    });
+
+    // Set turn to first alive player disc or fallback alive disc
     this.currentTurnIndex = this.discs.findIndex(
       (d) => d.type === "player" && d.hitPoints > 0 && !d.dead,
     );
@@ -232,30 +381,29 @@ export default class GameController {
 
     this.pointerDisc = null;
 
-    for (const d of this.discs) {
-      const intersects = this.raycaster.intersectObject(d.mesh);
+    for (const disc of this.discs) {
+      const intersects = this.raycaster.intersectObject(disc.mesh);
       if (intersects.length > 0) {
-        this.pointerDisc = d;
+        this.pointerDisc = disc;
         break;
       }
     }
 
-    // Log which disc was under mouse and current disc
-    if (this.pointerDisc) {
-      // logging removed
-    } else {
-      // logging removed
-    }
-
-    // Only allow interaction if pointerDisc matches currentDisc
-    if (this.pointerDisc && this.pointerDisc === this.currentDisc) {
+    // Only allow interaction if pointerDisc matches currentDisc AND it's a player disc
+    if (
+      this.pointerDisc &&
+      this.pointerDisc === this.currentDisc &&
+      this.currentDisc.type === "player"
+    ) {
       this.controlsEnabled = false;
       this.controls.enabled = false;
       this.pointerDownPos = { x: event.clientX, y: event.clientY };
-      this.throwInfoDiv.style.visibility = "visible";
-      this.throwInfoDiv.textContent = "Magnitude: 0 Angle: 0°";
+      if (this.throwInfoDiv) {
+        this.throwInfoDiv.style.visibility = "visible";
+        this.throwInfoDiv.textContent = "Magnitude: 0 Angle: 0°";
+      }
 
-      // Initialize throw direction line previous positions to disc position to prevent jump
+      // Initialize throw direction line previous positions to disc position
       if (this.throwDirectionLine && this.pointerDisc) {
         this._prevLineStart = new THREE.Vector3(
           this.pointerDisc.mesh.position.x,
@@ -272,27 +420,32 @@ export default class GameController {
       this.controlsEnabled = true;
       this.controls.enabled = true;
       this.pointerDownPos = null;
-      this.throwInfoDiv.style.visibility = "hidden";
-      this.throwInfoDiv.textContent = "";
+      if (this.throwInfoDiv) {
+        this.throwInfoDiv.style.visibility = "hidden";
+        this.throwInfoDiv.textContent = "";
+      }
+
+      // Provide feedback if player tries to interact with NPC disc
+      if (this.pointerDisc && this.pointerDisc.type === "NPC") {
+        console.log("Cannot control NPC disc - AI controlled");
+      }
     }
     this.isPointerDown = true;
   }
 
   onPointerMove(event) {
     if (!this.isPointerDown || !this.pointerDownPos) return;
-
     const deltaX = event.clientX - this.pointerDownPos.x;
     const deltaY = event.clientY - this.pointerDownPos.y;
-
     const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     if (dragLength > 0) {
       const angleRadians = Math.atan2(-deltaY, deltaX);
       let angleDegrees = angleRadians * (180 / Math.PI);
       if (angleDegrees < 0) angleDegrees += 360;
+      if (this.throwInfoDiv) {
+        this.throwInfoDiv.textContent = `Magnitude: ${dragLength.toFixed(1)} Angle: ${angleDegrees.toFixed(1)}°`;
+      }
 
-      this.throwInfoDiv.textContent = `Magnitude: ${dragLength.toFixed(1)} Angle: ${angleDegrees.toFixed(1)}°`;
-
-      // Update throw direction line
       if (this.pointerDisc && this.throwDirectionLine) {
         const normX = deltaX / dragLength;
         const normY = deltaY / dragLength;
@@ -307,8 +460,8 @@ export default class GameController {
         cameraRight.crossVectors(forward, up).normalize();
 
         let direction = new THREE.Vector3();
-        direction.add(cameraRight.clone().multiplyScalar(normX));
-        direction.add(forward.clone().multiplyScalar(-normY));
+        direction.add(cameraRight.multiplyScalar(normX));
+        direction.add(forward.multiplyScalar(-normY));
         direction.normalize();
         direction.negate();
 
@@ -322,7 +475,7 @@ export default class GameController {
 
         const positions = this.throwDirectionLine.geometry.attributes.position;
 
-        // Initialize previous positions if not present
+        // Initialize previous positions if not set
         if (!this._prevLineStart) {
           this._prevLineStart = new THREE.Vector3(
             startPos.x,
@@ -338,7 +491,7 @@ export default class GameController {
           );
         }
 
-        // Lerp previous positions towards current positions for smooth movement
+        // Lerp previous positions for smooth motion
         this._prevLineStart.lerp(
           new THREE.Vector3(
             startPos.x,
@@ -373,7 +526,9 @@ export default class GameController {
         this.throwDirectionLine.visible = true;
       }
     } else {
-      this.throwInfoDiv.textContent = "Magnitude: 0 Angle: 0°";
+      if (this.throwInfoDiv) {
+        this.throwInfoDiv.textContent = "Magnitude: 0 Angle: 0°";
+      }
       if (this.throwDirectionLine) {
         this.throwDirectionLine.visible = false;
       }
@@ -392,7 +547,6 @@ export default class GameController {
       this.throwDirectionLine.visible = false;
     }
 
-    // Block throw input while waiting for disc to stop
     if (this.waitingForDiscToStop) {
       this.pointerDownPos = null;
       this.pointerDisc = null;
@@ -401,14 +555,20 @@ export default class GameController {
 
     if (this.pointerDownPos !== null && this.pointerDisc) {
       if (this.pointerDisc.dead) {
-        // Do not throw the disc if it is dead
         this.pointerDownPos = null;
         this.pointerDisc = null;
         return;
       }
 
-      // Prevent throwing if current disc has already thrown
       if (this.currentDisc && this.currentDisc.hasThrown) {
+        this.pointerDownPos = null;
+        this.pointerDisc = null;
+        return;
+      }
+
+      // Additional safety check: only allow throwing player discs
+      if (this.pointerDisc.type !== "player") {
+        console.log("Cannot throw NPC disc - player discs only");
         this.pointerDownPos = null;
         this.pointerDisc = null;
         return;
@@ -416,13 +576,11 @@ export default class GameController {
 
       const deltaX = event.clientX - this.pointerDownPos.x;
       const deltaY = event.clientY - this.pointerDownPos.y;
-
       const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      const dragThreshold = 2; // Lower threshold to allow shorter drags
-      const minSpeed = 0.05; // Minimum throw speed
-
+      const dragThreshold = 2;
+      const minSpeed = 0.05;
       if (dragLength > dragThreshold) {
-        const sensitivity = 1; // Sensitivity factor, less than 1 for finer control
+        const sensitivity = 1;
         const adjustedLength = dragLength * sensitivity;
         const normX = deltaX / dragLength;
         const normY = deltaY / dragLength;
@@ -437,8 +595,8 @@ export default class GameController {
         cameraRight.crossVectors(forward, up).normalize();
 
         let direction = new THREE.Vector3();
-        direction.add(cameraRight.clone().multiplyScalar(normX));
-        direction.add(forward.clone().multiplyScalar(-normY));
+        direction.add(cameraRight.multiplyScalar(normX));
+        direction.add(forward.multiplyScalar(-normY));
         direction.normalize();
         direction.negate();
 
@@ -458,6 +616,7 @@ export default class GameController {
         );
         this.pointerDisc.moving = true;
         this.pointerDisc.hasThrown = true;
+        this.pointerDisc.resetDamageState();
         this.waitingForDiscToStop = true;
       }
     }
@@ -469,7 +628,9 @@ export default class GameController {
     this.camera.aspect = window.innerWidth / window.innerHeight;
     this.camera.updateProjectionMatrix();
 
-    this.level.rotation.x = -Math.PI / 2;
+    if (this.level) {
+      this.level.rotation.x = -Math.PI / 2;
+    }
     this.createWalls();
 
     this.discs.forEach((disc) => {
@@ -496,68 +657,113 @@ export default class GameController {
 
   animate() {
     requestAnimationFrame(() => this.animate());
+
     if (this.controls) {
       this.controls.update();
     }
 
+    // Handle camera panning with WASD and arrow keys
+    if (this.panningKeys.up || this.panningKeys.down || this.panningKeys.left || this.panningKeys.right) {
+      // Get the camera's forward and right vectors
+      const forward = new THREE.Vector3();
+      const right = new THREE.Vector3();
+
+      this.camera.getWorldDirection(forward);
+      forward.y = 0; // Keep panning horizontal
+      forward.normalize();
+
+      right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+      right.normalize();
+
+      // Calculate panning movement
+      const panVector = new THREE.Vector3();
+
+      if (this.panningKeys.up) {
+        panVector.add(forward.clone().multiplyScalar(this.panSpeed));
+      }
+      if (this.panningKeys.down) {
+        panVector.add(forward.clone().multiplyScalar(-this.panSpeed));
+      }
+      if (this.panningKeys.left) {
+        panVector.add(right.clone().multiplyScalar(-this.panSpeed));
+      }
+      if (this.panningKeys.right) {
+        panVector.add(right.clone().multiplyScalar(this.panSpeed));
+      }
+
+      // Apply panning to both camera and controls target
+      this.camera.position.add(panVector);
+      this.controls.target.add(panVector);
+      this.controls.update();
+    }
+
     if (this.currentDisc) {
-      // Remove pulsing height animation, reset scale and position.y to default
+      // Reset current disc scale and position.y
       this.currentDisc.mesh.scale.set(1, 1, 1);
       this.currentDisc.mesh.position.y = this.currentDisc.basePositionY;
 
-      if (this.currentDisc.edgeHelper) {
-        this.currentDisc.edgeHelper.position.copy(
-          this.currentDisc.mesh.position,
-        );
-        this.currentDisc.edgeHelper.rotation.copy(
-          this.currentDisc.mesh.rotation,
-        );
-        this.currentDisc.edgeHelper.scale.copy(this.currentDisc.mesh.scale);
-      }
 
-      // Set dead disc appearance (gray and semi-transparent)
+
+      // Update disc appearance for dead discs
       this.discs.forEach((disc) => {
         if (disc.dead) {
-          disc.mesh.material.color.set(0x888888); // gray color
-          disc.mesh.material.opacity = 0.4;
-          disc.mesh.material.transparent = true;
+          // Handle both group and single mesh structures
+          if (disc.mesh.isGroup) {
+            disc.mesh.children.forEach(child => {
+              if (child.material) {
+                if (child.material.color) child.material.color.set(0x888888);
+                child.material.opacity = 0.4;
+                child.material.transparent = true;
+              }
+            });
+          } else {
+            disc.mesh.material.color.set(0x888888);
+            disc.mesh.material.opacity = 0.4;
+            disc.mesh.material.transparent = true;
+          }
         } else {
-          disc.mesh.material.color.set(disc.mesh.material.color.getHex());
-          disc.mesh.material.opacity = 0.9;
-          disc.mesh.material.transparent = false;
+          // Handle both group and single mesh structures
+          if (disc.mesh.isGroup) {
+            disc.mesh.children.forEach(child => {
+              if (child.material) {
+                if (child.material.color) child.material.color.set(child.material.color.getHex());
+                child.material.opacity = 0.9;
+                child.material.transparent = false;
+              }
+            });
+          } else {
+            disc.mesh.material.color.set(disc.mesh.material.color.getHex());
+            disc.mesh.material.opacity = 0.9;
+            disc.mesh.material.transparent = false;
+          }
         }
       });
     }
 
-    // Update and move all discs
-    this.discs.forEach((d) => {
-      if (d.moving) {
-        d.updatePosition();
+    // Update and move discs
+    this.discs.forEach((disc) => {
+      if (disc.moving) {
+        disc.updatePosition();
 
-        // Handle collisions with outer walls
-        d.handleWallCollision(
+        disc.handleWallCollision(
           this.level.fieldWidth,
           this.level.fieldDepth,
           0.8,
         );
 
-        // Handle collisions with all walls including internal
         const walls = this.level.getAllWalls();
         walls.forEach((wall) => {
-          d.handleCollisionWithBox(wall, 0.8);
+          disc.handleCollisionWithBox(wall, 0.8);
         });
 
-        d.applyFriction(0.98);
+        disc.applyFriction(0.98);
       }
     });
 
-    // Collision detection and response between discs (pairwise)
-    const minDist = this.discs.length > 0 ? this.discs[0].radius * 2 : 0;
+    // Disc-to-disc collisions
     let colliding = false;
-
     for (let i = 0; i < this.discs.length; i++) {
       const d1 = this.discs[i];
-
       for (let j = i + 1; j < this.discs.length; j++) {
         const d2 = this.discs[j];
         const diff = d1.mesh.position.clone().sub(d2.mesh.position.clone());
@@ -568,8 +774,6 @@ export default class GameController {
         if (dist < minDist && dist > 0) {
           colliding = true;
           const normal = diff.clone().divideScalar(dist);
-
-          // Clamp collision normal to horizontal plane to preserve y altitude
           normal.y = 0;
           normal.normalize();
 
@@ -587,11 +791,17 @@ export default class GameController {
             d1.moving = true;
             d2.moving = true;
 
-            // Only allow damage if one disc is currentDisc and the other is hit disc
+            // Apply damage rules: only first collision causes damage unless canDoReboundDamage is true
             if (d1 === this.currentDisc && d2.hitPoints > 0) {
-              d2.takeHit();
+              if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
+                d2.takeHit();
+                d1.hasCausedDamage = true;
+              }
             } else if (d2 === this.currentDisc && d1.hitPoints > 0) {
-              d1.takeHit();
+              if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
+                d1.takeHit();
+                d2.hasCausedDamage = true;
+              }
             }
 
             const overlap = minDist - dist;
@@ -602,14 +812,17 @@ export default class GameController {
       }
     }
 
+    // Animate torch flickering
+    if (this.level) {
+      this.level.animateTorches();
+    }
+
     if (this.renderer) {
       this.renderer.render(this.scene, this.camera);
     }
 
-    // Update disc names display
     this.updateDiscNames();
 
-    // Check if we are waiting for disc to stop moving and act accordingly
     if (this.waitingForDiscToStop && this.currentDisc) {
       const velocityLength = this.currentDisc.velocity.length();
       if (velocityLength < 0.01 && !this.currentDisc.moving) {
@@ -623,14 +836,11 @@ export default class GameController {
     const discNamesList = document.getElementById("disc-names-list");
     if (!discNamesList) return;
 
-    // Clear current list
     discNamesList.innerHTML = "";
 
-    // Add all discs with their name, hit points, and color circle
     this.discs.forEach((disc) => {
       const li = document.createElement("li");
 
-      // Create color circle
       const colorCircle = document.createElement("span");
       colorCircle.style.display = "inline-block";
       colorCircle.style.width = "12px";
@@ -638,8 +848,16 @@ export default class GameController {
       colorCircle.style.marginRight = "8px";
       colorCircle.style.borderRadius = "50%";
       colorCircle.style.verticalAlign = "middle";
-      colorCircle.style.backgroundColor =
-        "#" + disc.mesh.material.color.getHexString();
+      // Handle both group and single mesh structures for color
+      let colorHex;
+      if (disc.mesh.isGroup) {
+        // Find the base mesh (first child) for color
+        const baseMesh = disc.mesh.children.find(child => child.material && child.material.color);
+        colorHex = baseMesh ? baseMesh.material.color.getHexString() : "ffffff";
+      } else {
+        colorHex = disc.mesh.material.color.getHexString();
+      }
+      colorCircle.style.backgroundColor = "#" + colorHex;
       if (disc.hitPoints <= 0 || disc.dead) {
         colorCircle.style.backgroundColor = "gray";
       }
@@ -654,22 +872,28 @@ export default class GameController {
         li.style.opacity = "0.5";
       }
 
-      li.appendChild(
-        document.createTextNode(disc.discName + " " + hitPointsText),
-      );
-
       if (disc.hitPoints <= 0 || disc.dead) {
         li.style.color = "gray";
         li.style.opacity = "0.5";
       }
+
+      li.appendChild(
+        document.createTextNode(disc.discName + " " + hitPointsText),
+      );
       discNamesList.appendChild(li);
     });
   }
 
-  advanceTurn() {
+  async advanceTurn() {
     if (this.currentDisc) {
-      // Remove highlight from current disc before advancing
-      if (this.currentDisc.mesh && this.currentDisc.mesh.material) {
+      // Handle both group and single mesh structures for emissive
+      if (this.currentDisc.mesh.isGroup) {
+        this.currentDisc.mesh.children.forEach(child => {
+          if (child.material && child.material.emissive) {
+            child.material.emissive.set(0x000000);
+          }
+        });
+      } else if (this.currentDisc.mesh && this.currentDisc.mesh.material) {
         this.currentDisc.mesh.material.emissive.set(0x000000);
       }
       // Find next disc index with hitPoints > 0 and not dead
@@ -689,7 +913,110 @@ export default class GameController {
       this.currentTurnIndex = nextIndex;
       this.currentDisc = this.discs[nextIndex];
       this.logCurrentTurn();
+
+      // Player vs AI control enforcement:
+      // - Player discs (type "player"): controlled by user input/mouse interaction
+      // - NPC discs (type "NPC"): controlled automatically by AI
+      if (this.currentDisc.type === "NPC") {
+        await this.aiThrow(this.currentDisc);
+      }
     }
+  }
+
+  async aiThrow(disc) {
+    if (!disc || disc.dead) return;
+
+    // Get alive player discs as targets
+    const alivePlayers = this.discs.filter(
+      (d) => d.type === "player" && d.hitPoints > 0 && !d.dead,
+    );
+    if (alivePlayers.length === 0) return;
+
+    // Select closest player disc as target
+    let target = alivePlayers[0];
+    let minDist = disc.mesh.position.distanceTo(target.mesh.position);
+    for (let i = 1; i < alivePlayers.length; i++) {
+      const dist = disc.mesh.position.distanceTo(alivePlayers[i].mesh.position);
+      if (dist < minDist) {
+        minDist = dist;
+        target = alivePlayers[i];
+      }
+    }
+
+    // Compute ideal direction towards target on horizontal plane
+    const idealDir = target.mesh.position.clone().sub(disc.mesh.position);
+    idealDir.y = 0;
+    idealDir.normalize();
+
+    // Function to check if a line segment intersects any wall
+    const intersectsAnyWall = (start, end) => {
+      const walls = this.level.getAllWalls();
+      for (const wall of walls) {
+        const box = new THREE.Box3().setFromObject(wall);
+
+        // Calculate the closest point on box to the line segment
+        const direction = end.clone().sub(start).normalize();
+        const length = start.distanceTo(end);
+
+        // Approximate by sampling points along the segment
+        const steps = Math.ceil(length * 10); // sampling 10 points per unit length
+        for (let i = 0; i <= steps; i++) {
+          const point = start
+            .clone()
+            .add(direction.clone().multiplyScalar((length / steps) * i));
+          if (box.containsPoint(point)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Calculate maximum allowed attempts to find a non-blocked throw direction
+    const maxAttempts = 999;
+    const maxFuzzDegrees = 15;
+    const fuzzFactor = (100 - disc.skillLevel) / 100;
+
+    let bestDir = idealDir;
+    let bestSpeed =
+      Math.min(minDist / 10, 1) * (0.7 + 0.3 * (disc.skillLevel / 100));
+    let fuzzAngleRad = 0;
+    let foundClearPath = false;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      // Apply fuzz rotation around Y axis
+      fuzzAngleRad =
+        (Math.random() * 2 - 1) * fuzzFactor * maxFuzzDegrees * (Math.PI / 180);
+      const quat = new THREE.Quaternion();
+      quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+      const fuzzedDir = idealDir.clone().applyQuaternion(quat).normalize();
+
+      // Evaluate end position for this direction with speed
+      const endPos = disc.mesh.position
+        .clone()
+        .add(fuzzedDir.clone().multiplyScalar(bestSpeed * 10)); // scaled distance for testing collision
+
+      // Check for collision with walls
+      if (!intersectsAnyWall(disc.mesh.position.clone(), endPos)) {
+        bestDir = fuzzedDir;
+        foundClearPath = true;
+        break;
+      }
+    }
+
+    if (!foundClearPath) {
+      // No clear path found, proceed with fuzzedDir anyway (first attempt)
+      const quat = new THREE.Quaternion();
+      quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+      bestDir = idealDir.clone().applyQuaternion(quat).normalize();
+    }
+
+    // Set velocity for the throw
+    disc.velocity.set(bestDir.x * bestSpeed, 0, bestDir.z * bestSpeed);
+    disc.moving = true;
+    disc.hasThrown = true;
+    disc.resetDamageState();
+    this.waitingForDiscToStop = true;
   }
 }
 
