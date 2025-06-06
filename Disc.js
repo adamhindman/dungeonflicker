@@ -90,7 +90,7 @@ export default class Disc {
 
       // Load texture with error handling and Chrome compatibility
       const texture = textureLoader.load(
-        `./${imagePath}`,
+        imagePath,
         // onLoad
         (loadedTexture) => {
           console.log(`Successfully loaded disc texture: ${imagePath}`);

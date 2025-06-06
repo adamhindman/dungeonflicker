@@ -1,5 +1,6 @@
 [build]
-  publish = "."
+  publish = "dist"
+  command = "npm run build"
 
 [[headers]]
   for = "/images/*"
@@ -46,10 +47,8 @@
     Content-Type = "text/css"
     Access-Control-Allow-Origin = "*"
 
-# Handle CORS preflight requests
+# Handle SPA routing
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-  conditions = {Role = ["admin"], Country = ["US"]}
-  headers = {X-From = "Netlify"}

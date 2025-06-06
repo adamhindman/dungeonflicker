@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Texture Loading Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f0f0f0;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .pending {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        img {
+            max-width: 100px;
+            max-height: 100px;
+            margin: 5px;
+            border: 2px solid #ddd;
+        }
+        .browser-info {
+            background: #e7f3ff;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧌 Dungeon Flicker - Texture Loading Test</h1>
+    
+    <div class="browser-info">
+        <strong>Browser:</strong> <span id="browser-info"></span><br>
+        <strong>User Agent:</strong> <span id="user-agent"></span>
+    </div>
+
+    <div class="test-container">
+        <h2>1. Basic Image Loading Test</h2>
+        <div id="basic-test-results"></div>
+        <div id="basic-images"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>2. Three.js TextureLoader Test</h2>
+        <div id="threejs-test-results"></div>
+        <div id="threejs-canvas"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>3. Network Request Test</h2>
+        <div id="network-test-results"></div>
+    </div>
+
+    <script type="module">
+        // Browser detection
+        const getBrowserInfo = () => {
+            const ua = navigator.userAgent;
+            let browserName = "Unknown";
+            
+            if (ua.includes("Chrome") && !ua.includes("Edg")) {
+                browserName = "Chrome";
+            } else if (ua.includes("Safari") && !ua.includes("Chrome")) {
+                browserName = "Safari";
+            } else if (ua.includes("Firefox")) {
+                browserName = "Firefox";
+            } else if (ua.includes("Edg")) {
+                browserName = "Edge";
+            }
+            
+            return browserName;
+        };
+
+        document.getElementById('browser-info').textContent = getBrowserInfo();
+        document.getElementById('user-agent').textContent = navigator.userAgent;
+
+        // Test images
+        const testImages = [
+            'images/tile-stone-1.png',
+            'images/barbarian-nobg.png',
+            'images/skeleton-nobg.png',
+            'images/knight.png'
+        ];
+
+        // 1. Basic Image Loading Test
+        const basicImageTest = () => {
+            const resultsDiv = document.getElementById('basic-test-results');
+            const imagesDiv = document.getElementById('basic-images');
+            
+            testImages.forEach((imagePath, index) => {
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'test-result pending';
+                resultDiv.textContent = `Loading ${imagePath}...`;
+                resultsDiv.appendChild(resultDiv);
+
+                const img = document.createElement('img');
+                img.onload = () => {
+                    resultDiv.className = 'test-result success';
+                    resultDiv.textContent = `✅ ${imagePath} loaded successfully`;
+                    imagesDiv.appendChild(img);
+                };
+                img.onerror = (error) => {
+                    resultDiv.className = 'test-result error';
+                    resultDiv.textContent = `❌ ${imagePath} failed to load`;
+                    console.error(`Failed to load ${imagePath}:`, error);
+                };
+                
+                // Test both relative and absolute paths
+                img.src = imagePath;
+            });
+        };
+
+        // 2. Three.js TextureLoader Test
+        const threejsTest = async () => {
+            const resultsDiv = document.getElementById('threejs-test-results');
+            
+            try {
+                // Import Three.js
+                const THREE = await import('three');
+                
+                const resultDiv = document.createElement('div');
+                resultDiv.className = 'test-result success';
+                resultDiv.textContent = '✅ Three.js imported successfully';
+                resultsDiv.appendChild(resultDiv);
+
+                const textureLoader = new THREE.TextureLoader();
+                
+                testImages.forEach((imagePath) => {
+                    const testDiv = document.createElement('div');
+                    testDiv.className = 'test-result pending';
+                    testDiv.textContent = `Loading ${imagePath} with TextureLoader...`;
+                    resultsDiv.appendChild(testDiv);
+
+                    textureLoader.load(
+                        imagePath,
+                        (texture) => {
+                            testDiv.className = 'test-result success';
+                            testDiv.textContent = `✅ ${imagePath} loaded with TextureLoader`;
+                            console.log(`Three.js loaded texture: ${imagePath}`, texture);
+                        },
+                        (progress) => {
+                            console.log(`Loading progress for ${imagePath}:`, progress);
+                        },
+                        (error) => {
+                            testDiv.className = 'test-result error';
+                            testDiv.textContent = `❌ ${imagePath} failed with TextureLoader`;
+                            console.error(`Three.js failed to load ${imagePath}:`, error);
+                        }
+                    );
+                });
+                
+            } catch (error) {
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'test-result error';
+                errorDiv.textContent = `❌ Failed to import Three.js: ${error.message}`;
+                resultsDiv.appendChild(errorDiv);
+                console.error('Three.js import error:', error);
+            }
+        };
+
+        // 3. Network Request Test
+        const networkTest = () => {
+            const resultsDiv = document.getElementById('network-test-results');
+            
+            testImages.forEach(async (imagePath) => {
+                const testDiv = document.createElement('div');
+                testDiv.className = 'test-result pending';
+                testDiv.textContent = `Fetching ${imagePath}...`;
+                resultsDiv.appendChild(testDiv);
+
+                try {
+                    const response = await fetch(imagePath);
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        testDiv.className = 'test-result success';
+                        testDiv.textContent = `✅ ${imagePath} fetched successfully (${blob.size} bytes)`;
+                    } else {
+                        testDiv.className = 'test-result error';
+                        testDiv.textContent = `❌ ${imagePath} fetch failed: ${response.status} ${response.statusText}`;
+                    }
+                } catch (error) {
+                    testDiv.className = 'test-result error';
+                    testDiv.textContent = `❌ ${imagePath} fetch error: ${error.message}`;
+                    console.error(`Fetch error for ${imagePath}:`, error);
+                }
+            });
+        };
+
+        // Run all tests
+        console.log('Starting texture loading tests...');
+        basicImageTest();
+        threejsTest();
+        networkTest();
+
+        // Additional debugging
+        console.log('Current location:', window.location);
+        console.log('Base URL:', new URL('./', window.location));
+        
+        // Test CORS headers
+        fetch('images/tile-stone-1.png', { method: 'HEAD' })
+            .then(response => {
+                console.log('CORS headers for tile-stone-1.png:');
+                for (let [key, value] of response.headers.entries()) {
+                    if (key.toLowerCase().includes('cors') || key.toLowerCase().includes('access-control')) {
+                        console.log(`${key}: ${value}`);
+                    }
+                }
+            })
+            .catch(error => console.error('CORS check failed:', error));
+    </script>
+</body>
+</html>

@@ -45,7 +45,7 @@ export default class Level {
     };
 
     // Load tile texture and set repeating
-    const tileTexture = loadTextureWithFallback("./images/tile-stone-1.png");
+    const tileTexture = loadTextureWithFallback("images/tile-stone-1.png");
     tileTexture.wrapS = THREE.RepeatWrapping;
     tileTexture.wrapT = THREE.RepeatWrapping;
 
@@ -61,7 +61,7 @@ export default class Level {
     });
 
     // Create wall texture with different repeat settings
-    const wallTileTexture = loadTextureWithFallback("./images/tile-stone-1.png");
+    const wallTileTexture = loadTextureWithFallback("images/tile-stone-1.png");
     wallTileTexture.wrapS = THREE.RepeatWrapping;
     wallTileTexture.wrapT = THREE.RepeatWrapping;
     wallTileTexture.repeat.set(2, 1); // Adjust repeat for wall proportions
