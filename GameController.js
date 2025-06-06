@@ -251,17 +251,17 @@ export default class GameController {
     // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
     // Create discs with explicit parameters:
     // (radius, height, color, startX, startZ, scene, discName, type, hitPoints, skillLevel, imagePath)
-    
+
     // Helper function to generate random positions for NPC discs
     const generateRandomPosition = (discRadius, existingPositions, minDistance = 4) => {
       const maxAttempts = 100;
       let attempts = 0;
-      
+
       while (attempts < maxAttempts) {
         // Generate random position within field bounds, accounting for disc radius
         const x = (Math.random() - 0.5) * (this.level.fieldWidth - discRadius * 4);
         const z = (Math.random() - 0.5) * (this.level.fieldDepth - discRadius * 4);
-        
+
         // Check if position conflicts with obstacles
         if (this.isPositionValid(x, z, discRadius)) {
           // Check distance from existing discs
@@ -273,15 +273,15 @@ export default class GameController {
               break;
             }
           }
-          
+
           if (validDistance) {
             return { x, z };
           }
         }
-        
+
         attempts++;
       }
-      
+
       // Fallback to original positions if random generation fails
       console.warn("Could not find valid random position, using fallback");
       return null;
@@ -307,9 +307,9 @@ export default class GameController {
 
     // Generate random positions for NPC discs
     const npcData = [
-      { name: "skeleton1", color: 0xff0000, skillLevel: 100 },
-      { name: "skeleton2", color: 0xffff00, skillLevel: 30 },
-      { name: "skeleton3", color: 0xff8800, skillLevel: 60 },
+      { name: "skeleton1", color: 0xff0000, skillLevel: 80 },
+      { name: "skeleton2", color: 0xffff00, skillLevel: 80 },
+      { name: "skeleton3", color: 0xff8800, skillLevel: 80 },
       { name: "skeleton4", color: 0x8800ff, skillLevel: 80 }
     ];
 
@@ -318,7 +318,7 @@ export default class GameController {
       const position = generateRandomPosition(1.5, existingPositions);
       const finalX = position ? position.x : (Math.random() - 0.5) * this.level.fieldWidth * 0.7;
       const finalZ = position ? position.z : (Math.random() - 0.5) * this.level.fieldDepth * 0.7;
-      
+
       const disc = new Disc(
         /* radius: */ 1.5,
         /* height: */ 0.6,
@@ -332,7 +332,7 @@ export default class GameController {
         /* skillLevel: */ npc.skillLevel,
         /* imagePath: */ "images/skeleton-nobg.png",
       );
-      
+
       npcDiscs.push(disc);
       existingPositions.push({ x: finalX, z: finalZ });
     }
@@ -792,12 +792,13 @@ export default class GameController {
             d2.moving = true;
 
             // Apply damage rules: only first collision causes damage unless canDoReboundDamage is true
-            if (d1 === this.currentDisc && d2.hitPoints > 0) {
+            // NPCs don't damage other NPCs, and dead discs can't do damage
+            if (d1 === this.currentDisc && d2.hitPoints > 0 && !d1.dead && !(d1.type === "NPC" && d2.type === "NPC")) {
               if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
                 d2.takeHit();
                 d1.hasCausedDamage = true;
               }
-            } else if (d2 === this.currentDisc && d1.hitPoints > 0) {
+            } else if (d2 === this.currentDisc && d1.hitPoints > 0 && !d2.dead && !(d1.type === "NPC" && d2.type === "NPC")) {
               if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
                 d1.takeHit();
                 d2.hasCausedDamage = true;
