@@ -55,6 +55,15 @@ export default class GameController {
     this.maxRageChargesCap = 3;      // Max number of Rage charges player can hold
     this.npcsKilledForRageCharge = new Set(); // Tracks NPCs already killed for a Rage charge this game
 
+    // Game Over State
+    this.gameOverState = { active: false, playerWon: false };
+    this.gameOverMessageContainer = null;
+    this.gameOverMessageTextElement = null;
+
+    // Rage Button related properties
+    this.rageButtonElement = null;
+    this.boundHandleRageButtonClick = null; 
+
     // Panning controls state
     this.panningKeys = {
       up: false,
@@ -198,6 +207,9 @@ export default class GameController {
     this.throwInfoDiv = document.getElementById("throw-info");
     this.fpsDisplayElement = document.getElementById("fps-counter"); // Assign FPS display element
 
+    // Create Game Over UI
+    this.createGameOverUI();
+
     this.addEventListeners();
 
     // Initialize throw direction line helper for drag aim visualization
@@ -216,35 +228,44 @@ export default class GameController {
     // Initialize discs for gameplay
     this.initDiscs();
 
-    // Setup "Rage!" button listener
-    const rageButton = document.getElementById('rage-button');
-    if (rageButton) {
-      // Find the player disc instance - ensure this runs after discs are initialized
-      const playerDisc = this.discs.find(disc => disc.type === 'player');
-
-      if (playerDisc) {
-        rageButton.addEventListener('click', () => {
-          if (!playerDisc.dead) { // Only allow rage if player is not dead
-            if (this.currentPlayerRageCharges > 0) {
-              playerDisc.rageIsActiveForNextThrow = true;
-              this.currentPlayerRageCharges--; // Consume a charge
-              playerDisc.setSpotlightIntensity(true); // Update spotlight for rage
-
-            } else {
-
-            }
-          } else {
-
-          }
-          this.updateRageButtonVisibility();
-        });
-      } else {
-        console.warn("Rage Button: Player disc not found to assign Rage ability.");
-      }
-    } else {
-      console.warn("Rage Button: Element with ID 'rage-button' not found.");
-    }
+    // Setup Rage button
+    this.setupRageButtonListener();
     this.updateRageButtonVisibility(); // Initial check for Rage button visibility
+  }
+
+  _handleRageButtonClick() {
+    const playerDisc = this.discs.find(disc => disc.type === 'player');
+    if (playerDisc) {
+      if (!playerDisc.dead) { // Only allow rage if player is not dead
+        if (this.currentPlayerRageCharges > 0) {
+          playerDisc.rageIsActiveForNextThrow = true;
+          this.currentPlayerRageCharges--; // Consume a charge
+          playerDisc.setSpotlightIntensity(true); // Update spotlight for rage
+        } else {
+        }
+      } else {
+      }
+      this.updateRageButtonVisibility();
+    } else {
+    }
+  }
+
+  setupRageButtonListener() {
+    if (!this.rageButtonElement) {
+      this.rageButtonElement = document.getElementById('rage-button');
+    }
+
+    if (this.rageButtonElement) {
+      // Remove previous listener if it exists
+      if (this.boundHandleRageButtonClick) {
+        this.rageButtonElement.removeEventListener('click', this.boundHandleRageButtonClick);
+      }
+
+      // Create and bind the new handler
+      this.boundHandleRageButtonClick = this._handleRageButtonClick.bind(this);
+      this.rageButtonElement.addEventListener('click', this.boundHandleRageButtonClick);
+    } else {
+    }
   }
 
   // Helper method to check if a position is valid (not inside obstacles)
@@ -328,7 +349,6 @@ export default class GameController {
       }
 
       // Fallback to original positions if random generation fails
-      console.warn("Could not find valid random position, using fallback");
       return null;
     };
 
@@ -429,6 +449,9 @@ export default class GameController {
   }
 
   onPointerDown(event) {
+    if (this.gameOverState.active) {
+      return;
+    }
     this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
@@ -481,13 +504,15 @@ export default class GameController {
 
       // Provide feedback if player tries to interact with NPC disc
       if (this.pointerDisc && this.pointerDisc.type === "NPC") {
-        console.log("Cannot control NPC disc - AI controlled");
       }
     }
     this.isPointerDown = true;
   }
 
   onPointerMove(event) {
+    if (this.gameOverState.active) {
+      return;
+    }
     if (!this.isPointerDown || !this.pointerDownPos) return;
     const deltaX = event.clientX - this.pointerDownPos.x;
     const deltaY = event.clientY - this.pointerDownPos.y;
@@ -590,6 +615,9 @@ export default class GameController {
   }
 
   onPointerUp(event) {
+    if (this.gameOverState.active) {
+      return;
+    }
     if (!this.isPointerDown) return;
     this.isPointerDown = false;
     this.controls.enabled = true;
@@ -622,7 +650,6 @@ export default class GameController {
 
       // Additional safety check: only allow throwing player discs
       if (this.pointerDisc.type !== "player") {
-        console.log("Cannot throw NPC disc - player discs only");
         this.pointerDownPos = null;
         this.pointerDisc = null;
         return;
@@ -664,7 +691,6 @@ export default class GameController {
           this.pointerDisc.rageIsActiveForNextThrow = false; // Consume Rage
           this.pointerDisc.canDoReboundDamage = true; // Enable rebound damage for this throw
           this.pointerDisc.rageWasUsedThisThrow = true; // Set flag for later reset
-          console.log(`RAGE: ${this.pointerDisc.discName} can now do rebound damage for this throw.`);
           this.updateRageButtonVisibility(); // Update button state after Rage is consumed
 
           // Optional: Reset Rage button state (e.g., re-enable, change text)
@@ -721,12 +747,233 @@ export default class GameController {
     });
   }
 
+  // Clamp a value between min and max
   clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
   }
 
-  createWalls() {
-    this.level.createWalls();
+  // No longer needed as Level.js handles walls
+  // createWalls() {
+  //   // This method can be expanded to create more complex wall layouts
+  // }
+
+  createGameOverUI() {
+    // Create container div
+    this.gameOverMessageContainer = document.createElement("div");
+    this.gameOverMessageContainer.id = "gameOverMessageContainer";
+    Object.assign(this.gameOverMessageContainer.style, {
+      position: "absolute",
+      top: "50%",
+      left: "50%",
+      transform: "translate(-50%, -50%)",
+      padding: "20px",
+      backgroundColor: "rgba(0, 0, 0, 0.75)",
+      color: "white",
+      textAlign: "center",
+      borderRadius: "10px",
+      zIndex: "1000", // Ensure it's on top
+      display: "none", // Initially hidden
+      fontFamily: "Arial, sans-serif",
+    });
+
+    // Create "GAME OVER" heading
+    const gameOverHeading = document.createElement("h1");
+    gameOverHeading.textContent = "GAME OVER";
+    Object.assign(gameOverHeading.style, {
+      margin: "0 0 10px 0",
+      fontSize: "2.5em",
+    });
+
+    // Create win/loss message paragraph
+    this.gameOverMessageTextElement = document.createElement("p");
+    this.gameOverMessageTextElement.id = "gameOverResultText";
+    Object.assign(this.gameOverMessageTextElement.style, {
+      margin: "0",
+      fontSize: "1.5em",
+    });
+
+    // Append elements
+    this.gameOverMessageContainer.appendChild(gameOverHeading);
+    this.gameOverMessageContainer.appendChild(this.gameOverMessageTextElement);
+
+    // Create "Play Again" button
+    const playAgainButton = document.createElement("button");
+    playAgainButton.textContent = "Play Again";
+    Object.assign(playAgainButton.style, {
+      marginTop: "20px",
+      padding: "10px 20px",
+      fontSize: "1em",
+      color: "white",
+      backgroundColor: "#555",
+      border: "none",
+      borderRadius: "5px",
+      cursor: "pointer",
+    });
+
+    playAgainButton.addEventListener("mouseover", () => {
+      playAgainButton.style.backgroundColor = "#777";
+    });
+    playAgainButton.addEventListener("mouseout", () => {
+      playAgainButton.style.backgroundColor = "#555";
+    });
+
+    playAgainButton.addEventListener("click", () => {
+      if (this.gameOverMessageContainer) {
+        this.gameOverMessageContainer.style.display = "none";
+      }
+      this.gameOverState.active = false;
+      this.gameOverState.playerWon = false;
+      // We will define this.restartGame() in a subsequent step
+      if (this.restartGame) {
+         this.restartGame();
+      } else {
+        // Fallback to reload if restartGame isn't implemented yet
+        // window.location.reload(); 
+      }
+    });
+
+    this.gameOverMessageContainer.appendChild(playAgainButton);
+    document.body.appendChild(this.gameOverMessageContainer);
+  }
+
+  updateAllDiscDeadStates() {
+    if (!this.discs || this.discs.length === 0) {
+      return;
+    }
+    this.discs.forEach(disc => {
+      if (disc.hitPoints <= 0 && !disc.dead) {
+        disc.die();
+      }
+    });
+  }
+
+  checkGameOverConditions() {
+    // If game is already over, or no discs, no need to check
+    if (this.gameOverState.active || !this.discs || this.discs.length === 0) {
+      return this.gameOverState.active;
+    }
+
+    // Ensure all disc dead states are up-to-date before checking
+    this.updateAllDiscDeadStates();
+
+    let alivePlayerDiscs = 0;
+    let aliveNpcDiscs = 0;
+    let playerDiscsExist = false;
+    let npcDiscsExist = false;
+
+    this.discs.forEach(disc => {
+      if (disc.type === "player") {
+        playerDiscsExist = true;
+        if (!disc.dead) {
+          alivePlayerDiscs++;
+        }
+      } else if (disc.type === "NPC") {
+        npcDiscsExist = true;
+        if (!disc.dead) {
+          aliveNpcDiscs++;
+        }
+      }
+    });
+
+    // Player loses if all their discs are dead (and player discs actually existed)
+    if (playerDiscsExist && alivePlayerDiscs === 0) {
+      this.triggerGameOver(false); // Player loses
+      return true;
+    }
+
+    // Player wins if all NPC discs are dead (and NPC discs actually existed)
+    // And player must have some discs alive, or no player discs existed in the first place (NPC vs NPC)
+    if (npcDiscsExist && aliveNpcDiscs === 0) {
+      if (!playerDiscsExist || alivePlayerDiscs > 0) {
+          this.triggerGameOver(true); // Player wins (or all target NPCs are defeated)
+          return true;
+      }
+    }
+
+    return false; // Game is not over
+  }
+
+  triggerGameOver(playerWon) {
+    if (this.gameOverState.active) {
+      return; // Game is already over, do nothing
+    }
+    this.gameOverState.active = true;
+    this.gameOverState.playerWon = playerWon;
+
+    if (this.gameOverMessageContainer && this.gameOverMessageTextElement) {
+      this.gameOverMessageTextElement.textContent = playerWon ? "You win" : "You lose";
+      this.gameOverMessageContainer.style.display = "block";
+    } else {
+    }
+    // Further actions like stopping game loop, disabling controls, etc.,
+    // will be handled by checks in other methods (e.g., advanceTurn, onPointerDown)
+  }
+
+  async restartGame() {
+
+    // 1. Dispose of old discs
+    if (this.discs && this.discs.length > 0) {
+      this.discs.forEach(disc => disc.dispose());
+    }
+    this.discs = [];
+
+    // 2. Unload the current level
+    if (this.level) {
+      this.level.unload();
+    }
+
+    // 3. Reload the level
+    // Assuming this.level is already instantiated, if not, it might need new Level(this.scene)
+    if (this.level) {
+      this.level.load();
+    } else {
+      return; // Cannot proceed without a level
+    }
+
+    // 4. Re-initialize discs
+    this.initDiscs(); // This will populate this.discs with new instances
+
+    // 5. Reset core game state variables
+    this.currentTurnIndex = 0;
+    this._currentDisc = null; // Will be set by this.currentDisc setter
+    this.waitingForDiscToStop = false;
+    this.playerDamagedNPCsThisThrow.clear();
+    this.npcsKilledForRageCharge.clear();
+    this.currentPlayerRageCharges = 0; // Reset rage charges to 0 or initial value
+
+    // 6. Set the current disc for the new game
+    if (this.discs.length > 0) {
+      // Find the first player disc to start, or default to first disc if no player discs.
+      let startingDisc = this.discs.find(disc => disc.type === 'player');
+      if (!startingDisc) {
+        startingDisc = this.discs[0]; // Fallback to the first disc overall
+      }
+      this.currentTurnIndex = this.discs.indexOf(startingDisc);
+      if(this.currentTurnIndex === -1) this.currentTurnIndex = 0; // Safety for fallback
+
+      this.currentDisc = this.discs[this.currentTurnIndex]; // This uses the setter
+      this.discs[this.currentTurnIndex].hasThrown = false; // Ensure the first disc can be thrown
+
+
+      // If the first disc is an NPC, trigger its throw
+      if (this.currentDisc.type === "NPC") {
+        await this.aiThrow(this.currentDisc);
+      }
+    } else {
+    }
+
+    // 7. Update UI elements
+    this.updateDiscNames();
+    // Re-setup the rage button listener to bind to the new player disc
+    this.setupRageButtonListener(); 
+    this.updateRageButtonVisibility(); // Call after setup to reflect current charges
+
+    // 8. Ensure camera controls are enabled
+    if (this.controls) {
+      this.controls.enabled = true;
+    }
+    this.controlsEnabled = true;
+
   }
 
   animate() {
@@ -1053,6 +1300,9 @@ export default class GameController {
   }
 
   async advanceTurn() {
+    if (this.checkGameOverConditions()) {
+      return;
+    }
     this.updateRageButtonVisibility(); // Update on turn change
 
     if (this.currentDisc) {

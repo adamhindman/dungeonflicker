@@ -268,17 +268,23 @@ export default class Disc {
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();
+      } else if (this.hitPoints <= 0 && this.dead) {
+      } else if (this.hitPoints > 0) {
       }
     }
   }
 
   // Reduce hit points by 1
   takeHit() {
+    const oldHP = this.hitPoints;
     this.hitPoints = Math.max(this.hitPoints - 1, 0);
   }
 
   // Handle disc death: disable further throws, set semi-transparent
   die() {
+    if (this.dead) {
+      return;
+    }
     this.dead = true;
     // Make the disc semi-transparent
     if (this.mesh.isGroup) {
