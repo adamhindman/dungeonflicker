@@ -1,23 +1,21 @@
 # dungeonflicker
 
-*This entire game, including this README, was vibe coded with Claude 4 Sonnet.*
+*This game, including the art and this README, was proudly 100% vibe coded by a combination of models.*
 
-## Introduction
+## Description
 
-Dungeonflicker is a 3D physics-based disc throwing game implemented using Three.js. Players take turns throwing discs across a bounded field littered with internal walls. The discs collide with each other and obstacles, taking damage when hit. The goal is to strategically throw discs to outmaneuver and disable opponents' discs while protecting your own.
+Dungeonflicker is an immersive 3D disc-flinging game where strategy and physics collide. Set in a torch-lit dungeon arena, players command unique discs, each with their own attributes and abilities. The core of the game revolves around skillful aiming and power control to outmaneuver opponents, utilizing the environment and disc-specific powers to become the last one standing.
 
-## How to Play
+## Gameplay
 
-- The game consists of multiple discs with varying sizes and hit points placed on a rectangular field surrounded by boundary walls and internal obstacles.
-- Players take turns controlling one disc at a time (`currentDisc`).
-- To throw a disc, click and drag on the disc to indicate throw direction and strength.
-- The drag direction relative to the camera determines the throw direction; drag length affects throw speed up to a maximum.
-- Each disc can only be thrown once per turn.
-- After throwing, the system waits for the disc to come to a near stop before allowing the next disc to be thrown.
-- Discs collide with walls and other discs physically; the edges of discs just touch during collisions.
-- When a disc is hit directly by the throwing disc, it takes damage reducing its hit points.
-- Hit points are tracked per disc, and a disc is disabled ("dead") when its hit points reach zero.
-- The game displays the names and hit points status of all discs dynamically in the top-right corner of the screen for easy tracking.
+The game unfolds in a turn-based fashion. Players take control of their active disc, aiming and launching it across the arena.
+
+*   **Objective:** The primary goal is to disable all opponent discs by reducing their hit points to zero.
+*   **Turns:** Each disc gets one throw per turn. Once a disc is thrown, play passes to the next active disc after the thrown disc comes to a complete stop.
+*   **Physics and Collisions:** Discs interact realistically with walls, obstacles, and each other. Collisions can cause damage, and understanding the ricochet and momentum is key to advanced play.
+*   **Damage:** When a thrown disc directly strikes an opponent, it inflicts damage, reducing their hit points.
+*   **Disc Abilities:** Different disc "kinds," like the Barbarian, have unique characteristics. For example, the Barbarian can enter a "Rage" mode, which enhances their combat capabilities and is visually indicated by a red spotlight.
+*   **Health Tracking:** The status of all discs, including their hit points, is displayed on screen. A disc is considered "dead" or disabled when its hit points reach zero.
 
 ## UI Elements
 
@@ -27,10 +25,12 @@ Dungeonflicker is a 3D physics-based disc throwing game implemented using Three.
 
 ## Controls
 
-- **Click and drag:** Aim and set power for the current disc's throw.
-- **Escape key:** Cancel a throw in progress before releasing.
-- Throws are disabled until the currently thrown disc completely stops moving.
-- Turn automatically advances to the next non-dead disc after the current disc stops.
+Mastering the controls is essential for victory in Dungeonflicker:
+
+*   **Aim and Throw:** Click and drag the currently active disc. The direction of the drag determines the throw angle, and the length of the drag dictates the power.
+*   **Cancel Throw:** Press the `Escape` key while dragging to cancel the current throw before release.
+*   **Camera Pan:** Use `WASD` or `Arrow Keys` to pan the camera and get a better view of the arena.
+*   **(Implicit) Turn Management:** The game automatically handles turn progression to the next available disc once the current thrown disc stops.
 
 ## Technical Details
 
@@ -38,5 +38,12 @@ Dungeonflicker is a 3D physics-based disc throwing game implemented using Three.
 - Collision detection uses bounding spheres for discs and axis-aligned box collisions for walls.
 - Internal walls are added perpendicular to the long boundaries to create strategic obstacles.
 - The system manages throw states, turn order, and damage calculation all integrated with the animation loop.
+
+## Roadmap
+
+* Multiple levels
+* New PC classes and monsters
+* Instructions
+* End state
 
 Enjoy playing and strategizing in Dungeonflicker!
