@@ -303,11 +303,10 @@ export default class Disc {
 
   // Set spotlight parameters based on active/inactive state
   setSpotlightIntensity(isActive) {
-    // Check for Barbarian rage first
-    if (this.kind === "Barbarian" && (this.rageIsActiveForNextThrow || this.rageWasUsedThisThrow)) {
-      this.updateSpotlightConfig('raging');
-    } else if (this.dead) {
+    if (this.dead) {
       this.updateSpotlightConfig('dead');
+    } else if (this.kind === "Barbarian" && (this.rageIsActiveForNextThrow || this.rageWasUsedThisThrow)) {
+      this.updateSpotlightConfig('raging');
     } else if (isActive) {
       this.updateSpotlightConfig('active');
     } else {
