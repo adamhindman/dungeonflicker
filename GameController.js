@@ -50,6 +50,10 @@ export default class GameController {
     // Game state flags
     this.waitingForDiscToStop = false;
     this.playerDamagedNPCsThisThrow = new Set(); // Tracks NPCs damaged by player in the current throw
+    // Rage charge tracking (earned by kills)
+    this.currentPlayerRageCharges = 0; // How many Rage charges player currently has
+    this.maxRageChargesCap = 3;      // Max number of Rage charges player can hold
+    this.npcsKilledForRageCharge = new Set(); // Tracks NPCs already killed for a Rage charge this game
 
     // Panning controls state
     this.panningKeys = {
@@ -221,11 +225,13 @@ export default class GameController {
       if (playerDisc) {
         rageButton.addEventListener('click', () => {
           if (!playerDisc.dead) { // Only allow rage if player is not dead
-            playerDisc.rageIsActiveForNextThrow = true;
-            console.log("Rage armed for Barbarian!");
-            // TODO: Optionally disable button or change text here
-            // For example: rageButton.disabled = true;
-            // rageButton.textContent = "Rage Armed!";
+            if (this.currentPlayerRageCharges > 0) {
+              playerDisc.rageIsActiveForNextThrow = true;
+              this.currentPlayerRageCharges--; // Consume a charge
+              console.log(`Rage armed for Barbarian! Charges remaining: ${this.currentPlayerRageCharges}`);
+            } else {
+              console.log("Cannot use Rage: No charges available.");
+            }
           } else {
             console.log("Cannot use Rage: Barbarian is dead.");
           }
@@ -284,6 +290,8 @@ export default class GameController {
   }
 
   initDiscs() {
+    this.currentPlayerRageCharges = 0; // Reset Rage charges for a new game
+    this.npcsKilledForRageCharge.clear(); // Reset set of NPCs that granted a charge
     // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
     // Create discs with explicit parameters:
     // (radius, height, color, startX, startZ, scene, discName, type, kind, hitPoints, skillLevel, imagePath, canDoReboundDamage, throwPowerMultiplier, mass, rageIsActiveForNextThrow)
@@ -373,8 +381,8 @@ export default class GameController {
         /* skillLevel: */ npc.skillLevel,
         /* imagePath: */ "images/skeleton-nobg.png",
         /* canDoReboundDamage: */ false,
-        /* throwPowerMultiplier: */ .7, // don't fucking change this value
-        /* mass: */ 0.7,
+        /* throwPowerMultiplier: */ .5, // don't fucking change this value
+        /* mass: */ .8,
         /* rageIsActiveForNextThrow: */ false
       );
 
@@ -652,7 +660,7 @@ export default class GameController {
 
         if (this.pointerDisc.rageIsActiveForNextThrow) {
           console.log("RAGE MODE ACTIVE! Applying 5x power multiplier for this throw.");
-          actualThrowPowerMultiplier *= 5;
+          actualThrowPowerMultiplier *= 3;
           this.pointerDisc.rageIsActiveForNextThrow = false; // Consume Rage
           this.pointerDisc.canDoReboundDamage = true; // Enable rebound damage for this throw
           this.pointerDisc.rageWasUsedThisThrow = true; // Set flag for later reset
@@ -723,7 +731,6 @@ export default class GameController {
 
   animate() {
     requestAnimationFrame(() => this.animate());
-    console.log("Animate function called..."); // Safari debug
 
     // FPS calculation
     this.fpsFrameCount++;
@@ -731,10 +738,9 @@ export default class GameController {
     const elapsedSinceLastUpdate = now - this.fpsLastUpdateTime;
 
     if (elapsedSinceLastUpdate >= this.fpsUpdateInterval) {
-      console.log(`FPS Debug: Frames = ${this.fpsFrameCount}, Elapsed = ${elapsedSinceLastUpdate.toFixed(2)}ms, Raw FPS = ${(this.fpsFrameCount * 1000 / elapsedSinceLastUpdate).toFixed(2)}`);
       const fps = Math.round((this.fpsFrameCount * 1000) / elapsedSinceLastUpdate);
       if (this.fpsDisplayElement) {
-        this.fpsDisplayElement.textContent = `FPS: ${fps}`;
+        this.fpsDisplayElement.textContent = `${fps} FPS`;
       }
       this.fpsFrameCount = 0;
       this.fpsLastUpdateTime = now;
@@ -883,6 +889,17 @@ export default class GameController {
                         // Player (d1) hits NPC (d2) - Rage allows multiple hits on the same NPC
                         if (d1.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
                             d2.takeHit();
+                            // Check if NPC d2 was killed by this hit and grant Rage charge
+                            if (d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
+                                if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
+                                    this.currentPlayerRageCharges++;
+                                    console.log(`Player killed ${d2.discName} and gained a Rage charge! Current charges: ${this.currentPlayerRageCharges}`);
+                                } else {
+                                    console.log(`Player killed ${d2.discName}. Rage charges already at max (${this.maxRageChargesCap}).`);
+                                }
+                                this.npcsKilledForRageCharge.add(d2.discName);
+                                this.updateRageButtonVisibility(); // Update button text/visibility
+                            }
                             // Only add to set if not raging (to allow multiple rage hits on the same NPC).
                             // For non-rage hits, this preserves the "one damage instance per NPC per throw" rule.
                             if (!d1.canDoReboundDamage) {
@@ -904,6 +921,17 @@ export default class GameController {
                         // Player (d2) hits NPC (d1) - Rage allows multiple hits on the same NPC
                         if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
                             d1.takeHit();
+                            // Check if NPC d1 was killed by this hit and grant Rage charge
+                            if (d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
+                                if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
+                                    this.currentPlayerRageCharges++;
+                                    console.log(`Player killed ${d1.discName} and gained a Rage charge! Current charges: ${this.currentPlayerRageCharges}`);
+                                } else {
+                                    console.log(`Player killed ${d1.discName}. Rage charges already at max (${this.maxRageChargesCap}).`);
+                                }
+                                this.npcsKilledForRageCharge.add(d1.discName);
+                                this.updateRageButtonVisibility(); // Update button text/visibility
+                            }
                             // Only add to set if not raging.
                             if (!d2.canDoReboundDamage) {
                                 this.playerDamagedNPCsThisThrow.add(d1.discName);
@@ -1015,10 +1043,11 @@ export default class GameController {
       return;
     }
 
-    // Hide if player is dead OR Rage is already armed for the next throw
-    if (playerDisc.dead || playerDisc.rageIsActiveForNextThrow) {
+    // Hide if player is dead OR Rage is already armed for the next throw OR no Rage charges are available
+    if (playerDisc.dead || playerDisc.rageIsActiveForNextThrow || this.currentPlayerRageCharges <= 0) {
       rageButton.style.display = 'none';
     } else {
+      rageButton.textContent = `Rage charges: ${this.currentPlayerRageCharges}`;
       rageButton.style.display = 'block'; // Or 'inline-block' or '' depending on original style
     }
   }
