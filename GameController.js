@@ -228,6 +228,7 @@ export default class GameController {
             if (this.currentPlayerRageCharges > 0) {
               playerDisc.rageIsActiveForNextThrow = true;
               this.currentPlayerRageCharges--; // Consume a charge
+              playerDisc.setSpotlightIntensity(true); // Update spotlight for rage
               console.log(`Rage armed for Barbarian! Charges remaining: ${this.currentPlayerRageCharges}`);
             } else {
               console.log("Cannot use Rage: No charges available.");
@@ -659,8 +660,7 @@ export default class GameController {
         let actualThrowPowerMultiplier = this.pointerDisc.throwPowerMultiplier; // Start with the base multiplier
 
         if (this.pointerDisc.rageIsActiveForNextThrow) {
-          console.log("RAGE MODE ACTIVE! Applying 5x power multiplier for this throw.");
-          actualThrowPowerMultiplier *= 3;
+          actualThrowPowerMultiplier *= 2.5;
           this.pointerDisc.rageIsActiveForNextThrow = false; // Consume Rage
           this.pointerDisc.canDoReboundDamage = true; // Enable rebound damage for this throw
           this.pointerDisc.rageWasUsedThisThrow = true; // Set flag for later reset

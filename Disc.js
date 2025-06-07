@@ -23,6 +23,13 @@ export default class Disc {
       angle: Math.PI / 8,
       penumbra: 0.5,
       color: 0x888888
+    },
+    raging: {
+      intensity: 80, // Same as active, can be adjusted
+      distance: 25,  // Same as active
+      angle: Math.PI / 4, // Same as active
+      penumbra: 1.2, // Same as active
+      color: 0xff0000 // Red color for rage
     }
   };
 
@@ -296,7 +303,10 @@ export default class Disc {
 
   // Set spotlight parameters based on active/inactive state
   setSpotlightIntensity(isActive) {
-    if (this.dead) {
+    // Check for Barbarian rage first
+    if (this.kind === "Barbarian" && (this.rageIsActiveForNextThrow || this.rageWasUsedThisThrow)) {
+      this.updateSpotlightConfig('raging');
+    } else if (this.dead) {
       this.updateSpotlightConfig('dead');
     } else if (isActive) {
       this.updateSpotlightConfig('active');
