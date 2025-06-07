@@ -115,15 +115,12 @@ export default class Disc {
         imagePath,
         // onLoad
         (loadedTexture) => {
-          console.log(`Successfully loaded disc texture: ${imagePath}`);
           loadedTexture.colorSpace = THREE.SRGBColorSpace;
         },
         // onProgress
         undefined,
         // onError
         (error) => {
-          console.error(`Failed to load disc texture: ${imagePath}`, error);
-          console.log(`Browser: ${navigator.userAgent}`);
         }
       );
 

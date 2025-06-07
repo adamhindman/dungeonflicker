@@ -229,12 +229,12 @@ export default class GameController {
               playerDisc.rageIsActiveForNextThrow = true;
               this.currentPlayerRageCharges--; // Consume a charge
               playerDisc.setSpotlightIntensity(true); // Update spotlight for rage
-              console.log(`Rage armed for Barbarian! Charges remaining: ${this.currentPlayerRageCharges}`);
+
             } else {
-              console.log("Cannot use Rage: No charges available.");
+
             }
           } else {
-            console.log("Cannot use Rage: Barbarian is dead.");
+
           }
           this.updateRageButtonVisibility();
         });
@@ -893,9 +893,9 @@ export default class GameController {
                             if (d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
                                 if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
                                     this.currentPlayerRageCharges++;
-                                    console.log(`Player killed ${d2.discName} and gained a Rage charge! Current charges: ${this.currentPlayerRageCharges}`);
+
                                 } else {
-                                    console.log(`Player killed ${d2.discName}. Rage charges already at max (${this.maxRageChargesCap}).`);
+
                                 }
                                 this.npcsKilledForRageCharge.add(d2.discName);
                                 this.updateRageButtonVisibility(); // Update button text/visibility
@@ -925,9 +925,9 @@ export default class GameController {
                             if (d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
                                 if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
                                     this.currentPlayerRageCharges++;
-                                    console.log(`Player killed ${d1.discName} and gained a Rage charge! Current charges: ${this.currentPlayerRageCharges}`);
+
                                 } else {
-                                    console.log(`Player killed ${d1.discName}. Rage charges already at max (${this.maxRageChargesCap}).`);
+
                                 }
                                 this.npcsKilledForRageCharge.add(d1.discName);
                                 this.updateRageButtonVisibility(); // Update button text/visibility

@@ -27,17 +27,13 @@ export default class Level {
     
     // Enhanced texture loading with error handling for Chrome compatibility
     const loadTextureWithFallback = (path, onSuccess, onError) => {
-      console.log(`Attempting to load texture: ${path}`);
       const texture = this.textureLoader.load(
         path,
         (loadedTexture) => {
-          console.log(`Successfully loaded texture: ${path}`);
           if (onSuccess) onSuccess(loadedTexture);
         },
         undefined, // onProgress
         (error) => {
-          console.error(`Failed to load texture: ${path}`, error);
-          console.log(`Browser: ${navigator.userAgent}`);
           if (onError) onError(error);
         }
       );
