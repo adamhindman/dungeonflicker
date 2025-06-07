@@ -4,7 +4,7 @@
 
 ## Description
 
-Dungeonflicker is an immersive 3D disc-flinging game where strategy and physics collide. Set in a torch-lit dungeon arena, players command unique discs, each with their own attributes and abilities. The core of the game revolves around skillful aiming and power control to outmaneuver opponents, utilizing the environment and disc-specific powers to become the last one standing.
+Dungeonflicker is a 3D disc-flinging game where tactics and physics collide. Set in a torch-lit dungeon arena, players command unique discs, each with their own attributes and abilities. The core of the game revolves around skillful aiming and power control to outmaneuver opponents, using the environment and disc-specific powers to become the last one standing.
 
 ## Gameplay
 
