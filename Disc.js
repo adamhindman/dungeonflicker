@@ -36,13 +36,18 @@ export default class Disc {
    * @param {THREE.Scene} scene - Three.js scene
    * @param {string} discName - Display name for the disc
    * @param {string} type - Disc type: "player" (human controlled) or "NPC" (AI controlled)
-   * @param {number} hitPoints - Starting hit points
+   * @param {string} kind - The kind of disc (e.g., "Barbarian", "Skeleton")
+   * @param {number} hitPoints - Starting hitPoints
    * @param {number} skillLevel - AI skill level (0-100)
    * @param {string} imagePath - Optional path to PNG image for disc top
    * @param {boolean} canDoReboundDamage - Whether disc can cause damage on rebounds
-   */
-  constructor(
-    radius,
+   * @param {number} throwPowerMultiplier - Multiplier for the throw power (default 1.0)
+   * @param {number} mass - The mass of the disc (default 1.0)
+   * @param {boolean} rageIsActiveForNextThrow - Whether Rage mode is active for the next throw (default false)
+   * @param {boolean} rageWasUsedThisThrow - Whether Rage was used for the current throw (default false)
+    */
+   constructor(
+     radius,
     height,
     color,
     startX,
@@ -50,19 +55,29 @@ export default class Disc {
     scene,
     discName = "Unknown",
     type = "NPC",
+    kind = "Unknown", // Default kind
     hitPoints = 3,
     skillLevel = 100,
     imagePath = null,
     canDoReboundDamage = false,
+    throwPowerMultiplier = 1.0,
+    mass = 1.0, // Default mass
+    rageIsActiveForNextThrow = false,
+    rageWasUsedThisThrow = false,
   ) {
     this.radius = radius;
     this.height = height;
     this.discName = discName;
     this.type = type;
+    this.kind = kind;
     this.hitPoints = hitPoints;
     this.skillLevel = skillLevel;
     this.scene = scene;
     this.canDoReboundDamage = canDoReboundDamage;
+    this.throwPowerMultiplier = throwPowerMultiplier;
+    this.mass = mass;
+    this.rageIsActiveForNextThrow = rageIsActiveForNextThrow;
+    this.rageWasUsedThisThrow = rageWasUsedThisThrow;
 
     // Create the main disc geometry
     const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);
@@ -148,9 +163,9 @@ export default class Disc {
     );
     this.spotlight.position.set(startX, 8, startZ);
     this.spotlight.target = this.mesh;
-    this.spotlight.castShadow = true;
-    this.spotlight.shadow.mapSize.width = 512;
-    this.spotlight.shadow.mapSize.height = 512;
+    this.spotlight.castShadow = false;
+    this.spotlight.shadow.mapSize.width = 256;
+    this.spotlight.shadow.mapSize.height = 256;
     this.spotlight.shadow.camera.near = 0.1;
     this.spotlight.shadow.camera.far = 20;
     scene.add(this.spotlight);
@@ -241,6 +256,11 @@ export default class Disc {
       this.moving = false;
       // Reset damage state when disc stops moving
       this.hasCausedDamage = false;
+      // If Rage was used for this throw, revert canDoReboundDamage and the flag
+      if (this.rageWasUsedThisThrow) {
+        this.canDoReboundDamage = false;
+        this.rageWasUsedThisThrow = false;
+      }
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();

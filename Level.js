@@ -210,8 +210,8 @@ export default class Level {
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);
     directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 2048;
-    directionalLight.shadow.mapSize.height = 2048;
+    directionalLight.shadow.mapSize.width = 512; // Performance: Reduced from 1024
+    directionalLight.shadow.mapSize.height = 512; // Performance: Reduced from 1024
     directionalLight.shadow.camera.left = -40;
     directionalLight.shadow.camera.right = 40;
     directionalLight.shadow.camera.top = 40;

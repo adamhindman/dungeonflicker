@@ -34,6 +34,13 @@ export default class GameController {
 
     // UI elements
     this.throwInfoDiv = null;
+    this.fpsDisplayElement = null; // For FPS counter
+
+    // FPS calculation
+    this.fpsFrameCount = 0;
+    this.fpsLastTime = performance.now(); // For calculating delta time
+    this.fpsLastUpdateTime = performance.now(); // For timing FPS display updates
+    this.fpsUpdateInterval = 1000; // Update display every 1 second (in ms)
 
     // Visual helpers
     this.throwDirectionLine = null;
@@ -42,6 +49,7 @@ export default class GameController {
 
     // Game state flags
     this.waitingForDiscToStop = false;
+    this.playerDamagedNPCsThisThrow = new Set(); // Tracks NPCs damaged by player in the current throw
 
     // Panning controls state
     this.panningKeys = {
@@ -184,6 +192,7 @@ export default class GameController {
 
     // Setup throw info UI element
     this.throwInfoDiv = document.getElementById("throw-info");
+    this.fpsDisplayElement = document.getElementById("fps-counter"); // Assign FPS display element
 
     this.addEventListeners();
 
@@ -202,6 +211,33 @@ export default class GameController {
 
     // Initialize discs for gameplay
     this.initDiscs();
+
+    // Setup "Rage!" button listener
+    const rageButton = document.getElementById('rage-button');
+    if (rageButton) {
+      // Find the player disc instance - ensure this runs after discs are initialized
+      const playerDisc = this.discs.find(disc => disc.type === 'player');
+
+      if (playerDisc) {
+        rageButton.addEventListener('click', () => {
+          if (!playerDisc.dead) { // Only allow rage if player is not dead
+            playerDisc.rageIsActiveForNextThrow = true;
+            console.log("Rage armed for Barbarian!");
+            // TODO: Optionally disable button or change text here
+            // For example: rageButton.disabled = true;
+            // rageButton.textContent = "Rage Armed!";
+          } else {
+            console.log("Cannot use Rage: Barbarian is dead.");
+          }
+          this.updateRageButtonVisibility();
+        });
+      } else {
+        console.warn("Rage Button: Player disc not found to assign Rage ability.");
+      }
+    } else {
+      console.warn("Rage Button: Element with ID 'rage-button' not found.");
+    }
+    this.updateRageButtonVisibility(); // Initial check for Rage button visibility
   }
 
   // Helper method to check if a position is valid (not inside obstacles)
@@ -250,7 +286,7 @@ export default class GameController {
   initDiscs() {
     // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
     // Create discs with explicit parameters:
-    // (radius, height, color, startX, startZ, scene, discName, type, hitPoints, skillLevel, imagePath)
+    // (radius, height, color, startX, startZ, scene, discName, type, kind, hitPoints, skillLevel, imagePath, canDoReboundDamage, throwPowerMultiplier, mass, rageIsActiveForNextThrow)
 
     // Helper function to generate random positions for NPC discs
     const generateRandomPosition = (discRadius, existingPositions, minDistance = 4) => {
@@ -289,7 +325,7 @@ export default class GameController {
 
     // Create player disc at center position
     const disc1 = new Disc(
-      /* radius: */ 1.5,
+      /* radius: */ 2.0,
       /* height: */ 0.6,
       /* color: */ 0x0088ff,
       /* startX: */ 0,
@@ -297,20 +333,24 @@ export default class GameController {
       /* scene: */ this.scene,
       /* discName: */ "player",
       /* type: */ "player",
+      /* kind: */ "Barbarian",
       /* hitPoints: */ 5,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/barbarian-nobg.png",
+      /* canDoReboundDamage: */ false,
+      /* throwPowerMultiplier: */ 1.3,
+      /* mass: */ 1.5,
+      /* rageIsActiveForNextThrow: */ false
     );
 
-    // Track positions for collision avoidance
     const existingPositions = [{ x: 0, z: 0 }];
 
     // Generate random positions for NPC discs
     const npcData = [
-      { name: "skeleton1", color: 0xff0000, skillLevel: 80 },
-      { name: "skeleton2", color: 0xffff00, skillLevel: 80 },
-      { name: "skeleton3", color: 0xff8800, skillLevel: 80 },
-      { name: "skeleton4", color: 0x8800ff, skillLevel: 80 }
+      { name: "skeleton1", color: 0xff0000, skillLevel: 80, kind: "Skeleton" },
+      { name: "skeleton2", color: 0xffff00, skillLevel: 80, kind: "Skeleton" },
+      { name: "skeleton3", color: 0xff8800, skillLevel: 80, kind: "Skeleton" },
+      { name: "skeleton4", color: 0x8800ff, skillLevel: 80, kind: "Skeleton" }
     ];
 
     const npcDiscs = [];
@@ -328,9 +368,14 @@ export default class GameController {
         /* scene: */ this.scene,
         /* discName: */ npc.name,
         /* type: */ "NPC",
+        /* kind: */ npc.kind,
         /* hitPoints: */ 2,
         /* skillLevel: */ npc.skillLevel,
         /* imagePath: */ "images/skeleton-nobg.png",
+        /* canDoReboundDamage: */ false,
+        /* throwPowerMultiplier: */ .7, // don't fucking change this value
+        /* mass: */ 0.7,
+        /* rageIsActiveForNextThrow: */ false
       );
 
       npcDiscs.push(disc);
@@ -465,7 +510,7 @@ export default class GameController {
         direction.normalize();
         direction.negate();
 
-        const maxLineLength = 8;
+        const maxLineLength = 10;
         const lineLength = Math.min(dragLength / 10, 1) * maxLineLength;
 
         const startPos = this.pointerDisc.mesh.position.clone();
@@ -603,10 +648,30 @@ export default class GameController {
         const directionX = direction.x;
         const directionZ = direction.z;
 
+        let actualThrowPowerMultiplier = this.pointerDisc.throwPowerMultiplier; // Start with the base multiplier
+
+        if (this.pointerDisc.rageIsActiveForNextThrow) {
+          console.log("RAGE MODE ACTIVE! Applying 5x power multiplier for this throw.");
+          actualThrowPowerMultiplier *= 5;
+          this.pointerDisc.rageIsActiveForNextThrow = false; // Consume Rage
+          this.pointerDisc.canDoReboundDamage = true; // Enable rebound damage for this throw
+          this.pointerDisc.rageWasUsedThisThrow = true; // Set flag for later reset
+          console.log(`RAGE: ${this.pointerDisc.discName} can now do rebound damage for this throw.`);
+          this.updateRageButtonVisibility(); // Update button state after Rage is consumed
+
+          // Optional: Reset Rage button state (e.g., re-enable, change text)
+          // const rageButton = document.getElementById('rage-button');
+          // if (rageButton) {
+          //   rageButton.disabled = false;
+          //   rageButton.textContent = "Rage!";
+          // }
+        }
+
         const maxSpeed = 1;
         const normLength = Math.min(adjustedLength / 10, 1);
         const scaledLength = normLength * normLength;
-        let speed = maxSpeed * scaledLength;
+        // Use the (potentially rage-boosted) actualThrowPowerMultiplier
+        let speed = (maxSpeed * scaledLength * actualThrowPowerMultiplier) / this.pointerDisc.mass;
         if (speed < minSpeed) speed = minSpeed;
 
         this.pointerDisc.velocity.set(
@@ -617,6 +682,7 @@ export default class GameController {
         this.pointerDisc.moving = true;
         this.pointerDisc.hasThrown = true;
         this.pointerDisc.resetDamageState();
+        this.playerDamagedNPCsThisThrow.clear(); // Clear the set for the new throw
         this.waitingForDiscToStop = true;
       }
     }
@@ -629,9 +695,9 @@ export default class GameController {
     this.camera.updateProjectionMatrix();
 
     if (this.level) {
-      this.level.rotation.x = -Math.PI / 2;
+      // this.level.rotation.x = -Math.PI / 2; // Problematic: Level instance doesn't have rotation
     }
-    this.createWalls();
+    // this.createWalls(); // Problematic: Level class does not have createWalls method, and walls shouldn't be recreated on resize
 
     this.discs.forEach((disc) => {
       disc.mesh.position.x = this.clamp(
@@ -657,6 +723,22 @@ export default class GameController {
 
   animate() {
     requestAnimationFrame(() => this.animate());
+    console.log("Animate function called..."); // Safari debug
+
+    // FPS calculation
+    this.fpsFrameCount++;
+    const now = performance.now();
+    const elapsedSinceLastUpdate = now - this.fpsLastUpdateTime;
+
+    if (elapsedSinceLastUpdate >= this.fpsUpdateInterval) {
+      console.log(`FPS Debug: Frames = ${this.fpsFrameCount}, Elapsed = ${elapsedSinceLastUpdate.toFixed(2)}ms, Raw FPS = ${(this.fpsFrameCount * 1000 / elapsedSinceLastUpdate).toFixed(2)}`);
+      const fps = Math.round((this.fpsFrameCount * 1000) / elapsedSinceLastUpdate);
+      if (this.fpsDisplayElement) {
+        this.fpsDisplayElement.textContent = `FPS: ${fps}`;
+      }
+      this.fpsFrameCount = 0;
+      this.fpsLastUpdateTime = now;
+    }
 
     if (this.controls) {
       this.controls.update();
@@ -756,7 +838,7 @@ export default class GameController {
           disc.handleCollisionWithBox(wall, 0.8);
         });
 
-        disc.applyFriction(0.98);
+        disc.applyFriction(0.96);
       }
     });
 
@@ -781,28 +863,61 @@ export default class GameController {
           const velocityAlongNormal = relativeVelocity.dot(normal);
 
           if (velocityAlongNormal <= 0) {
-            const restitution = 1;
-            const impulse = (-(1 + restitution) * velocityAlongNormal) / 2;
-            const impulseVector = normal.clone().multiplyScalar(impulse);
+            const restitution = 1; // Coefficient of restitution
+            // Calculate impulse magnitude considering individual masses
+            const impulseMagnitude = (-(1 + restitution) * velocityAlongNormal) / (1 / d1.mass + 1 / d2.mass);
 
-            d1.velocity.add(impulseVector);
-            d2.velocity.sub(impulseVector);
+            // Apply impulse to each disc according to its mass
+            // The 'normal' vector points from d2 towards d1
+            d1.velocity.add(normal.clone().multiplyScalar(impulseMagnitude / d1.mass));
+            d2.velocity.sub(normal.clone().multiplyScalar(impulseMagnitude / d2.mass));
 
             d1.moving = true;
             d2.moving = true;
 
-            // Apply damage rules: only first collision causes damage unless canDoReboundDamage is true
-            // NPCs don't damage other NPCs, and dead discs can't do damage
-            if (d1 === this.currentDisc && d2.hitPoints > 0 && !d1.dead && !(d1.type === "NPC" && d2.type === "NPC")) {
-              if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
-                d2.takeHit();
-                d1.hasCausedDamage = true;
-              }
-            } else if (d2 === this.currentDisc && d1.hitPoints > 0 && !d2.dead && !(d1.type === "NPC" && d2.type === "NPC")) {
-              if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
-                d1.takeHit();
-                d2.hasCausedDamage = true;
-              }
+            // Apply damage rules
+            if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead) { // Ensure both discs are alive and not dead
+                // Case 1: d1 is the current acting disc
+                if (d1 === this.currentDisc) {
+                    if (d1.type === "player" && d2.type === "NPC") {
+                        // Player (d1) hits NPC (d2) - Rage allows multiple hits on the same NPC
+                        if (d1.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
+                            d2.takeHit();
+                            // Only add to set if not raging (to allow multiple rage hits on the same NPC).
+                            // For non-rage hits, this preserves the "one damage instance per NPC per throw" rule.
+                            if (!d1.canDoReboundDamage) {
+                                this.playerDamagedNPCsThisThrow.add(d2.discName);
+                            }
+                        }
+                    } else if (!(d1.type === "NPC" && d2.type === "NPC")) {
+                        // Player-Player, or NPC-Player (where d1 is the actor)
+                        // Use original logic: only first collision causes damage unless canDoReboundDamage is true
+                        if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
+                            d2.takeHit();
+                            d1.hasCausedDamage = true;
+                        }
+                    }
+                }
+                // Case 2: d2 is the current acting disc
+                else if (d2 === this.currentDisc) {
+                    if (d2.type === "player" && d1.type === "NPC") {
+                        // Player (d2) hits NPC (d1) - Rage allows multiple hits on the same NPC
+                        if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
+                            d1.takeHit();
+                            // Only add to set if not raging.
+                            if (!d2.canDoReboundDamage) {
+                                this.playerDamagedNPCsThisThrow.add(d1.discName);
+                            }
+                        }
+                    } else if (!(d2.type === "NPC" && d1.type === "NPC")) {
+                        // Player-Player, or NPC-Player (where d2 is the actor)
+                        // Use original logic
+                        if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
+                            d1.takeHit();
+                            d2.hasCausedDamage = true;
+                        }
+                    }
+                }
             }
 
             const overlap = minDist - dist;
@@ -885,7 +1000,32 @@ export default class GameController {
     });
   }
 
+  updateRageButtonVisibility() {
+    const rageButton = document.getElementById('rage-button');
+    if (!rageButton) {
+      console.warn("Rage Button: Element with ID 'rage-button' not found for visibility update.");
+      return;
+    }
+
+    const playerDisc = this.discs.find(d => d.type === 'player'); // Assuming there's only one player disc
+
+    if (!playerDisc) {
+      console.warn("Rage Button: Player disc not found for visibility update.");
+      rageButton.style.display = 'none'; // Hide if no player disc
+      return;
+    }
+
+    // Hide if player is dead OR Rage is already armed for the next throw
+    if (playerDisc.dead || playerDisc.rageIsActiveForNextThrow) {
+      rageButton.style.display = 'none';
+    } else {
+      rageButton.style.display = 'block'; // Or 'inline-block' or '' depending on original style
+    }
+  }
+
   async advanceTurn() {
+    this.updateRageButtonVisibility(); // Update on turn change
+
     if (this.currentDisc) {
       // Handle both group and single mesh structures for emissive
       if (this.currentDisc.mesh.isGroup) {
@@ -1013,7 +1153,8 @@ export default class GameController {
     }
 
     // Set velocity for the throw
-    disc.velocity.set(bestDir.x * bestSpeed, 0, bestDir.z * bestSpeed);
+    const finalSpeed = (bestSpeed * disc.throwPowerMultiplier) / disc.mass;
+    disc.velocity.set(bestDir.x * finalSpeed, 0, bestDir.z * finalSpeed);
     disc.moving = true;
     disc.hasThrown = true;
     disc.resetDamageState();

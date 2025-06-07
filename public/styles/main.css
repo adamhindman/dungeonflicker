@@ -39,3 +39,23 @@
   padding-left: 0;
   margin: 0;
 }
+
+#powers-area {
+  position: fixed;    /* Position it relative to the viewport */
+  bottom: 0;          /* Stick it to the bottom */
+  left: 0;            /* Align to the left edge */
+  width: 100%;        /* Make it full width */
+  padding: 20px;      /* Add some space around the button */
+  display: flex;      /* Use flexbox for centering */
+  justify-content: center; /* Center the button horizontally */
+  align-items: center;    /* Center the button vertically (if the area had a defined height) */
+  z-index: 1000;      /* Ensure it's on top of other elements like the game canvas */
+  pointer-events: none; /* Make the area itself click-through */
+}
+
+#powers-area button {
+  pointer-events: auto; /* Allow the button to be clicked */
+  padding: 10px 20px;   /* Give the button some padding */
+  font-size: 16px;      /* Set a readable font size */
+  /* You can add other button styles here like background-color, color, border, border-radius */
+}

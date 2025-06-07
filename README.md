@@ -1,6 +1,6 @@
 # dungeonflicker
 
-*This entire game, including this README, was vibe coded with GPT-4.1.mini.*
+*This entire game, including this README, was vibe coded with Claude 4 Sonnet.*
 
 ## Introduction
 
