@@ -5,6 +5,29 @@ import Disc from "./Disc.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
 
+// Pre-converted hex color values for NPCs
+const NPC_HEX_COLORS = [
+  0xE6194B, // (230, 25, 75)
+  0x3CB44B, // (60, 180, 75)
+  0xFFE119, // (255, 225, 25)
+  0x0082C8, // (0, 130, 200)
+  0xF58230, // (245, 130, 48)
+  0x911EB4, // (145, 30, 180)
+  0xF032E6, // (240, 50, 230)
+  0xD2F53C, // (210, 245, 60)
+  0xFABECE, // (250, 190, 212)
+  0x008080, // (0, 128, 128)
+  0xDCBEFF, // (220, 190, 255)
+  0xAA6E28, // (170, 110, 40)
+  0xFFFAC8, // (255, 250, 200)
+  0x800000, // (128, 0, 0)
+  0xAAFFC3, // (170, 255, 195)
+  0x808000, // (128, 128, 0)
+  0xFFD7B4, // (255, 215, 180)
+  0x000080, // (0, 0, 128)
+  0x808080  // (128, 128, 128)
+];
+
 let instance = null;
 
 export default class GameController {
@@ -684,14 +707,24 @@ updateEndWizardTurnButtonVisibility() {
     ];
 
     // Generate random positions for NPC discs
-    const npcData = [
-      { name: "Bone Jovi", color: 0xff8800, skillLevel: 80, kind: "Skeleton" },
-      { name: "Count Scapula", color: 0x8800ff, skillLevel: 80, kind: "Skeleton" },
-      { name: "Bonaparte", color: 0x009933, skillLevel: 80, kind: "Skeleton" },
-      { name: "Patella Ice", color: 0xFF69B4, skillLevel: 80, kind: "Skeleton" },
-      { name: "Ribert De Niro", color: 0xff0000, skillLevel: 80, kind: "Skeleton" },
-      { name: "Ulna Thurman", color: 0xffff00, skillLevel: 80, kind: "Skeleton" }
+    // Base definitions for NPCs (name, skillLevel, kind, imagePath, hitPoints, mass, throwPowerMultiplier)
+    const baseNpcDefinitions = [
+      { name: "Skeleton 1", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      { name: "Skeleton 2", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      { name: "Skeleton 3", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      { name: "Skeleton 4", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      { name: "Skeleton 5", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      { name: "Skeleton 6", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      // Wardens
+      { name: "Warden 1", skillLevel: 85, kind: "Warden", imagePath: "images/warden-nobg.png", hitPoints: 5, mass: 2.5, throwPowerMultiplier: 0.4 },
+      { name: "Warden 2", skillLevel: 85, kind: "Warden", imagePath: "images/warden-nobg.png", hitPoints: 5, mass: 2.5, throwPowerMultiplier: 0.4 }
     ];
+
+    // Assign colors from NPC_HEX_COLORS to each NPC definition
+    const npcData = baseNpcDefinitions.map((def, index) => ({
+      ...def,
+      color: NPC_HEX_COLORS[index % NPC_HEX_COLORS.length] // Cycle through colors
+    }));
 
     const npcDiscs = [];
     // Skeletons (NPCs)
@@ -711,12 +744,12 @@ updateEndWizardTurnButtonVisibility() {
         /* discName: */ npc.name,
         /* type: */ "NPC",
         /* kind: */ npc.kind,
-        /* hitPoints: */ 2,
+        /* hitPoints: */ npc.hitPoints,
         /* skillLevel: */ npc.skillLevel,
-        /* imagePath: */ "images/skeleton-nobg.png",
+        /* imagePath: */ npc.imagePath,
         /* canDoReboundDamage: */ false,
-        /* throwPowerMultiplier: */ .5,
-        /* mass: */ .8,
+        /* throwPowerMultiplier: */ npc.throwPowerMultiplier,
+        /* mass: */ npc.mass,
         /* rageIsActiveForNextThrow: */ false,
         /* rageWasUsedThisThrow: */ false,
         /* gameController: */ this
