@@ -1,0 +1,33 @@
+#powers-area {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 10px;
+  background-color: rgba(0, 0, 0, 0.25); /* Semi-transparent background */
+  border-radius: 8px;
+  display: flex; /* Helps align items nicely if there are multiple buttons */
+  align-items: center; /* Vertically align items in the center */
+}
+
+/* Optional: Style for buttons within the powers-area for consistency */
+#powers-area button {
+  margin-left: 10px; /* Add some space between buttons */
+  padding: 8px 15px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  background-color: #555; /* Default button background */
+  color: white; /* Default button text color */
+}
+
+#powers-area button:hover {
+  background-color: #777; /* Darker on hover */
+}
+
+#powers-area button:first-child {
+  margin-left: 0; /* No left margin for the first button */
+}
+
+#end-turn-button {
+  margin-left: auto; /* Pushes this specific button to the far right in a flex container */
+}

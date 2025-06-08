@@ -53,7 +53,7 @@
 </head>
 <body>
     <h1>🧌 Dungeon Flicker - Texture Loading Test</h1>
-    
+
     <div class="browser-info">
         <strong>Browser:</strong> <span id="browser-info"></span><br>
         <strong>User Agent:</strong> <span id="user-agent"></span>
@@ -81,7 +81,7 @@
         const getBrowserInfo = () => {
             const ua = navigator.userAgent;
             let browserName = "Unknown";
-            
+
             if (ua.includes("Chrome") && !ua.includes("Edg")) {
                 browserName = "Chrome";
             } else if (ua.includes("Safari") && !ua.includes("Chrome")) {
@@ -91,7 +91,7 @@
             } else if (ua.includes("Edg")) {
                 browserName = "Edge";
             }
-            
+
             return browserName;
         };
 
@@ -110,7 +110,7 @@
         const basicImageTest = () => {
             const resultsDiv = document.getElementById('basic-test-results');
             const imagesDiv = document.getElementById('basic-images');
-            
+
             testImages.forEach((imagePath, index) => {
                 const resultDiv = document.createElement('div');
                 resultDiv.className = 'test-result pending';
@@ -128,7 +128,7 @@
                     resultDiv.textContent = `❌ ${imagePath} failed to load`;
                     console.error(`Failed to load ${imagePath}:`, error);
                 };
-                
+
                 // Test both relative and absolute paths
                 img.src = imagePath;
             });
@@ -137,18 +137,18 @@
         // 2. Three.js TextureLoader Test
         const threejsTest = async () => {
             const resultsDiv = document.getElementById('threejs-test-results');
-            
+
             try {
                 // Import Three.js
                 const THREE = await import('three');
-                
+
                 const resultDiv = document.createElement('div');
                 resultDiv.className = 'test-result success';
                 resultDiv.textContent = '✅ Three.js imported successfully';
                 resultsDiv.appendChild(resultDiv);
 
                 const textureLoader = new THREE.TextureLoader();
-                
+
                 testImages.forEach((imagePath) => {
                     const testDiv = document.createElement('div');
                     testDiv.className = 'test-result pending';
@@ -160,10 +160,9 @@
                         (texture) => {
                             testDiv.className = 'test-result success';
                             testDiv.textContent = `✅ ${imagePath} loaded with TextureLoader`;
-                            console.log(`Three.js loaded texture: ${imagePath}`, texture);
                         },
                         (progress) => {
-                            console.log(`Loading progress for ${imagePath}:`, progress);
+                            // No action needed for progress updates
                         },
                         (error) => {
                             testDiv.className = 'test-result error';
@@ -172,7 +171,7 @@
                         }
                     );
                 });
-                
+
             } catch (error) {
                 const errorDiv = document.createElement('div');
                 errorDiv.className = 'test-result error';
@@ -185,7 +184,7 @@
         // 3. Network Request Test
         const networkTest = () => {
             const resultsDiv = document.getElementById('network-test-results');
-            
+
             testImages.forEach(async (imagePath) => {
                 const testDiv = document.createElement('div');
                 testDiv.className = 'test-result pending';
@@ -211,19 +210,13 @@
         };
 
         // Run all tests
-        console.log('Starting texture loading tests...');
         basicImageTest();
         threejsTest();
         networkTest();
 
-        // Additional debugging
-        console.log('Current location:', window.location);
-        console.log('Base URL:', new URL('./', window.location));
-        
         // Test CORS headers
         fetch('images/tile-stone-1.png', { method: 'HEAD' })
             .then(response => {
-                console.log('CORS headers for tile-stone-1.png:');
                 for (let [key, value] of response.headers.entries()) {
                     if (key.toLowerCase().includes('cors') || key.toLowerCase().includes('access-control')) {
                         console.log(`${key}: ${value}`);

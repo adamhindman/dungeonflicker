@@ -52,6 +52,7 @@ export default class Disc {
    * @param {number} mass - The mass of the disc (default 1.0)
    * @param {boolean} rageIsActiveForNextThrow - Whether Rage mode is active for the next throw (default false)
    * @param {boolean} rageWasUsedThisThrow - Whether Rage was used for the current throw (default false)
+   * @param {GameController} gameController - Reference to the GameController instance
     */
    constructor(
      radius,
@@ -71,13 +72,16 @@ export default class Disc {
     mass = 1.0, // Default mass
     rageIsActiveForNextThrow = false,
     rageWasUsedThisThrow = false,
+    gameController = null,
   ) {
     this.radius = radius;
     this.height = height;
+    this.initialColor = color;
     this.discName = discName;
     this.type = type;
     this.kind = kind;
     this.hitPoints = hitPoints;
+    this.maxHitPoints = hitPoints; // Store initial HP as max HP
     this.skillLevel = skillLevel;
     this.scene = scene;
     this.canDoReboundDamage = canDoReboundDamage;
@@ -85,6 +89,8 @@ export default class Disc {
     this.mass = mass;
     this.rageIsActiveForNextThrow = rageIsActiveForNextThrow;
     this.rageWasUsedThisThrow = rageWasUsedThisThrow;
+    this.gameController = gameController;
+    this.relativeOffset = new THREE.Vector3(); // Used for orbs to follow the wizard
 
     // Create the main disc geometry
     const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);
@@ -265,6 +271,10 @@ export default class Disc {
         this.canDoReboundDamage = false;
         this.rageWasUsedThisThrow = false;
       }
+      // If this disc is an Orb, it's consumed (HP set to 0) when it stops moving
+      if (this.kind === 'Orb') {
+        this.hitPoints = 0;
+      }
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();
@@ -276,6 +286,19 @@ export default class Disc {
 
   // Reduce hit points by 1
   takeHit() {
+    // Orb defense logic for Wizard
+    if (this.kind === 'Wizard' && this.gameController) {
+      const absorbingOrb = this.gameController.wizardOrbs.find(orb => orb && orb.hitPoints > 0 && !orb.dead);
+      if (absorbingOrb) {
+        absorbingOrb.hitPoints = 0;
+        absorbingOrb.die(); // Visually mark as dead/consumed
+        this.gameController.removeOrb(absorbingOrb); // Remove from game lists and scene
+        // The Wizard does not take damage as the orb absorbed it.
+        return;
+      }
+    }
+
+    // Original damage taking logic if not absorbed by an orb
     const oldHP = this.hitPoints;
     this.hitPoints = Math.max(this.hitPoints - 1, 0);
   }

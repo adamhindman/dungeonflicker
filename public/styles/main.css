@@ -1,61 +1,137 @@
+:root {
+    --ui-bg-50: rgba(26, 46, 59, 0.5);
+    --ui-bg-75: rgba(26, 46, 59, 0.75);
+    --ui-bg-90: rgba(26, 46, 59, 0.9);
+    --ui-bg-100: rgb(26, 46, 59);
+    --skeleton-1-color: #ff0000;
+    --skeleton-2-color: #ffff00;
+    --skeleton-3-color: #ff8800;
+    --skeleton-4-color: #8800ff;
+    --barbarian-color: #0088ff;
+    --wizard-color: #00c0c0;
+}
+
+body {
+    font-family: Helvetica, Arial, sans-serif;
+    color: rgba(255, 255, 255, 0.9);
+}
+
 #throw-info {
-  position: fixed;
-  top: 10px;
-  left: 10px;
-  padding: 5px 10px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-  font-family: monospace;
-  font-size: 14px;
-  border-radius: 4px;
-  pointer-events: none;
-  user-select: none;
-  z-index: 1000;
-  visibility: hidden;
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    padding: 5px 10px;
+    background: rgba(0, 0, 0, 0.6);
+    font-family: monospace;
+    font-size: 14px;
+    border-radius: 4px;
+    pointer-events: none;
+    user-select: none;
+    z-index: 1000;
+    visibility: hidden;
+    display: none;
 }
 
 #disc-names {
-  position: fixed;
-  top: 10px;
-  right: 10px;
-  padding: 10px 15px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  font-family: Arial, sans-serif;
-  font-size: 16px;
-  border-radius: 5px;
-  max-width: 200px;
-  user-select: none;
-  z-index: 1000;
-}
-
-#disc-names h3 {
-  margin: 0 0 8px 0;
-  font-size: 18px;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 20px 20px;
+    background: var(--ui-bg-50);
+    background: rgba(26, 46, 59, 0.5);
+    font-size: 16px;
+    border-radius: 5px;
+    max-width: 300px;
+    user-select: none;
+    z-index: 1000;
 }
 
 #disc-names-list {
-  list-style: none;
-  padding-left: 0;
-  margin: 0;
+    list-style: none;
+    padding-left: 0;
+    margin: 0 0 8px;
+}
+
+/* Styles for turn tracker items */
+#disc-names-list .disc-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    border: 1px solid #444; /* Thin border for definition */
+}
+
+#disc-names-list .turn-tracker-item {
+    color: gray;
+    /* Example: add a bit of space between items if desired */
+    /* padding: 2px 0; */
+}
+
+#disc-names-list .turn-tracker-item.current-turn {
+    color: white;
+    font-weight: bold;
+}
+
+#disc-names-list .turn-tracker-item.dead-disc {
+  text-decoration: line-through;
+  color: #666; /* A darker, more faded gray for dead discs */
+}
+
+/* Ensure current turn styling overrides dead styling if a dead disc somehow becomes current (edge case) */
+#disc-names-list .turn-tracker-item.current-turn.dead-disc {
+  /* color: white; Retains .current-turn color */
+  /* font-weight: bold; Retains .current-turn font-weight */
+  /* text-decoration: line-through; Strikethrough is inherited from .dead-disc, or can be explicitly set if needed */
 }
 
 #powers-area {
-  position: fixed;    /* Position it relative to the viewport */
-  bottom: 0;          /* Stick it to the bottom */
-  left: 0;            /* Align to the left edge */
-  width: 100%;        /* Make it full width */
-  padding: 20px;      /* Add some space around the button */
-  display: flex;      /* Use flexbox for centering */
-  justify-content: center; /* Center the button horizontally */
-  align-items: center;    /* Center the button vertically (if the area had a defined height) */
-  z-index: 1000;      /* Ensure it's on top of other elements like the game canvas */
-  pointer-events: none; /* Make the area itself click-through */
+    position: fixed; /* Position it relative to the viewport */
+    bottom: 0; /* Stick it to the bottom */
+    left: 0; /* Align to the left edge */
+    width: 100%; /* Make it full width */
+    padding: 20px; /* Add some space around the button */
+    display: flex; /* Use flexbox for centering */
+    flex-direction: column;
+    gap: 10px;
+    justify-content: center; /* Center the button horizontally */
+    align-items: center; /* Center the button vertically (if the area had a defined height) */
+    z-index: 1000; /* Ensure it's on top of other elements like the game canvas */
+    pointer-events: none; /* Make the area itself click-through */
+    #barbarian-end-turn-button {
+        background-color: rgba(122, 32, 32, 0.9) !important;
+    }
+
+    #wizard-end-turn-button {
+        background-color: rgba(122, 32, 32, 0.9) !important;
+    }
+
+    #current-turn-disc-name-display {
+        margin: 0;
+        line-height: 1;
+        leading-trim: both;
+        text-edge: cap alphabetic;
+        text-align: center;
+        width: 100%;
+        font-weight: bold;
+        order: -1;
+    }
+    button {
+        pointer-events: auto;
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: var(--ui-bg-90);
+        border: none;
+        border-radius: 5px;
+        color: white;
+    }
+    #action-buttons-container{
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+    }
 }
 
-#powers-area button {
-  pointer-events: auto; /* Allow the button to be clicked */
-  padding: 10px 20px;   /* Give the button some padding */
-  font-size: 16px;      /* Set a readable font size */
-  /* You can add other button styles here like background-color, color, border, border-radius */
+.element-hidden {
+    display: none !important;
 }
