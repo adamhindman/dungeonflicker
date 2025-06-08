@@ -52,20 +52,18 @@ body {
     margin: 0 0 8px;
 }
 
-/* Styles for turn tracker items */
 #disc-names-list .disc-color-indicator {
     width: 12px;
     height: 12px;
     border-radius: 50%;
     display: inline-block;
     margin-right: 6px;
-    border: 1px solid #444; /* Thin border for definition */
+    border: 1px solid #444;
 }
 
 #disc-names-list .turn-tracker-item {
     color: gray;
-    /* Example: add a bit of space between items if desired */
-    /* padding: 2px 0; */
+
 }
 
 #disc-names-list .turn-tracker-item.current-turn {
@@ -75,29 +73,27 @@ body {
 
 #disc-names-list .turn-tracker-item.dead-disc {
   text-decoration: line-through;
-  color: #666; /* A darker, more faded gray for dead discs */
+  color: #666;
 }
 
-/* Ensure current turn styling overrides dead styling if a dead disc somehow becomes current (edge case) */
+
 #disc-names-list .turn-tracker-item.current-turn.dead-disc {
-  /* color: white; Retains .current-turn color */
-  /* font-weight: bold; Retains .current-turn font-weight */
-  /* text-decoration: line-through; Strikethrough is inherited from .dead-disc, or can be explicitly set if needed */
+
 }
 
 #powers-area {
-    position: fixed; /* Position it relative to the viewport */
-    bottom: 0; /* Stick it to the bottom */
-    left: 0; /* Align to the left edge */
-    width: 100%; /* Make it full width */
-    padding: 20px; /* Add some space around the button */
-    display: flex; /* Use flexbox for centering */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 20px;
+    display: flex;
     flex-direction: column;
     gap: 10px;
-    justify-content: center; /* Center the button horizontally */
-    align-items: center; /* Center the button vertically (if the area had a defined height) */
-    z-index: 1000; /* Ensure it's on top of other elements like the game canvas */
-    pointer-events: none; /* Make the area itself click-through */
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    pointer-events: none;
     #barbarian-end-turn-button {
         background-color: rgba(122, 32, 32, 0.9) !important;
     }

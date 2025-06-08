@@ -685,10 +685,12 @@ updateEndWizardTurnButtonVisibility() {
 
     // Generate random positions for NPC discs
     const npcData = [
-      { name: "Skeleton 1", color: 0xff0000, skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 2", color: 0xffff00, skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 3", color: 0xff8800, skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 4", color: 0x8800ff, skillLevel: 80, kind: "Skeleton" }
+      { name: "Bone Jovi", color: 0xff8800, skillLevel: 80, kind: "Skeleton" },
+      { name: "Count Scapula", color: 0x8800ff, skillLevel: 80, kind: "Skeleton" },
+      { name: "Bonaparte", color: 0x009933, skillLevel: 80, kind: "Skeleton" },
+      { name: "Patella Ice", color: 0xFF69B4, skillLevel: 80, kind: "Skeleton" },
+      { name: "Ribert De Niro", color: 0xff0000, skillLevel: 80, kind: "Skeleton" },
+      { name: "Ulna Thurman", color: 0xffff00, skillLevel: 80, kind: "Skeleton" }
     ];
 
     const npcDiscs = [];

@@ -1,33 +1,137 @@
+:root {
+    --ui-bg-50: rgba(26, 46, 59, 0.5);
+    --ui-bg-75: rgba(26, 46, 59, 0.75);
+    --ui-bg-90: rgba(26, 46, 59, 0.9);
+    --ui-bg-100: rgb(26, 46, 59);
+    --skeleton-1-color: #ff0000;
+    --skeleton-2-color: #ffff00;
+    --skeleton-3-color: #ff8800;
+    --skeleton-4-color: #8800ff;
+    --barbarian-color: #0088ff;
+    --wizard-color: #00c0c0;
+}
+
+body {
+    font-family: Helvetica, Arial, sans-serif;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+#throw-info {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    padding: 5px 10px;
+    background: rgba(0, 0, 0, 0.6);
+    font-family: monospace;
+    font-size: 14px;
+    border-radius: 4px;
+    pointer-events: none;
+    user-select: none;
+    z-index: 1000;
+    visibility: hidden;
+    display: none;
+}
+
+#disc-names {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 20px 20px;
+    background: var(--ui-bg-50);
+    background: rgba(26, 46, 59, 0.5);
+    font-size: 16px;
+    border-radius: 5px;
+    max-width: 300px;
+    user-select: none;
+    z-index: 1000;
+}
+
+#disc-names-list {
+    list-style: none;
+    padding-left: 0;
+    margin: 0 0 8px;
+}
+
+#disc-names-list .disc-color-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 6px;
+    border: 1px solid #444;
+}
+
+#disc-names-list .turn-tracker-item {
+    color: gray;
+
+}
+
+#disc-names-list .turn-tracker-item.current-turn {
+    color: white;
+    font-weight: bold;
+}
+
+#disc-names-list .turn-tracker-item.dead-disc {
+  text-decoration: line-through;
+  color: #666;
+}
+
+
+#disc-names-list .turn-tracker-item.current-turn.dead-disc {
+
+}
+
 #powers-area {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  padding: 10px;
-  background-color: rgba(0, 0, 0, 0.25); /* Semi-transparent background */
-  border-radius: 8px;
-  display: flex; /* Helps align items nicely if there are multiple buttons */
-  align-items: center; /* Vertically align items in the center */
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    pointer-events: none;
+    #barbarian-end-turn-button {
+        background-color: rgba(122, 32, 32, 0.9) !important;
+    }
+
+    #wizard-end-turn-button {
+        background-color: rgba(122, 32, 32, 0.9) !important;
+    }
+
+    #current-turn-disc-name-display {
+        margin: 0;
+        line-height: 1;
+        leading-trim: both;
+        text-edge: cap alphabetic;
+        text-align: center;
+        width: 100%;
+        font-weight: bold;
+        order: -1;
+    }
+    button {
+        pointer-events: auto;
+        padding: 10px 20px;
+        font-size: 16px;
+        background-color: var(--ui-bg-90);
+        border: none;
+        border-radius: 5px;
+        color: white;
+    }
+    #action-buttons-container{
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+    }
+    .hearts-container{
+        margin-left: 10px;
+        background-color: red !important;
+    }
 }
 
-/* Optional: Style for buttons within the powers-area for consistency */
-#powers-area button {
-  margin-left: 10px; /* Add some space between buttons */
-  padding: 8px 15px;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  background-color: #555; /* Default button background */
-  color: white; /* Default button text color */
-}
-
-#powers-area button:hover {
-  background-color: #777; /* Darker on hover */
-}
-
-#powers-area button:first-child {
-  margin-left: 0; /* No left margin for the first button */
-}
-
-#end-turn-button {
-  margin-left: auto; /* Pushes this specific button to the far right in a flex container */
+.element-hidden {
+    display: none !important;
 }

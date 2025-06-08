@@ -146,7 +146,7 @@ export default class UIManager {
             // Create and style the color circle
             const colorCircle = document.createElement("span");
             colorCircle.classList.add('disc-color-indicator');
-            
+
             // Convert the hex number color to a CSS hex string with fallback
             let colorString = '#808080'; // Default to gray if color is invalid
             if (typeof disc.initialColor === 'number' && isFinite(disc.initialColor)) {
@@ -200,7 +200,20 @@ export default class UIManager {
                     const redHearts = '❤️'.repeat(currentHP);
                     const grayHearts = '🩶'.repeat(lostHP);
 
-                    this.currentTurnDiscNameElement.textContent = `${currentDisc.discName} ${redHearts}${grayHearts}`.trim();
+                    // Clear existing content
+                    this.currentTurnDiscNameElement.innerHTML = '';
+
+                    // Add disc name
+                    const nameNode = document.createTextNode(currentDisc.discName + ' ');
+                    this.currentTurnDiscNameElement.appendChild(nameNode);
+
+                    // Create a div for hearts
+                    const heartsDiv = document.createElement('div');
+                    heartsDiv.classList.add('hearts-container'); // Add class for styling
+                    heartsDiv.style.display = 'inline-block'; // Keep hearts on the same line as name
+                    heartsDiv.textContent = redHearts + grayHearts;
+                    this.currentTurnDiscNameElement.appendChild(heartsDiv);
+
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
                 } else {
                     // Fallback if maxHitPoints or hitPoints is not available or not a number
