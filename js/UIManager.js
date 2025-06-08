@@ -138,10 +138,15 @@ export default class UIManager {
 
         const currentDiscName = currentDisc ? currentDisc.discName : null;
 
-        discs.forEach(disc => {
+        // Filter discs
+        const playerDiscs = discs.filter(d => d.type === 'player' && d.kind !== 'Orb');
+        const npcDiscs = discs.filter(d => d.type === 'NPC');
 
+        // Helper function to create a disc list item
+        const createDiscListItem = (disc) => {
             const listItem = document.createElement("li");
-            let displayName = `${disc.discName} (HP: ${disc.hitPoints})`;
+            const hpDisplay = (typeof disc.hitPoints === 'number') ? disc.hitPoints : 'N/A';
+            let displayName = `${disc.discName} (${hpDisplay} HP)`;
 
             // Create and style the color circle
             const colorCircle = document.createElement("span");
@@ -155,15 +160,17 @@ export default class UIManager {
                     const colorValue = disc.initialColor >= 0 ? disc.initialColor : 0;
                     colorString = '#' + colorValue.toString(16).padStart(6, '0');
                 } catch (e) {
-
                     // colorString remains default gray
                 }
             } else {
-                const discIdentifier = disc && disc.discName ? disc.discName : (disc && disc.kind ? disc.kind : 'Unknown Disc');
+                // const discIdentifier = disc && disc.discName ? disc.discName : (disc && disc.kind ? disc.kind : 'Unknown Disc');
             }
 
             // Set dynamic background color
             colorCircle.style.backgroundColor = colorString;
+            if (disc.dead) {
+                colorCircle.style.backgroundColor = '#808080'; // Set to gray if dead
+            }
             // Other styles for disc-color-indicator are in main.css
 
             listItem.appendChild(colorCircle); // Add the circle to the list item
@@ -181,8 +188,32 @@ export default class UIManager {
                 listItem.classList.add('current-turn');
             }
             // Base styles and current-turn styles are in main.css
-            this.discNamesList.appendChild(listItem);
-        });
+            return listItem;
+        };
+
+        // Helper function to create a header
+        const createHeaderListItem = (text) => {
+            const headerItem = document.createElement("li");
+            headerItem.textContent = text;
+            headerItem.classList.add('tracker-section-header');
+            return headerItem;
+        };
+
+        // Add Players section
+        if (playerDiscs.length > 0) {
+            this.discNamesList.appendChild(createHeaderListItem("Players"));
+            playerDiscs.forEach(disc => {
+                this.discNamesList.appendChild(createDiscListItem(disc));
+            });
+        }
+
+        // Add Monsters section
+        if (npcDiscs.length > 0) {
+            this.discNamesList.appendChild(createHeaderListItem("Monsters"));
+            npcDiscs.forEach(disc => {
+                this.discNamesList.appendChild(createDiscListItem(disc));
+            });
+        }
     }
 
     getActionButtonsContainer() {

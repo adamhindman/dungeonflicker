@@ -49,7 +49,7 @@ body {
 #disc-names-list {
     list-style: none;
     padding-left: 0;
-    margin: 0 0 8px;
+    margin: 0;
 }
 
 #disc-names-list .disc-color-indicator {
@@ -80,6 +80,7 @@ body {
 #disc-names-list .turn-tracker-item.current-turn.dead-disc {
 
 }
+
 
 #powers-area {
     position: fixed;
@@ -126,8 +127,18 @@ body {
         flex-direction: row;
         gap: 10px;
     }
+    .hearts-container{
+        margin-left: 10px;
+    }
 }
 
 .element-hidden {
     display: none !important;
+}
+
+.tracker-section-header {
+  margin: 8px 0;
+  &:first-of-type{
+      margin-top: 0;
+  }
 }
