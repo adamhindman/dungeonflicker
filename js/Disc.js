@@ -52,7 +52,9 @@ export default class Disc {
    * @param {number} mass - The mass of the disc (default 1.0)
    * @param {boolean} rageIsActiveForNextThrow - Whether Rage mode is active for the next throw (default false)
    * @param {boolean} rageWasUsedThisThrow - Whether Rage was used for the current throw (default false)
+   * @param {number} attackDamage - The amount of damage this disc deals on hit (default 1)
    * @param {GameController} gameController - Reference to the GameController instance
+   * @param {string} description - A short description of the disc
     */
    constructor(
      radius,
@@ -72,7 +74,9 @@ export default class Disc {
     mass = 1.0, // Default mass
     rageIsActiveForNextThrow = false,
     rageWasUsedThisThrow = false,
+    attackDamage = 1, // Default attack damage
     gameController = null,
+    description = "A mysterious combatant.", // Default description
   ) {
     this.radius = radius;
     this.height = height;
@@ -89,7 +93,9 @@ export default class Disc {
     this.mass = mass;
     this.rageIsActiveForNextThrow = rageIsActiveForNextThrow;
     this.rageWasUsedThisThrow = rageWasUsedThisThrow;
+    this.attackDamage = attackDamage;
     this.gameController = gameController;
+    this.description = description;
     this.relativeOffset = new THREE.Vector3(); // Used for orbs to follow the wizard
 
     // Create the main disc geometry
@@ -284,8 +290,8 @@ export default class Disc {
     }
   }
 
-  // Reduce hit points by 1
-  takeHit() {
+  // Reduce hit points by the specified damage amount
+  takeHit(damageAmount = 1) {
     // Orb defense logic for Wizard
     if (this.kind === 'Wizard' && this.gameController) {
       const absorbingOrb = this.gameController.wizardOrbs.find(orb => orb && orb.hitPoints > 0 && !orb.dead);
@@ -300,28 +306,34 @@ export default class Disc {
 
     // Original damage taking logic if not absorbed by an orb
     const oldHP = this.hitPoints;
-    this.hitPoints = Math.max(this.hitPoints - 1, 0);
+    this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
   }
 
-  // Handle disc death: disable further throws, set semi-transparent
+  // Handle disc death: disable further throws, make disc gray and opaque
   die() {
     if (this.dead) {
       return;
     }
     this.dead = true;
-    // Make the disc semi-transparent
+    // Make the disc gray and opaque
     if (this.mesh.isGroup) {
       // Handle group structure (disc with texture)
       this.mesh.children.forEach(child => {
         if (child.material) {
-          child.material.opacity = 0.4;
-          child.material.transparent = true;
+          if (child.material.color) { // Check if color property exists
+            child.material.color.set(0x888888); // Set color to gray
+          }
+          child.material.opacity = 0.9;    // Set opacity to match alive discs but with gray color
+          child.material.transparent = false; // Set transparent to false
         }
       });
     } else {
       // Handle single mesh structure
-      this.mesh.material.opacity = 0.4;
-      this.mesh.material.transparent = true;
+      if (this.mesh.material.color) { // Check if color property exists
+        this.mesh.material.color.set(0x888888); // Set color to gray
+      }
+      this.mesh.material.opacity = 0.9;    // Set opacity
+      this.mesh.material.transparent = false; // Set transparent to false
     }
     // Update spotlight to dead configuration when disc dies
     this.updateSpotlightConfig('dead');

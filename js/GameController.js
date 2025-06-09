@@ -4,6 +4,8 @@ import Level from "./Level.js";
 import Disc from "./Disc.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
+import Skeleton from './Skeleton.js';
+import Warden from './Warden.js';
 
 // Pre-converted hex color values for NPCs
 const NPC_HEX_COLORS = [
@@ -95,6 +97,13 @@ export default class GameController {
     this.wizardHasMovedThisTurn = false; // Track if Wizard has moved in the current turn
     this.wizardHasSummonedOrbsThisGame = false; // Track if orbs have been summoned this game
 
+    // Disc Info Popup
+    this.discInfoPopupElement = null;
+    this.discInfoNameElement = null;
+    this.discInfoHpElement = null;
+    this.discInfoDescriptionElement = null;
+    this.discInfoPopupSelectedDisc = null;
+
     // Panning controls state
     this.panningKeys = {
       up: false,
@@ -103,6 +112,14 @@ export default class GameController {
       right: false
     };
     this.panSpeed = 0.5;
+
+    this.discDescriptions = {
+        Barbarian: "A fierce warrior who grows stronger with every foe vanquished.",
+        Wizard: "A master of the mystical orb, wielding arcane arts to control the battlefield.",
+        Skeleton: "A reanimated combatant, relentless and tireless.",
+        Warden: "A heavily armored sentinel, slow but incredibly resilient.",
+        Orb: "A volatile sphere of magical energy, summoned by the Wizard."
+    };
 
     // Event listeners for keydown, keyup, pointerdown, pointermove, pointerup
     // will be managed by InputHandler.
@@ -136,6 +153,7 @@ export default class GameController {
     this._currentDisc = value;
     if (this.uiManager) {
       this.uiManager.updateCurrentTurnDiscName(this._currentDisc);
+      this.uiManager.updateDiscNames(this.discs, this._currentDisc); // Update the disc list (turn order)
     }
   }
 
@@ -173,6 +191,9 @@ export default class GameController {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.set(0, 0, 0);
     this.controls.update();
+    // Set min and max zoom distances
+    this.controls.minDistance = 6;
+    this.controls.maxDistance = 45;
     // Prevent camera from going below ~15 degrees from horizontal
     this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
 
@@ -198,12 +219,6 @@ export default class GameController {
       console.error("GameController: Action buttons container not found from UIManager.");
       // Depending on how critical this is, you might want to return or throw an error
     }
-    // Instantiate InputHandler
-    this.inputHandler = new InputHandler(this.renderer.domElement, this, this.uiManager);
-
-    // UI elements (throwInfoDiv, fpsDisplayElement, GameOverUI) are now managed by UIManager
-    // Event listeners (pointerdown, pointermove, pointerup, keydown, keyup) are now managed by InputHandler
-
     // Initialize throw direction line helper for drag aim visualization
     const material = new THREE.LineBasicMaterial({
       color: 0xffffff,
@@ -216,6 +231,22 @@ export default class GameController {
     this.throwDirectionLine = new THREE.Line(geometry, material);
     this.throwDirectionLine.visible = false;
     this.scene.add(this.throwDirectionLine);
+
+    // Instantiate InputHandler
+    this.inputHandler = new InputHandler(this.renderer.domElement, this, this.uiManager);
+
+    // Disc Info Popup Elements
+    this.discInfoPopupElement = document.getElementById('disc-info-popup');
+    if (this.discInfoPopupElement) {
+        this.discInfoNameElement = this.discInfoPopupElement.querySelector('.name');
+        this.discInfoHpElement = this.discInfoPopupElement.querySelector('.hp');
+        this.discInfoDescriptionElement = this.discInfoPopupElement.querySelector('.description');
+    } else {
+        console.error("Disc info popup element not found in DOM.");
+    }
+
+    // UI elements (throwInfoDiv, fpsDisplayElement, GameOverUI) are now managed by UIManager
+    // Event listeners (pointerdown, pointermove, pointerup, keydown, keyup) are now managed by InputHandler
 
     // Initialize discs for gameplay
     this.initDiscs();
@@ -240,6 +271,7 @@ export default class GameController {
     this.updateBarbarianEndTurnButtonVisibility(); // Initial visibility for Barbarian button
 
     // Setup input handling
+    this.updateDiscNames(); // Explicitly update the disc list after all initialization
   }
 
   createSummonOrbsButton() {
@@ -395,6 +427,9 @@ updateEndWizardTurnButtonVisibility() {
   }
 
   _handleSummonOrbsButtonClick() {
+    console.log("[DEBUG] _handleSummonOrbsButtonClick called.");
+    console.log("[DEBUG] this.wizardHasSummonedOrbsThisGame:", this.wizardHasSummonedOrbsThisGame);
+
     if (this.wizardHasSummonedOrbsThisGame) {
       this.updateSummonOrbsButtonVisibility(); // Ensure button is hidden
       return;
@@ -402,11 +437,15 @@ updateEndWizardTurnButtonVisibility() {
 
     // Ensure it's the Wizard's actual turn by checking against discForTurnContext
     const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    console.log("[DEBUG] discForTurnContext:", discForTurnContext ? { name: discForTurnContext.discName, kind: discForTurnContext.kind, dead: discForTurnContext.dead } : null);
 
     if (discForTurnContext && discForTurnContext.kind === 'Wizard' && !discForTurnContext.dead) {
+      console.log("[DEBUG] Conditions met, calling this.summonOrbs().");
       this.summonOrbs(discForTurnContext); // Pass the Wizard whose turn it is
     } else if (discForTurnContext) {
+      console.log("[DEBUG] Conditions NOT met for summonOrbs. discForTurnContext kind or dead status: ", discForTurnContext.kind, discForTurnContext.dead);
     } else {
+      console.log("[DEBUG] Conditions NOT met for summonOrbs. No discForTurnContext.");
     }
     // summonOrbs will call updateSummonOrbsButtonVisibility.
     // If the conditions above weren't met, or if summonOrbs bails early,
@@ -415,6 +454,9 @@ updateEndWizardTurnButtonVisibility() {
   }
 
   summonOrbs(wizardDisc) {
+    console.log("[DEBUG] summonOrbs called with wizardDisc:", wizardDisc ? { name: wizardDisc.discName, kind: wizardDisc.kind, dead: wizardDisc.dead } : null);
+    console.log("[DEBUG] summonOrbs: this.wizardHasSummonedOrbsThisGame:", this.wizardHasSummonedOrbsThisGame);
+
     if (this.wizardHasSummonedOrbsThisGame) {
       console.info("SummonOrbs: Orbs have already been summoned this game.");
       this.updateSummonOrbsButtonVisibility();
@@ -422,13 +464,14 @@ updateEndWizardTurnButtonVisibility() {
     }
 
     if (!wizardDisc || wizardDisc.kind !== 'Wizard' || wizardDisc.dead) {
-      console.error("SummonOrbs: Cannot summon orbs. Invalid wizard disc.");
+      console.error("SummonOrbs: Cannot summon orbs. Invalid wizard disc.", wizardDisc ? { kind: wizardDisc.kind, dead: wizardDisc.dead } : "null wizardDisc");
       return;
     }
 
     // Check if there are any active orbs already. This check is secondary to wizardHasSummonedOrbsThisGame
     // but good for internal consistency if called directly.
     const activeOrbsExist = this.wizardOrbs.some(orb => orb && orb.hitPoints > 0 && !orb.dead);
+    console.log("[DEBUG] summonOrbs: activeOrbsExist:", activeOrbsExist);
     if (activeOrbsExist) {
       console.info("SummonOrbs: Active orbs already exist.");
       this.updateSummonOrbsButtonVisibility(); // Ensure button state is correct
@@ -459,7 +502,7 @@ updateEndWizardTurnButtonVisibility() {
       // Moved and changed: const discName generation now inside the if block
 
       if (this.isPositionValid(orbX, orbZ, orbRadius)) {
-        const discName = `WizardOrb${this.discs.length + 1}`; // Corrected naming
+        const discName = `Wizard's Orb`; // AI AGENT: DON'T CHANGE THIS
         const orb = new Disc(
           orbRadius,
           orbHeight,
@@ -478,7 +521,9 @@ updateEndWizardTurnButtonVisibility() {
           orbMass,
           false, // rageIsActiveForNextThrow
           /* rageWasUsedThisThrow: */ false,
-          /* gameController: */ this
+          /* attackDamage: */ 1,
+          /* gameController: */ this,
+          /* description: */ this.discDescriptions.Orb
         );
         orb.uniqueOrbId = `orb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
@@ -675,7 +720,9 @@ updateEndWizardTurnButtonVisibility() {
       /* mass: */ 1.5,
       /* rageIsActiveForNextThrow: */ false,
       /* rageWasUsedThisThrow: */ false,
-      /* gameController: */ this
+      /* attackDamage: */ 1,
+      /* gameController: */ this,
+      /* description: */ this.discDescriptions.Barbarian
     );
 
     // Wizard
@@ -698,7 +745,9 @@ updateEndWizardTurnButtonVisibility() {
       /* mass: */ .8,
       /* rageIsActiveForNextThrow: */ false,
       /* rageWasUsedThisThrow: */ false,
-      /* gameController: */ this
+      /* attackDamage: */ 1,
+      /* gameController: */ this,
+      /* description: */ this.discDescriptions.Wizard
     );
 
     const existingPositions = [
@@ -707,17 +756,17 @@ updateEndWizardTurnButtonVisibility() {
     ];
 
     // Generate random positions for NPC discs
-    // Base definitions for NPCs (name, skillLevel, kind, imagePath, hitPoints, mass, throwPowerMultiplier)
+    // Base definitions for NPCs (name, skillLevel, kind)
     const baseNpcDefinitions = [
-      { name: "Skeleton 1", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
-      { name: "Skeleton 2", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
-      { name: "Skeleton 3", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
-      { name: "Skeleton 4", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
-      { name: "Skeleton 5", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
-      { name: "Skeleton 6", skillLevel: 80, kind: "Skeleton", imagePath: "images/skeleton-nobg.png", hitPoints: 2, mass: 0.8, throwPowerMultiplier: 0.5 },
+      { name: "Skeleton 1", skillLevel: 80, kind: "Skeleton" },
+      { name: "Skeleton 2", skillLevel: 80, kind: "Skeleton" },
+      { name: "Skeleton 3", skillLevel: 80, kind: "Skeleton" },
+      { name: "Skeleton 4", skillLevel: 80, kind: "Skeleton" },
+      { name: "Skeleton 5", skillLevel: 80, kind: "Skeleton" },
+      { name: "Skeleton 6", skillLevel: 80, kind: "Skeleton" },
       // Wardens
-      { name: "Warden 1", skillLevel: 85, kind: "Warden", imagePath: "images/warden-nobg.png", hitPoints: 5, mass: 2.5, throwPowerMultiplier: 0.4 },
-      { name: "Warden 2", skillLevel: 85, kind: "Warden", imagePath: "images/warden-nobg.png", hitPoints: 5, mass: 2.5, throwPowerMultiplier: 0.4 }
+      { name: "Warden 1", skillLevel: 85, kind: "Warden" },
+      { name: "Warden 2", skillLevel: 85, kind: "Warden" }
     ];
 
     // Assign colors from NPC_HEX_COLORS to each NPC definition
@@ -734,28 +783,29 @@ updateEndWizardTurnButtonVisibility() {
       const finalX = position ? position.x : (Math.random() - 0.5) * this.level.fieldWidth * 0.7;
       const finalZ = position ? position.z : (Math.random() - 0.5) * this.level.fieldDepth * 0.7;
 
-      const disc = new Disc(
-        /* radius: */ 1.0, // don't change this
-        /* height: */ 0.4,
-        /* color: */ npc.color,
-        /* startX: */ finalX,
-        /* startZ: */ finalZ,
-        /* scene: */ this.scene,
-        /* discName: */ npc.name,
-        /* type: */ "NPC",
-        /* kind: */ npc.kind,
-        /* hitPoints: */ npc.hitPoints,
-        /* skillLevel: */ npc.skillLevel,
-        /* imagePath: */ npc.imagePath,
-        /* canDoReboundDamage: */ false,
-        /* throwPowerMultiplier: */ npc.throwPowerMultiplier,
-        /* mass: */ npc.mass,
-        /* rageIsActiveForNextThrow: */ false,
-        /* rageWasUsedThisThrow: */ false,
-        /* gameController: */ this
-        );
+      let disc;
+      // Common arguments for NPC constructors:
+      // scene, startX, startZ, discName, skillLevel, gameController, color
+      const commonArgs = [
+        this.scene,
+        finalX,
+        finalZ,
+        npc.name,
+        npc.skillLevel,
+        this, // gameController reference
+        npc.color
+      ];
 
-      npcDiscs.push(disc);
+      if (npc.kind === "Skeleton") {
+        disc = new Skeleton(...commonArgs, this.discDescriptions.Skeleton);
+      } else if (npc.kind === "Warden") {
+        disc = new Warden(...commonArgs, this.discDescriptions.Warden);
+      }
+      // Future: Add else if for other NPC kinds here
+
+      if (disc) { // Check if disc was successfully created
+        npcDiscs.push(disc);
+      }
       existingPositions.push({ x: finalX, z: finalZ });
     }
 
@@ -994,8 +1044,54 @@ updateEndWizardTurnButtonVisibility() {
     }
     // this.isPointerDown checks and setting are now handled by InputHandler
 
+    const deltaX = event.clientX - initialPointerDownPos.x;
+    const deltaY = event.clientY - initialPointerDownPos.y;
+    const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    const clickThreshold = 5; // Pixels to differentiate a click from a drag
+
+    const clickedDisc = this.pointerDisc; // Disc under cursor at pointerdown, set in handlePointerDownInteraction
+
+    if (dragLength <= clickThreshold) { // It's a click/tap
+      if (clickedDisc) {
+        // Clicked on a disc
+        if (this.discInfoPopupSelectedDisc === clickedDisc) {
+          this._hideDiscInfoPopup();
+        } else {
+          this._showDiscInfoPopup(clickedDisc);
+        }
+        // Common cleanup for click interaction on a disc
+        if (this.uiManager) this.uiManager.updateThrowInfo("", false);
+        if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
+        this.controls.enabled = true; // Ensure OrbitControls are re-enabled
+        this.controlsEnabled = true; // Reset our custom state flag (camera controls active)
+
+        // If an aiming process was started for this.currentDisc (which might be clickedDisc or another disc like Wizard aiming an Orb)
+        // we should nullify currentDisc to prevent throw, as this click overrides the throw.
+        this.currentDisc = null;
+        // this.pointerDisc is the disc that was clicked. We've handled it.
+        // It will be reset on the next pointer down.
+        return; // Click handled, do not proceed to throw logic
+      } else {
+        // Clicked on empty space (not on a disc)
+        if (this.discInfoPopupSelectedDisc && this.discInfoPopupElement) {
+            let targetElement = event.target;
+            let isClickInsidePopup = false;
+            while (targetElement != null) {
+                if (targetElement === this.discInfoPopupElement) {
+                    isClickInsidePopup = true;
+                    break;
+                }
+                targetElement = targetElement.parentElement;
+            }
+            if (!isClickInsidePopup) {
+                 this._hideDiscInfoPopup();
+            }
+        }
+      }
+    }
+
     // Standard cleanup for pointer up (hide line, clear throw info)
-    // This happens whether or not a throw is processed.
+    // This happens whether or not a throw is processed, or if it's a drag.
     if (this.uiManager) {
       this.uiManager.updateThrowInfo("", false);
     }
@@ -1367,6 +1463,21 @@ clamp(value, min, max) {
       this.controls.update();
     }
 
+    // Clamp camera target to field bounds + margin
+    if (this.level && this.controls) {
+      const target = this.controls.target;
+      const halfFieldWidth = this.level.fieldWidth / 2;
+      const halfFieldDepth = this.level.fieldDepth / 2;
+      const panMargin = -5; // The allowed panning margin
+
+      // Clamp the target's x coordinate
+      target.x = THREE.MathUtils.clamp(target.x, -halfFieldWidth - panMargin, halfFieldWidth + panMargin);
+      // Clamp the target's z coordinate
+      target.z = THREE.MathUtils.clamp(target.z, -halfFieldDepth - panMargin, halfFieldDepth + panMargin);
+      // The OrbitControls.update() at the beginning of the next animate() call
+      // will use this clamped target to reposition the camera.
+    }
+
     if (this.currentDisc) {
       // Reset current disc scale and position.y
       this.currentDisc.mesh.scale.set(1, 1, 1);
@@ -1382,14 +1493,14 @@ clamp(value, min, max) {
             disc.mesh.children.forEach(child => {
               if (child.material) {
                 if (child.material.color) child.material.color.set(0x888888);
-                child.material.opacity = 0.4;
-                child.material.transparent = true;
+                child.material.opacity = 0.9;
+                child.material.transparent = false;
               }
             });
           } else {
             disc.mesh.material.color.set(0x888888);
-            disc.mesh.material.opacity = 0.4;
-            disc.mesh.material.transparent = true;
+            disc.mesh.material.opacity = 0.9;
+            disc.mesh.material.transparent = false;
           }
         } else {
           // Handle both group and single mesh structures
@@ -1512,7 +1623,11 @@ clamp(value, min, max) {
                     if (d1.type === "player" && d2.type === "NPC") {
                         // Player (d1) hits NPC (d2) - Rage allows multiple hits on the same NPC
                         if (d1.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
-                            d2.takeHit();
+                            let damageToDeal = d1.attackDamage;
+                            if (d1.kind === 'Barbarian' && d1.rageWasUsedThisThrow) {
+                                damageToDeal = 2;
+                            }
+                            d2.takeHit(damageToDeal);
                             // Check if NPC d2 was killed by this hit and grant Rage charge
                             if (d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
                                 if (d1.kind === 'Barbarian') { // Check if the killer (d1) is Barbarian
@@ -1533,7 +1648,11 @@ clamp(value, min, max) {
                         // Player-Player, or NPC-Player (where d1 is the actor)
                         // Use original logic: only first collision causes damage unless canDoReboundDamage is true
                         if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
-                            d2.takeHit();
+                            let damageToDeal = d1.attackDamage;
+                            if (d1.kind === 'Barbarian' && d1.rageWasUsedThisThrow) {
+                                damageToDeal = 2;
+                            }
+                            d2.takeHit(damageToDeal);
                             d1.hasCausedDamage = true;
                         }
                     }
@@ -1543,7 +1662,11 @@ clamp(value, min, max) {
                     if (d2.type === "player" && d1.type === "NPC") {
                         // Player (d2) hits NPC (d1) - Rage allows multiple hits on the same NPC
                         if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
-                            d1.takeHit();
+                            let damageToDeal = d2.attackDamage;
+                            if (d2.kind === 'Barbarian' && d2.rageWasUsedThisThrow) {
+                                damageToDeal = 2;
+                            }
+                            d1.takeHit(damageToDeal);
                             // Check if NPC d1 was killed by this hit and grant Rage charge
                             if (d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
                                 if (d2.kind === 'Barbarian') { // Check if the killer (d2) is Barbarian
@@ -1563,7 +1686,11 @@ clamp(value, min, max) {
                         // Player-Player, or NPC-Player (where d2 is the actor)
                         // Use original logic
                         if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
-                            d1.takeHit();
+                            let damageToDeal = d2.attackDamage;
+                            if (d2.kind === 'Barbarian' && d2.rageWasUsedThisThrow) {
+                                damageToDeal = 2;
+                            }
+                            d1.takeHit(damageToDeal);
                             d2.hasCausedDamage = true;
                         }
                     }
@@ -1586,8 +1713,6 @@ clamp(value, min, max) {
     if (this.renderer) {
       this.renderer.render(this.scene, this.camera);
     }
-
-    this.updateDiscNames();
 
     if (this.waitingForDiscToStop && this.currentDisc) {
       const velocityLength = this.currentDisc.velocity.length();
@@ -1655,8 +1780,7 @@ clamp(value, min, max) {
 
   updateDiscNames() {
     if (this.uiManager) {
-      const discsForUI = this.discs.filter(disc => disc.kind !== 'Orb');
-      this.uiManager.updateDiscNames(discsForUI, this.currentDisc);
+      this.uiManager.updateDiscNames(this.discs, this.currentDisc);
     }
   }
 
@@ -1767,11 +1891,36 @@ clamp(value, min, max) {
     }
   }
 
-  updateSummonOrbsButtonVisibility() {
-    if (!this.summonOrbsButton) {
-      // console.warn("GameController: Summon Orbs button DOM element not found for UI update.");
-      return;
+  _showDiscInfoPopup(disc) {
+    if (!this.discInfoPopupElement || !disc) {
+        return;
     }
+
+    this.discInfoNameElement.innerText = disc.discName;
+    const currentHp = Number(disc.hitPoints) || 0;
+    const maxHp = Number(disc.maxHitPoints) || 0;
+    const filledHearts = currentHp > 0 ? '❤️'.repeat(currentHp) : '';
+    const emptyHearts = maxHp > currentHp ? '🩶'.repeat(maxHp - currentHp) : '';
+    this.discInfoHpElement.innerText = filledHearts + emptyHearts;
+    this.discInfoDescriptionElement.innerText = disc.description || "No description available.";
+
+    // Reset classes and apply new ones
+    this.discInfoPopupElement.className = 'popup'; // Base class
+    if (disc.type) this.discInfoPopupElement.classList.add(disc.type.toLowerCase());
+    this.discInfoPopupElement.classList.add(disc.dead ? 'dead' : 'alive');
+
+    this.discInfoPopupElement.classList.remove('element-hidden');
+    this.discInfoPopupSelectedDisc = disc;
+  }
+
+  _hideDiscInfoPopup() {
+    if (!this.discInfoPopupElement) return;
+    this.discInfoPopupElement.classList.add('element-hidden');
+    this.discInfoPopupSelectedDisc = null;
+  }
+
+  updateSummonOrbsButtonVisibility() {
+    if (!this.summonOrbsButton) return;
 
     let shouldBeVisible = false;
     const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
