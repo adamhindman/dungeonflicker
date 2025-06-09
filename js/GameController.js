@@ -1468,7 +1468,7 @@ clamp(value, min, max) {
       const target = this.controls.target;
       const halfFieldWidth = this.level.fieldWidth / 2;
       const halfFieldDepth = this.level.fieldDepth / 2;
-      const panMargin = -5; // The allowed panning margin
+      const panMargin = -10; // The allowed panning margin
 
       // Clamp the target's x coordinate
       target.x = THREE.MathUtils.clamp(target.x, -halfFieldWidth - panMargin, halfFieldWidth + panMargin);
