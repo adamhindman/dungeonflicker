@@ -66,6 +66,7 @@ export default class InputHandler {
 
     _handleKeyDown(event) {
         const key = event.key.toLowerCase();
+        // console.log("InputHandler: KeyDown detected - key:", key, "original event.key:", event.key); // DETAILED DEBUG
 
         if (key === 'escape' || key === 'esc') {
             if (this.isPointerDown) { // If currently aiming/dragging
@@ -101,6 +102,16 @@ export default class InputHandler {
             case 'arrowright':
                 if (this.gameController.setPanningState) this.gameController.setPanningState('right', true);
                 break;
+            case 'q':
+                if (this.gameController.setCameraRotation) {
+                    this.gameController.setCameraRotation(-1); // -1 for left
+                }
+                break;
+            case 'e': // Changed from 'r'
+                if (this.gameController.setCameraRotation) {
+                    this.gameController.setCameraRotation(1);  // 1 for right
+                }
+                break;
         }
     }
 
@@ -124,6 +135,12 @@ export default class InputHandler {
             case 'd':
             case 'arrowright':
                 if (this.gameController.setPanningState) this.gameController.setPanningState('right', false);
+                break;
+            case 'q':
+            case 'e':
+                if (this.gameController.setCameraRotation) {
+                    this.gameController.setCameraRotation(0); // Stop rotation
+                }
                 break;
         }
     }

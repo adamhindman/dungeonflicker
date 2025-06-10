@@ -8,6 +8,8 @@ import Skeleton from './Skeleton.js';
 import Warden from './Warden.js';
 
 // Pre-converted hex color values for NPCs
+import { LavaPool } from './LavaPool.js';
+
 const NPC_HEX_COLORS = [
   0xE6194B, // (230, 25, 75)
   0x3CB44B, // (60, 180, 75)
@@ -46,6 +48,7 @@ export default class GameController {
     // Game level and discs
     this.level = null;
     this.discs = [];
+    this.lavaPools = []; // For storing LavaPool instances
 
     // Turn-based game state
     this.currentTurnIndex = 0;
@@ -67,6 +70,7 @@ export default class GameController {
     this.fpsLastTime = performance.now(); // For calculating delta time
     this.fpsLastUpdateTime = performance.now(); // For timing FPS display updates
     this.fpsUpdateInterval = 1000; // Update display every 1 second (in ms)
+    this.barbarianUniqueNPCHitsThisThrow = new Set(); // Tracks unique NPCs hit by Barbarian per throw
 
     // Visual helpers
     this.throwDirectionLine = null;
@@ -112,12 +116,14 @@ export default class GameController {
       right: false
     };
     this.panSpeed = 0.5;
+    this.cameraRotationDirection = 0; // -1 for left, 1 for right, 0 for stop
+    this.cameraRotationSpeed = Math.PI / 135; // Radians per frame. Adjust for desired speed.
 
     this.discDescriptions = {
-        Barbarian: "A fierce warrior who grows stronger with every foe vanquished.",
-        Wizard: "A master of the mystical orb, wielding arcane arts to control the battlefield.",
-        Skeleton: "A reanimated combatant, relentless and tireless.",
-        Warden: "A heavily armored sentinel, slow but incredibly resilient.",
+        Barbarian: "Deals 1 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
+        Wizard: "He can summon 3 orbs to attack enemies and act as shields.",
+        Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
+        Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
         Orb: "A volatile sphere of magical energy, summoned by the Wizard."
     };
 
@@ -182,6 +188,10 @@ export default class GameController {
     this.camera.position.set(0, y, z);
     this.camera.lookAt(0, 0, 0);
 
+    // Store initial camera settings for reset
+    this.initialCameraPosition = this.camera.position.clone();
+    this.initialCameraZoom = this.camera.zoom;
+
     // Setup renderer and add canvas to DOM
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -196,6 +206,7 @@ export default class GameController {
     this.controls.maxDistance = 45;
     // Prevent camera from going below ~15 degrees from horizontal
     this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
+    this.barbarianUniqueNPCHitsThisThrow = new Set(); // Tracks unique NPCs hit by Barbarian per throw
 
     // Load the level and walls
     this.level = new Level(this.scene);
@@ -269,6 +280,9 @@ export default class GameController {
     this.createBarbarianEndTurnButton();
     this.setupBarbarianEndTurnButtonListener(); // Setup listener for Barbarian button
     this.updateBarbarianEndTurnButtonVisibility(); // Initial visibility for Barbarian button
+
+    // Generate lava pools
+    this._generateLavaPools();
 
     // Setup input handling
     this.updateDiscNames(); // Explicitly update the disc list after all initialization
@@ -427,8 +441,6 @@ updateEndWizardTurnButtonVisibility() {
   }
 
   _handleSummonOrbsButtonClick() {
-    console.log("[DEBUG] _handleSummonOrbsButtonClick called.");
-    console.log("[DEBUG] this.wizardHasSummonedOrbsThisGame:", this.wizardHasSummonedOrbsThisGame);
 
     if (this.wizardHasSummonedOrbsThisGame) {
       this.updateSummonOrbsButtonVisibility(); // Ensure button is hidden
@@ -437,15 +449,11 @@ updateEndWizardTurnButtonVisibility() {
 
     // Ensure it's the Wizard's actual turn by checking against discForTurnContext
     const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    console.log("[DEBUG] discForTurnContext:", discForTurnContext ? { name: discForTurnContext.discName, kind: discForTurnContext.kind, dead: discForTurnContext.dead } : null);
 
     if (discForTurnContext && discForTurnContext.kind === 'Wizard' && !discForTurnContext.dead) {
-      console.log("[DEBUG] Conditions met, calling this.summonOrbs().");
       this.summonOrbs(discForTurnContext); // Pass the Wizard whose turn it is
     } else if (discForTurnContext) {
-      console.log("[DEBUG] Conditions NOT met for summonOrbs. discForTurnContext kind or dead status: ", discForTurnContext.kind, discForTurnContext.dead);
     } else {
-      console.log("[DEBUG] Conditions NOT met for summonOrbs. No discForTurnContext.");
     }
     // summonOrbs will call updateSummonOrbsButtonVisibility.
     // If the conditions above weren't met, or if summonOrbs bails early,
@@ -454,9 +462,6 @@ updateEndWizardTurnButtonVisibility() {
   }
 
   summonOrbs(wizardDisc) {
-    console.log("[DEBUG] summonOrbs called with wizardDisc:", wizardDisc ? { name: wizardDisc.discName, kind: wizardDisc.kind, dead: wizardDisc.dead } : null);
-    console.log("[DEBUG] summonOrbs: this.wizardHasSummonedOrbsThisGame:", this.wizardHasSummonedOrbsThisGame);
-
     if (this.wizardHasSummonedOrbsThisGame) {
       console.info("SummonOrbs: Orbs have already been summoned this game.");
       this.updateSummonOrbsButtonVisibility();
@@ -471,9 +476,7 @@ updateEndWizardTurnButtonVisibility() {
     // Check if there are any active orbs already. This check is secondary to wizardHasSummonedOrbsThisGame
     // but good for internal consistency if called directly.
     const activeOrbsExist = this.wizardOrbs.some(orb => orb && orb.hitPoints > 0 && !orb.dead);
-    console.log("[DEBUG] summonOrbs: activeOrbsExist:", activeOrbsExist);
     if (activeOrbsExist) {
-      console.info("SummonOrbs: Active orbs already exist.");
       this.updateSummonOrbsButtonVisibility(); // Ensure button state is correct
       return;
     }
@@ -634,13 +637,7 @@ updateEndWizardTurnButtonVisibility() {
       return false;
     }
 
-    // Check internal wall 2: x around fieldWidth/6, z from fieldDepth/2 - 13 - 0.25 to fieldDepth/2 - 0.25
-    const internal2X = this.level.fieldWidth / 6;
-    const internal2ZEnd = this.level.fieldDepth / 2 - 0.25;
-    const internal2ZStart = internal2ZEnd - 13;
-    if (Math.abs(x - internal2X) < padding && z >= internal2ZStart - padding && z <= internal2ZEnd + padding) {
-      return false;
-    }
+
 
     // Check obstacle 1: centered at (-10, 8) with size 6x6
     const obs1X = -10, obs1Z = 8, obsSize = 6;
@@ -737,7 +734,7 @@ updateEndWizardTurnButtonVisibility() {
       /* discName: */ "Wizard",
       /* type: */ "player",
       /* kind: */ "Wizard",
-      /* hitPoints: */ 2,
+      /* hitPoints: */ 3,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/wizard-nobg.png", // Image for Wizard disc
       /* canDoReboundDamage: */ false,
@@ -1047,7 +1044,7 @@ updateEndWizardTurnButtonVisibility() {
     const deltaX = event.clientX - initialPointerDownPos.x;
     const deltaY = event.clientY - initialPointerDownPos.y;
     const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    const clickThreshold = 5; // Pixels to differentiate a click from a drag
+    const clickThreshold = 2; // Pixels to differentiate a click from a drag
 
     const clickedDisc = this.pointerDisc; // Disc under cursor at pointerdown, set in handlePointerDownInteraction
 
@@ -1088,6 +1085,8 @@ updateEndWizardTurnButtonVisibility() {
             }
         }
       }
+    } else {
+      // This block executes if dragLength > clickThreshold
     }
 
     // Standard cleanup for pointer up (hide line, clear throw info)
@@ -1140,15 +1139,22 @@ updateEndWizardTurnButtonVisibility() {
 
       const deltaX = event.clientX - initialPointerDownPos.x;
       const deltaY = event.clientY - initialPointerDownPos.y;
-      const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-      const dragThreshold = 2;
-      const minSpeed = 0.05;
+      const screenDragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY); // Renamed for clarity
 
-      if (dragLength > dragThreshold) {
-        const sensitivity = 1;
-        const adjustedLength = dragLength * sensitivity;
-        const normX = deltaX / dragLength;
-        const normY = deltaY / dragLength;
+      const cameraDistance = this.controls.getDistance();
+      const effectiveWorldDrag = screenDragLength * cameraDistance;
+
+      const WORLD_DRAG_THRESHOLD = 10; // Tune this value
+      const WORLD_THROW_SENSITIVITY = .004; // Tune this value
+      // const dragThreshold = 3; // Old pixel-based threshold, now replaced by WORLD_DRAG_THRESHOLD
+      const minSpeed = 0.05; // This might still be relevant for disc stopping
+
+      if (effectiveWorldDrag > WORLD_DRAG_THRESHOLD) {
+
+
+        const throwForceMagnitude = effectiveWorldDrag * WORLD_THROW_SENSITIVITY;
+        const normX = deltaX / screenDragLength;
+        const normY = deltaY / screenDragLength;
 
         const forward = new THREE.Vector3();
         this.camera.getWorldDirection(forward);
@@ -1185,10 +1191,15 @@ updateEndWizardTurnButtonVisibility() {
         }
 
         const maxSpeed = 1;
-        const normLength = Math.min(adjustedLength / 10, 1);
-        const scaledLength = normLength * normLength;
-        let speed = (maxSpeed * scaledLength * actualThrowPowerMultiplier) / this.currentDisc.mass;
+        // const normLength = Math.min(adjustedLength / 10, 1); // Old logic, adjustedLength is not defined in this scope with new logic
+        // const scaledLength = normLength * normLength; // Old logic
+        let speed = (throwForceMagnitude * actualThrowPowerMultiplier) / this.currentDisc.mass;
+        speed = Math.min(speed, maxSpeed); // Apply maxSpeed cap (maxSpeed is defined above as 1 by default)
         if (speed < minSpeed) speed = minSpeed;
+
+        if (this.currentDisc.kind === 'Barbarian') {
+          this.barbarianUniqueNPCHitsThisThrow.clear();
+        }
 
         this.currentDisc.velocity.set(
           directionX * speed,
@@ -1341,7 +1352,25 @@ clamp(value, min, max) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
+    if (this.wizardOrbs && this.wizardOrbs.length > 0) {
+      this.wizardOrbs.forEach(orb => {
+        if (orb && typeof orb.dispose === 'function') {
+          orb.dispose();
+        }
+      });
+    }
     this.wizardOrbs = []; // Reset wizard orbs
+
+    // Cleanup existing lava pools
+    if (this.lavaPools && this.lavaPools.length > 0) {
+      this.lavaPools.forEach(pool => {
+        if (pool.getMesh()) {
+          this.scene.remove(pool.getMesh());
+        }
+        pool.dispose();
+      });
+    }
+    this.lavaPools = [];
 
     // 2. Unload the current level
     if (this.level) {
@@ -1359,12 +1388,16 @@ clamp(value, min, max) {
     // 4. Re-initialize discs
     this.initDiscs(); // This will populate this.discs with new instances
 
+    // Regenerate lava pools
+    this._generateLavaPools();
+
     // 5. Reset core game state variables
     this.currentTurnIndex = 0;
     this._currentDisc = null; // Will be set by this.currentDisc setter
     this.waitingForDiscToStop = false;
     this.playerDamagedNPCsThisThrow.clear();
     this.npcsKilledForRageCharge.clear();
+    this.barbarianUniqueNPCHitsThisThrow.clear();
     this.currentPlayerRageCharges = 0; // Reset rage charges to 0 or initial value
     this.wizardHasSummonedOrbsThisGame = false; // Reset for new game
 
@@ -1391,17 +1424,29 @@ clamp(value, min, max) {
 
     // 7. Update UI elements
     this.updateDiscNames();
+    this._hideDiscInfoPopup();
     // Re-setup the rage button listener to bind to the new player disc
     this.setupRageButtonListener();
     this.updateRageButtonVisibility(); // Call after setup to reflect current charges
     this.updateEndWizardTurnButtonVisibility(); // Reset Wizard end turn button
     this.updateBarbarianEndTurnButtonVisibility(); // Reset Barbarian end turn button
+    this.updateSummonOrbsButtonVisibility();
 
-    // 8. Ensure camera controls are enabled
+
+    // 8. Reset Camera Position and Zoom, and ensure camera controls are enabled
+    if (this.camera) {
+      this.camera.position.copy(this.initialCameraPosition);
+      this.camera.zoom = this.initialCameraZoom;
+      this.camera.updateProjectionMatrix();
+    }
     if (this.controls) {
+      this.controls.target.set(0, 0, 0); // Assuming default target is origin
+      this.controls.update();
       this.controls.enabled = true;
     }
     this.controlsEnabled = true;
+    this._prevLineStart = null;
+    this._prevLineEnd = null;
 
   }
 
@@ -1426,6 +1471,19 @@ clamp(value, min, max) {
 
     if (this.controls) {
       this.controls.update();
+    }
+
+    // Smooth camera rotation based on cameraRotationDirection
+    if (this.cameraRotationDirection !== 0 && this.controls && this.controls.enabled) {
+        const offset = new THREE.Vector3().subVectors(this.controls.object.position, this.controls.target);
+        const spherical = new THREE.Spherical().setFromVector3(offset);
+
+        spherical.theta += this.cameraRotationDirection * this.cameraRotationSpeed;
+        spherical.makeSafe(); // Clamps phi to valid range and ensures radius is positive
+
+        offset.setFromSpherical(spherical);
+        this.controls.object.position.copy(this.controls.target).add(offset);
+        this.controls.update(); // Crucial to apply the change to OrbitControls
     }
 
     // Handle camera panning with WASD and arrow keys
@@ -1468,7 +1526,7 @@ clamp(value, min, max) {
       const target = this.controls.target;
       const halfFieldWidth = this.level.fieldWidth / 2;
       const halfFieldDepth = this.level.fieldDepth / 2;
-      const panMargin = -10; // The allowed panning margin
+      const panMargin = 0; // The allowed panning margin
 
       // Clamp the target's x coordinate
       target.x = THREE.MathUtils.clamp(target.x, -halfFieldWidth - panMargin, halfFieldWidth + panMargin);
@@ -1623,10 +1681,24 @@ clamp(value, min, max) {
                     if (d1.type === "player" && d2.type === "NPC") {
                         // Player (d1) hits NPC (d2) - Rage allows multiple hits on the same NPC
                         if (d1.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
-                            let damageToDeal = d1.attackDamage;
-                            if (d1.kind === 'Barbarian' && d1.rageWasUsedThisThrow) {
-                                damageToDeal = 2;
+                            // Barbarian unique NPC hit tracking
+                            if (d1.kind === 'Barbarian' && d2.type === 'NPC') { // d1 is Barbarian, d2 is NPC
+                                if (d2.hitPoints > 0 && !d2.dead) { // Ensure NPC is targetable for bonus
+                                    this.barbarianUniqueNPCHitsThisThrow.add(d2.discName);
+                                }
                             }
+
+                            let damageToDeal = d1.attackDamage;
+                            if (d1.kind === 'Barbarian') {
+                                const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                                if (d1.rageWasUsedThisThrow) {
+                                    damageToDeal = 2 + bonusDamage;
+                                } else {
+                                    damageToDeal = d1.attackDamage + bonusDamage;
+                                }
+                            }
+                            // If d1 is not Barbarian but is raging, current game logic handles it via attackDamage or specific class abilities.
+                            // This change focuses on Barbarian bonus as requested.
                             d2.takeHit(damageToDeal);
                             // Check if NPC d2 was killed by this hit and grant Rage charge
                             if (d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
@@ -1646,14 +1718,23 @@ clamp(value, min, max) {
                         }
                     } else if (!(d1.type === "NPC" && d2.type === "NPC")) {
                         // Player-Player, or NPC-Player (where d1 is the actor)
-                        // Use original logic: only first collision causes damage unless canDoReboundDamage is true
-                        if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
-                            let damageToDeal = d1.attackDamage;
-                            if (d1.kind === 'Barbarian' && d1.rageWasUsedThisThrow) {
-                                damageToDeal = 2;
+                        // Prevent player discs from harming other player discs
+                        if (!(d1.type === "player" && d2.type === "player")) {
+                            // Use original logic: only first collision causes damage unless canDoReboundDamage is true
+                            if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
+                                let damageToDeal = d1.attackDamage;
+                                if (d1.kind === 'Barbarian') { // If d1 (acting disc) is a Barbarian
+                                    const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size; // Bonus from unique NPCs hit
+                                    if (d1.rageWasUsedThisThrow) {
+                                        damageToDeal = 2 + bonusDamage;
+                                    } else {
+                                        damageToDeal = d1.attackDamage + bonusDamage;
+                                    }
+                                }
+                                // Non-Barbarian damage remains d1.attackDamage.
+                                d2.takeHit(damageToDeal);
+                                d1.hasCausedDamage = true;
                             }
-                            d2.takeHit(damageToDeal);
-                            d1.hasCausedDamage = true;
                         }
                     }
                 }
@@ -1662,10 +1743,23 @@ clamp(value, min, max) {
                     if (d2.type === "player" && d1.type === "NPC") {
                         // Player (d2) hits NPC (d1) - Rage allows multiple hits on the same NPC
                         if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
-                            let damageToDeal = d2.attackDamage;
-                            if (d2.kind === 'Barbarian' && d2.rageWasUsedThisThrow) {
-                                damageToDeal = 2;
+                            // Barbarian unique NPC hit tracking
+                            if (d2.kind === 'Barbarian' && d1.type === 'NPC') { // d2 is Barbarian, d1 is NPC
+                                if (d1.hitPoints > 0 && !d1.dead) { // Ensure NPC is targetable for bonus
+                                    this.barbarianUniqueNPCHitsThisThrow.add(d1.discName);
+                                }
                             }
+
+                            let damageToDeal = d2.attackDamage;
+                            if (d2.kind === 'Barbarian') {
+                                const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                                if (d2.rageWasUsedThisThrow) {
+                                    damageToDeal = 2 + bonusDamage;
+                                } else {
+                                    damageToDeal = d2.attackDamage + bonusDamage;
+                                }
+                            }
+                            // Similar logic as for d1 acting.
                             d1.takeHit(damageToDeal);
                             // Check if NPC d1 was killed by this hit and grant Rage charge
                             if (d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
@@ -1684,14 +1778,23 @@ clamp(value, min, max) {
                         }
                     } else if (!(d2.type === "NPC" && d1.type === "NPC")) {
                         // Player-Player, or NPC-Player (where d2 is the actor)
-                        // Use original logic
-                        if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
-                            let damageToDeal = d2.attackDamage;
-                            if (d2.kind === 'Barbarian' && d2.rageWasUsedThisThrow) {
-                                damageToDeal = 2;
+                        // Prevent player discs from harming other player discs
+                        if (!(d2.type === "player" && d1.type === "player")) {
+                            // Use original logic
+                            if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
+                                let damageToDeal = d2.attackDamage;
+                                if (d2.kind === 'Barbarian') { // If d2 (acting disc) is a Barbarian
+                                    const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size; // Bonus from unique NPCs hit
+                                    if (d2.rageWasUsedThisThrow) {
+                                        damageToDeal = 2 + bonusDamage;
+                                    } else {
+                                        damageToDeal = d2.attackDamage + bonusDamage;
+                                    }
+                                }
+                                // Non-Barbarian damage remains d2.attackDamage.
+                                d1.takeHit(damageToDeal);
+                                d2.hasCausedDamage = true;
                             }
-                            d1.takeHit(damageToDeal);
-                            d2.hasCausedDamage = true;
                         }
                     }
                 }
@@ -1702,6 +1805,55 @@ clamp(value, min, max) {
             d2.mesh.position.sub(normal.clone().multiplyScalar(overlap * 0.5));
           }
         }
+      }
+    }
+
+    // Lava pool collision detection
+    if (this.lavaPools && this.lavaPools.length > 0) {
+      this.discs.forEach(disc => {
+        if (disc.dead) {
+          return; // Skip dead discs
+        }
+
+        // Rudimentary way to track if a disc is in lava for this frame.
+        // Ideally, `isCurrentlyInLavaState` would be a property on the Disc class.
+        if (typeof disc.isCurrentlyInLavaState === 'undefined') {
+            disc.isCurrentlyInLavaState = false;
+        }
+        let foundInLavaThisFrame = false;
+
+        for (const lavaPool of this.lavaPools) {
+          if (lavaPool.isPointInside(disc.mesh.position.x, disc.mesh.position.z)) {
+            foundInLavaThisFrame = true;
+            if (!disc.isCurrentlyInLavaState) {
+              // Disc just entered the lava
+              console.log(`${disc.discName} fell into lava!`);
+              disc.isCurrentlyInLavaState = true;
+
+
+
+              // Apply lethal damage (or specific lava effect)
+              // Assuming takeHit handles setting the disc to dead if HP <= 0
+              disc.takeHit(1); // Damage on entry
+
+
+            }
+            break; // No need to check other lava pools for this disc this frame
+          }
+        }
+
+        if (!foundInLavaThisFrame && disc.isCurrentlyInLavaState) {
+          // Disc was in lava but is no longer (e.g., if it somehow got out, though unlikely with current logic)
+          disc.isCurrentlyInLavaState = false;
+          // console.log(`${disc.discName} is no longer in lava.`);
+        }
+      });
+
+      // After lava checks, update dead states and check game over conditions
+      // This ensures immediate feedback if a disc dies in lava.
+      this.updateAllDiscDeadStates();
+      if (!this.gameOverState.active) {
+        this.checkGameOverConditions();
       }
     }
 
@@ -1877,6 +2029,17 @@ clamp(value, min, max) {
 
     this.currentTurnIndex = nextIndex;
     this.currentDisc = this.discs[this.currentTurnIndex]; // Correctly assign the disc for the new turn
+
+    // Apply lava damage if the disc starts its turn in lava
+    this._applyStartOfTurnLavaDamage(this.currentDisc);
+
+    // If the disc died from start-of-turn lava damage and game is not over, immediately proceed to next turn.
+    if (this.currentDisc && this.currentDisc.dead && !this.gameOverState.active) {
+      // console.log(`${this.currentDisc.discName} died at start of turn from lava. Skipping turn.`);
+      await this._proceedToNextPlayerTurn();
+      return; // Important to stop further processing for the dead disc's turn
+    }
+
     this.logCurrentTurn();
     this._updateSpotlights();
     this.updateRageButtonVisibility();
@@ -1885,8 +2048,10 @@ clamp(value, min, max) {
     this.updateBarbarianEndTurnButtonVisibility();
     this._updateSpotlights(); // Ensure spotlights are updated after turn progression
 
-    this.logCurrentTurn();
-    if (this.currentDisc.type === "NPC") {
+    // If the current disc is an NPC and is still alive, let it take its turn.
+    // The currentDisc might be null if no actionable disc was found (e.g. game over handled earlier)
+    // or might have died from start-of-turn lava damage (handled above).
+    if (this.currentDisc && this.currentDisc.type === "NPC" && !this.currentDisc.dead) {
       await this.aiThrow(this.currentDisc);
     }
   }
@@ -2012,6 +2177,11 @@ clamp(value, min, max) {
     const maxFuzzDegrees = 15;
     const fuzzFactor = (100 - disc.skillLevel) / 100;
 
+    // Clear Barbarian-specific unique NPC hit tracking before calculating throw trajectory
+    if (disc.kind === 'Barbarian') {
+      this.barbarianUniqueNPCHitsThisThrow.clear();
+    }
+
     let bestDir = idealDir;
     let bestSpeed =
       Math.min(minDist / 10, 1) * (0.7 + 0.3 * (disc.skillLevel / 100));
@@ -2053,6 +2223,131 @@ clamp(value, min, max) {
     disc.hasThrown = true;
     disc.resetDamageState();
     this.waitingForDiscToStop = true;
+  }
+
+  setCameraRotation(direction) {
+    this.cameraRotationDirection = direction;
+  }
+
+  _applyStartOfTurnLavaDamage(disc) {
+    if (!disc || disc.dead || !this.lavaPools || this.lavaPools.length === 0) {
+      return; // No disc, or disc is dead, or no lava pools to check against
+    }
+
+    for (const lavaPool of this.lavaPools) {
+      if (lavaPool.isPointInside(disc.mesh.position.x, disc.mesh.position.z)) {
+        console.log(`${disc.discName} is starting turn in lava, takes 1 damage.`);
+        disc.takeHit(1); // Apply 1 damage
+
+        // Update game state immediately after damage
+        this.updateAllDiscDeadStates();
+        if (!this.gameOverState.active) {
+          this.checkGameOverConditions();
+        }
+        break; // Disc is in lava, no need to check other pools
+      }
+    }
+  }
+
+  _generateLavaPools() {
+    if (!this.level || !this.scene) {
+        console.error("Level or scene not initialized. Cannot generate lava pools.");
+        return;
+    }
+
+    // Determine the number of lava pools for this level (randomly 1 or 2 for now)
+    const numLavaPoolsToGenerate = Math.floor(Math.random() * 2) + 1; // Results in 1 or 2
+    const MIN_RADIUS = 2;
+    const MAX_RADIUS = 4;
+    const Y_POSITION = 0.05; // Slightly above ground to prevent z-fighting
+
+    for (let i = 0; i < numLavaPoolsToGenerate; i++) {
+        const placement = this._findValidLavaPoolPlacement(MIN_RADIUS, MAX_RADIUS);
+        if (placement) {
+            const lavaPool = new LavaPool({
+                centerX: placement.x,
+                centerZ: placement.z,
+                baseRadius: placement.radius,
+                numVertices: 12 + Math.floor(Math.random() * 5), // Fewer vertices (12-16) for less complexity
+                irregularity: 0.1 + Math.random() * 0.2, // Lower irregularity (0.1-0.3) for more roundness
+                yPosition: Y_POSITION,
+                // color: 0xff4500 // Default color in LavaPool, or specify here
+            });
+            if (lavaPool.getMesh()) {
+                this.scene.add(lavaPool.getMesh());
+                this.lavaPools.push(lavaPool);
+            }
+        } else {
+            console.warn(`Could not find a valid placement for lava pool ${i + 1} after several attempts.`);
+        }
+    }
+  }
+
+  _findValidLavaPoolPlacement(minRadius, maxRadius) {
+    const MAX_ATTEMPTS = 50;
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+        const radius = minRadius + Math.random() * (maxRadius - minRadius);
+        // Ensure pools are not too close to the absolute edges
+        const edgeBuffer = radius + 1; // Pool radius + some extra space
+        const x = (Math.random() - 0.5) * (this.level.fieldWidth - edgeBuffer * 2);
+        const z = (Math.random() - 0.5) * (this.level.fieldDepth - edgeBuffer * 2);
+
+        if (this._isLavaPoolPositionValid(x, z, radius)) {
+            return { x, z, radius };
+        }
+    }
+    return null; // Failed to find a spot
+  }
+
+  _isLavaPoolPositionValid(centerX, centerZ, baseRadius) {
+    // 1. Check points around the pool's circumference and center against fixed obstacles/walls
+    // using a very small radius for the point check itself.
+    const pointsToCheck = [
+        { x: centerX, z: centerZ },
+        { x: centerX + baseRadius, z: centerZ },
+        { x: centerX - baseRadius, z: centerZ },
+        { x: centerX, z: centerZ + baseRadius },
+        { x: centerX, z: centerZ - baseRadius },
+        // Add corner points for better coverage if needed
+        { x: centerX + baseRadius * 0.707, z: centerZ + baseRadius * 0.707 },
+        { x: centerX - baseRadius * 0.707, z: centerZ + baseRadius * 0.707 },
+        { x: centerX + baseRadius * 0.707, z: centerZ - baseRadius * 0.707 },
+        { x: centerX - baseRadius * 0.707, z: centerZ - baseRadius * 0.707 },
+    ];
+
+    for (const point of pointsToCheck) {
+        // Use a tiny radius (0.1) for isPositionValid, as we're checking a point, not a disc of baseRadius.
+        if (!this.isPositionValid(point.x, point.z, 0.1)) {
+            // console.log(`Lava pool point invalid: ${point.x}, ${point.z}`);
+            return false; // Point is inside a wall or obstacle
+        }
+    }
+
+    // 2. Check against existing discs
+    // Discs are initialized before lava pools, so this.discs is populated.
+    for (const disc of this.discs) {
+        if (disc.dead) continue; // Ignore dead discs for placement
+        const distSq = (disc.mesh.position.x - centerX) ** 2 + (disc.mesh.position.z - centerZ) ** 2;
+        // Check if the disc's bounding circle overlaps with the lava pool's bounding circle
+        const minSeparationDist = baseRadius + disc.radius + 0.5; // Added small buffer
+        if (distSq < minSeparationDist ** 2) {
+            // console.log(`Lava pool too close to disc: ${disc.discName}`);
+            return false; // Too close to a disc
+        }
+    }
+
+    // 3. Check against other already placed lava pools
+    for (const existingPool of this.lavaPools) {
+        const distSq = (existingPool.centerX - centerX) ** 2 + (existingPool.centerZ - centerZ) ** 2;
+        // Check if this pool's bounding circle overlaps with an existing pool's bounding circle
+        const minSeparationDist = baseRadius + existingPool.baseRadius + 1.0; // Added buffer
+        if (distSq < minSeparationDist ** 2) {
+            // console.log(`Lava pool too close to another lava pool`);
+            return false; // Too close to another lava pool
+        }
+    }
+
+    return true; // Position is valid
   }
 }
 

@@ -140,25 +140,6 @@ export default class Level {
     this.walls.internal1.receiveShadow = true;
     this.scene.add(this.walls.internal1);
 
-    // Internal wall along south long wall, perpendicular to it, offset on x by halfWidth
-    const internalWall2Geometry = new THREE.BoxGeometry(
-      internalWallThickness,
-      this.wallHeight,
-      internalWallLength,
-    );
-    this.walls.internal2 = new THREE.Mesh(
-      internalWall2Geometry,
-      this.wallMaterial,
-    );
-    this.walls.internal2.position.set(
-      this.fieldWidth / 6,
-      this.wallHeight / 2,
-      this.fieldDepth / 2 - internalWallLength / 2 - 0.25,
-    );
-    this.walls.internal2.castShadow = true;
-    this.walls.internal2.receiveShadow = true;
-    this.scene.add(this.walls.internal2);
-
     // Add a square block
     const blockSize = 6;
     const blockGeometry = new THREE.BoxGeometry(
@@ -225,7 +206,6 @@ export default class Level {
       { x: this.fieldWidth / 2 - 2, y: this.wallHeight * 0.6, z: this.fieldDepth / 2 - 0.5, angle: -Math.PI / 12, intensity: 2.0, range: 35 },
       // Internal wall torches
       { x: -this.fieldWidth / 6 - 0.8, y: this.wallHeight * 0.6, z: -this.fieldDepth / 2 + internalWallLength / 2 + 0.25, angle: Math.PI / 8, intensity: 1.5, range: 35 },
-      { x: this.fieldWidth / 6 + 0.8, y: this.wallHeight * 0.6, z: this.fieldDepth / 2 - internalWallLength / 2 - 0.25, angle: -Math.PI / 8, intensity: 1.5, range: 35 },
       // Obstacle torches
       { x: obstacle1X - blockSize / 2 - 0.25, y: this.wallHeight * 0.6, z: obstacle1Z, angle: Math.PI / 10, intensity: 1.8, range: 35 },
       { x: obstacle2X + blockSize / 2 + 0.25, y: this.wallHeight * 0.6, z: obstacle2Z, angle: -Math.PI / 10, intensity: 1.8, range: 35 }
