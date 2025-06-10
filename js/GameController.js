@@ -1454,7 +1454,6 @@ clamp(value, min, max) {
     requestAnimationFrame(() => this.animate());
 
     // FPS calculation
-    /*
     this.fpsFrameCount++;
     const now = performance.now();
     const elapsedSinceLastUpdate = now - this.fpsLastUpdateTime;
@@ -1467,7 +1466,6 @@ clamp(value, min, max) {
       this.fpsFrameCount = 0;
       this.fpsLastUpdateTime = now;
     }
-    */
 
     if (this.controls) {
       this.controls.update();
