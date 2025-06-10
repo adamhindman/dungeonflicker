@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import Torch from "./Torch.js";
 
 export default class Level {
   constructor(scene) {
@@ -10,7 +9,6 @@ export default class Level {
     this.walls = {};
     this.floor = null;
     this.textureLoader = new THREE.TextureLoader();
-    this.torches = [];
     this.wallMaterial = null; // Will be created after texture loads
   }
 
@@ -196,33 +194,6 @@ export default class Level {
     directionalLight.shadow.camera.near = 0.1;
     directionalLight.shadow.camera.far = 100;
     this.scene.add(directionalLight);
-
-    // Create torches using the Torch class
-    const torchPositions = [
-      // Corner torches
-      { x: -this.fieldWidth / 2 + 2, y: this.wallHeight * 0.6, z: -this.fieldDepth / 2 + 0.5, angle: Math.PI / 12, intensity: 2.0, range: 35 },
-      { x: this.fieldWidth / 2 - 2, y: this.wallHeight * 0.6, z: -this.fieldDepth / 2 + 0.5, angle: -Math.PI / 12, intensity: 2.0, range: 35 },
-      { x: -this.fieldWidth / 2 + 2, y: this.wallHeight * 0.6, z: this.fieldDepth / 2 - 0.5, angle: Math.PI / 12, intensity: 2.0, range: 35 },
-      { x: this.fieldWidth / 2 - 2, y: this.wallHeight * 0.6, z: this.fieldDepth / 2 - 0.5, angle: -Math.PI / 12, intensity: 2.0, range: 35 },
-      // Internal wall torches
-      { x: -this.fieldWidth / 6 - 0.8, y: this.wallHeight * 0.6, z: -this.fieldDepth / 2 + internalWallLength / 2 + 0.25, angle: Math.PI / 8, intensity: 1.5, range: 35 },
-      // Obstacle torches
-      { x: obstacle1X - blockSize / 2 - 0.25, y: this.wallHeight * 0.6, z: obstacle1Z, angle: Math.PI / 10, intensity: 1.8, range: 35 },
-      { x: obstacle2X + blockSize / 2 + 0.25, y: this.wallHeight * 0.6, z: obstacle2Z, angle: -Math.PI / 10, intensity: 1.8, range: 35 }
-    ];
-
-    // Create all torches
-    torchPositions.forEach(pos => {
-      const torch = new Torch(this.scene, pos.x, pos.y, pos.z, pos.angle, pos.intensity, pos.range);
-      this.torches.push(torch);
-    });
-  }
-
-  animateTorches() {
-    const time = Date.now() * 0.003; // Slower flickering
-    this.torches.forEach((torch, index) => {
-      torch.flicker(time, index);
-    });
   }
 
   unload() {
@@ -238,8 +209,5 @@ export default class Level {
       this.walls[key].material.dispose();
     }
     this.walls = {};
-    // Dispose of all torches
-    this.torches.forEach(torch => torch.dispose());
-    this.torches = [];
   }
 }

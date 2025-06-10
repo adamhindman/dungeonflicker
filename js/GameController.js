@@ -886,7 +886,11 @@ updateEndWizardTurnButtonVisibility() {
             // Other player character's turn (e.g., Barbarian)
             if (this.pointerDisc === discForTurn) {
                 discToControl = discForTurn; // This character is the controlled disc
-                allowAiming = true;
+                if (discForTurn.hasThrown) { // Crucial check: Has this disc already been thrown this turn?
+                    allowAiming = false;
+                } else {
+                    allowAiming = true;
+                }
             } else {
                 // Clicked elsewhere. Character remains active context, but no aiming.
                 discToControl = discForTurn;
@@ -1346,6 +1350,10 @@ clamp(value, min, max) {
   }
 
   async restartGame() {
+    this.cancelAiming(); // Reset any ongoing aiming/interaction states
+    if (this.inputHandler) {
+      this.inputHandler.reset();
+    }
 
     // 1. Dispose of old discs
     if (this.discs && this.discs.length > 0) {
@@ -1400,6 +1408,9 @@ clamp(value, min, max) {
     this.barbarianUniqueNPCHitsThisThrow.clear();
     this.currentPlayerRageCharges = 0; // Reset rage charges to 0 or initial value
     this.wizardHasSummonedOrbsThisGame = false; // Reset for new game
+    this.gameOverState.active = false; // Reset game over state
+
+    this.panningKeys = { up: false, down: false, left: false, right: false }; // Reset panning state
 
     // 6. Set the current disc for the new game
     if (this.discs.length > 0) {
@@ -1855,11 +1866,7 @@ clamp(value, min, max) {
       }
     }
 
-    // Animate torch flickering
-    if (this.level) {
-      this.level.animateTorches();
-    }
-
+    // Render the scene
     if (this.renderer) {
       this.renderer.render(this.scene, this.camera);
     }

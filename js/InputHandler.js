@@ -145,6 +145,13 @@ export default class InputHandler {
         }
     }
 
+    reset() {
+        this.isPointerDown = false;
+        this.pointerDownInitialPos = { x: 0, y: 0 };
+        // No need to reset gameController panningKeys here as GameController should manage its own state.
+        // This handler primarily manages its own direct interaction state.
+    }
+
     // Method to remove event listeners if InputHandler needs to be disposed
     dispose() {
         this.domElement.removeEventListener('pointerdown', this._handlePointerDown);
