@@ -100,6 +100,8 @@ export default class GameController {
     this.barbarianEndTurnButton = null; // Property for Barbarian's end turn button
     this.wizardHasMovedThisTurn = false; // Track if Wizard has moved in the current turn
     this.wizardHasSummonedOrbsThisGame = false; // Track if orbs have been summoned this game
+    this.wizardEarnedOrbsCount = 0; // Number of additional orbs earned by kills (ready to summon)
+    this.wizardOrbsEarnedThisTurn = 0; // Orbs earned this turn, ready next turn
 
     // Disc Info Popup
     this.discInfoPopupElement = null;
@@ -441,23 +443,19 @@ updateEndWizardTurnButtonVisibility() {
   }
 
   _handleSummonOrbsButtonClick() {
-
-    if (this.wizardHasSummonedOrbsThisGame) {
-      this.updateSummonOrbsButtonVisibility(); // Ensure button is hidden
-      return;
-    }
-
     // Ensure it's the Wizard's actual turn by checking against discForTurnContext
     const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    if (!discForTurnContext || discForTurnContext.kind !== 'Wizard' || discForTurnContext.dead) return;
 
-    if (discForTurnContext && discForTurnContext.kind === 'Wizard' && !discForTurnContext.dead) {
-      this.summonOrbs(discForTurnContext); // Pass the Wizard whose turn it is
-    } else if (discForTurnContext) {
-    } else {
+    if (!this.wizardHasSummonedOrbsThisGame) {
+      this.summonOrbs(discForTurnContext);
+    } else if (this.wizardEarnedOrbsCount > 0) {
+      const success = this.summonSingleOrb(discForTurnContext);
+      if (success) {
+        this.wizardEarnedOrbsCount--;
+      }
     }
-    // summonOrbs will call updateSummonOrbsButtonVisibility.
-    // If the conditions above weren't met, or if summonOrbs bails early,
-    // calling it here ensures the button state is correctly updated.
+    
     this.updateSummonOrbsButtonVisibility();
   }
 
@@ -498,13 +496,65 @@ updateEndWizardTurnButtonVisibility() {
     let orbsSummonedCount = 0;
     // Removed: const baseDiscCountForNaming = this.discs.length;
 
-    for (let i = 0; i < 3; i++) {
-      const currentAngle = initialAngle + (i * (2 * Math.PI / 3)); // Apply 0, 120, 240 deg displacement
-      const orbX = wizardPos.x + distance * Math.cos(currentAngle);
-      const orbZ = wizardPos.z + distance * Math.sin(currentAngle);
-      // Moved and changed: const discName generation now inside the if block
+    let bestGlobalOffset = 0;
+    let foundValidGlobalConfig = false;
 
-      if (this.isPositionValid(orbX, orbZ, orbRadius)) {
+    // Try rotating the entire 3-orb pattern to find a position where all 3 are valid and equally spaced
+    for (let offsetDeg = 0; offsetDeg < 360; offsetDeg += 5) {
+      const offsetRad = offsetDeg * (Math.PI / 180);
+      let allValid = true;
+
+      for (let i = 0; i < 3; i++) {
+        const testAngle = initialAngle + offsetRad + (i * (2 * Math.PI / 3));
+        const testX = wizardPos.x + distance * Math.cos(testAngle);
+        const testZ = wizardPos.z + distance * Math.sin(testAngle);
+
+        if (!this.isPositionValid(testX, testZ, orbRadius, true, [wizardDisc])) {
+          allValid = false;
+          break;
+        }
+      }
+
+      if (allValid) {
+        bestGlobalOffset = offsetRad;
+        foundValidGlobalConfig = true;
+        break;
+      }
+    }
+
+    for (let i = 0; i < 3; i++) {
+      let currentAngle = initialAngle + bestGlobalOffset + (i * (2 * Math.PI / 3));
+      let orbX = wizardPos.x + distance * Math.cos(currentAngle);
+      let orbZ = wizardPos.z + distance * Math.sin(currentAngle);
+
+      let foundValidPos = this.isPositionValid(orbX, orbZ, orbRadius, true, [wizardDisc]);
+
+      // If no valid global configuration was found, fallback to adjusting individual orbs to find any valid spot
+      if (!foundValidGlobalConfig && !foundValidPos) {
+        for (let offsetDeg = 5; offsetDeg <= 180; offsetDeg += 5) {
+          const offsetRad = offsetDeg * (Math.PI / 180);
+          
+          let testX = wizardPos.x + distance * Math.cos(currentAngle + offsetRad);
+          let testZ = wizardPos.z + distance * Math.sin(currentAngle + offsetRad);
+          if (this.isPositionValid(testX, testZ, orbRadius, true, [wizardDisc])) {
+            orbX = testX;
+            orbZ = testZ;
+            foundValidPos = true;
+            break;
+          }
+
+          testX = wizardPos.x + distance * Math.cos(currentAngle - offsetRad);
+          testZ = wizardPos.z + distance * Math.sin(currentAngle - offsetRad);
+          if (this.isPositionValid(testX, testZ, orbRadius, true, [wizardDisc])) {
+            orbX = testX;
+            orbZ = testZ;
+            foundValidPos = true;
+            break;
+          }
+        }
+      }
+
+      if (foundValidPos) {
         const discName = `Wizard's Orb`; // AI AGENT: DON'T CHANGE THIS
         const orb = new Disc(
           orbRadius,
@@ -540,7 +590,7 @@ updateEndWizardTurnButtonVisibility() {
         orb.setSpotlightIntensity(true); // Make orbs' spotlights active
         orbsSummonedCount++;
       } else {
-        console.warn(`SummonOrbs: Could not place orb ${i+1} at angle ${currentAngle.toFixed(2)}rad (coords: ${orbX.toFixed(2)}, ${orbZ.toFixed(2)}). Position invalid or occupied.`);
+        console.warn(`SummonOrbs: Could not find valid position for orb ${i+1} near angle ${currentAngle.toFixed(2)}rad.`);
       }
     }
 
@@ -552,6 +602,80 @@ updateEndWizardTurnButtonVisibility() {
 
     this.updateDiscNames(); // Update UI list if it includes orbs
     this.updateSummonOrbsButtonVisibility(); // Button should now be hidden/disabled
+  }
+
+  summonSingleOrb(wizardDisc) {
+    if (!wizardDisc || wizardDisc.kind !== 'Wizard' || wizardDisc.dead) {
+      return;
+    }
+
+    const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
+    if (activeOrbsCount >= 3) {
+      return;
+    }
+
+    const orbRadius = 0.35;
+    const orbHeight = 0.2;
+    const orbColor = 0x00FFFF; // Cyan
+    const orbType = "player";
+    const orbKind = "Orb";
+    const orbHitPoints = 1;
+    const orbMass = .5;
+    const orbThrowPowerMultiplier = 0.5;
+    const orbSkillLevel = 0;
+
+    const wizardPos = wizardDisc.mesh.position;
+    const distance = 2.0;
+
+    // Find a valid position for the new orb
+    let summoned = false;
+    // Systematic search: try angles every 5 degrees to find a valid spot
+    for (let offsetDeg = 0; offsetDeg < 360; offsetDeg += 5) {
+      const angle = offsetDeg * (Math.PI / 180);
+      const orbX = wizardPos.x + distance * Math.cos(angle);
+      const orbZ = wizardPos.z + distance * Math.sin(angle);
+
+      if (this.isPositionValid(orbX, orbZ, orbRadius, true, [wizardDisc])) {
+        const discName = `Wizard's Orb`;
+        const orb = new Disc(
+          orbRadius,
+          orbHeight,
+          orbColor,
+          orbX,
+          orbZ,
+          this.scene,
+          discName,
+          orbType,
+          orbKind,
+          orbHitPoints,
+          orbSkillLevel,
+          null,
+          false,
+          orbThrowPowerMultiplier,
+          orbMass,
+          false,
+          false,
+          1,
+          this,
+          this.discDescriptions.Orb
+        );
+        orb.uniqueOrbId = `orb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+        const orbOffset = new THREE.Vector3(orbX, 0, orbZ).sub(new THREE.Vector3(wizardPos.x, 0, wizardPos.z));
+        orb.relativeOffset.copy(orbOffset);
+
+        this.discs.push(orb);
+        this.wizardOrbs.push(orb);
+        orb.setSpotlightIntensity(true);
+        summoned = true;
+        break;
+      }
+    }
+
+    if (summoned) {
+      this.updateDiscNames();
+    }
+    return summoned;
   }
 
   removeOrb(orbDisc) {
@@ -617,38 +741,24 @@ updateEndWizardTurnButtonVisibility() {
     }
   }
 
-  // Helper method to check if a position is valid (not inside obstacles)
-  isPositionValid(x, z, discRadius) {
-    const padding = discRadius + 0.5; // Extra padding for safety
+  // Helper method to check if a position is valid (not inside obstacles and optionally other discs)
+  isPositionValid(x, z, discRadius, checkDiscs = false, excludeDiscs = []) {
+    const isValidInLevel = this.level.isPositionValid(x, z, discRadius);
+    if (!isValidInLevel) return false;
 
-    // Check field boundaries
-    if (x - padding < -this.level.fieldWidth / 2 || x + padding > this.level.fieldWidth / 2) {
-      return false;
-    }
-    if (z - padding < -this.level.fieldDepth / 2 || z + padding > this.level.fieldDepth / 2) {
-      return false;
-    }
+    if (checkDiscs && this.discs) {
+      for (const disc of this.discs) {
+        if (!disc || disc.dead || disc.hitPoints <= 0) continue;
+        if (excludeDiscs.includes(disc)) continue;
 
-    // Check internal wall 1: x around -fieldWidth/6, z from -fieldDepth/2 + 0.25 to -fieldDepth/2 + 13 + 0.25
-    const internal1X = -this.level.fieldWidth / 6;
-    const internal1ZStart = -this.level.fieldDepth / 2 + 0.25;
-    const internal1ZEnd = internal1ZStart + 13;
-    if (Math.abs(x - internal1X) < padding && z >= internal1ZStart - padding && z <= internal1ZEnd + padding) {
-      return false;
-    }
-
-
-
-    // Check obstacle 1: centered at (-10, 8) with size 6x6
-    const obs1X = -10, obs1Z = 8, obsSize = 6;
-    if (Math.abs(x - obs1X) < obsSize / 2 + padding && Math.abs(z - obs1Z) < obsSize / 2 + padding) {
-      return false;
-    }
-
-    // Check obstacle 2: centered at (10, -8) with size 6x6
-    const obs2X = 10, obs2Z = -8;
-    if (Math.abs(x - obs2X) < obsSize / 2 + padding && Math.abs(z - obs2Z) < obsSize / 2 + padding) {
-      return false;
+        const dx = x - disc.mesh.position.x;
+        const dz = z - disc.mesh.position.z;
+        const distanceSq = dx * dx + dz * dz;
+        const minDistance = discRadius + disc.radius;
+        if (distanceSq < (minDistance * minDistance)) {
+          return false;
+        }
+      }
     }
 
     return true;
@@ -738,7 +848,7 @@ updateEndWizardTurnButtonVisibility() {
       /* skillLevel: */ 100,
       /* imagePath: */ "images/wizard-nobg.png", // Image for Wizard disc
       /* canDoReboundDamage: */ false,
-      /* throwPowerMultiplier: */ 1.0,
+      /* throwPowerMultiplier: */ 0.7,
       /* mass: */ .8,
       /* rageIsActiveForNextThrow: */ false,
       /* rageWasUsedThisThrow: */ false,
@@ -934,7 +1044,9 @@ updateEndWizardTurnButtonVisibility() {
   }
 
   handlePointerMoveInteraction(event, initialPointerDownPos) { // Renamed and signature changed
-    if (this.gameOverState.active) {
+    if (this.gameOverState.active || this.controlsEnabled || !this.currentDisc) {
+      if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
+      if (this.uiManager) this.uiManager.updateThrowInfo("", false);
       return;
     }
     // The check for isPointerDown is now handled by InputHandler before calling this method.
@@ -1107,9 +1219,11 @@ updateEndWizardTurnButtonVisibility() {
     // (e.g., clicked on the wrong disc or aiming is not appropriate for the current context).
     // In this case, we ensure camera controls (OrbitControls) are enabled and then return,
     // skipping any throw logic.
-    if (this.controlsEnabled) {
-        this.controls.enabled = true; // Ensure OrbitControls are on.
-        // this.controlsEnabled remains true, as set by handlePointerDownInteraction.
+    if (this.controlsEnabled || !this.currentDisc) {
+        this.controls.enabled = true;
+        this.controlsEnabled = true;
+        if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
+        if (this.uiManager) this.uiManager.updateThrowInfo("", false);
         return;
     }
 
@@ -1229,7 +1343,8 @@ updateEndWizardTurnButtonVisibility() {
     // Called by InputHandler when Escape is pressed during a drag/aim operation.
     // InputHandler itself will set its internal isPointerDown to false.
     // GameController needs to reset its aiming-specific state.
-    this.pointerDisc = null; // No disc is actively being aimed anymore
+    this.pointerDisc = null; 
+    this.currentDisc = null; // Reset currentDisc so pointerup doesn't trigger a throw
     if (this.controls) {
       this.controls.enabled = true; // Re-enable orbit controls
     }
@@ -1240,8 +1355,6 @@ updateEndWizardTurnButtonVisibility() {
       this.uiManager.updateThrowInfo("", false); // Clear the throw info text
     }
     // Ensure controlsEnabled reflects that aiming is cancelled.
-    // GameController.controlsEnabled is used by handlePointerDownInteraction to determine
-    // if a new aim can start.
     this.controlsEnabled = true;
   }
 
@@ -1408,6 +1521,8 @@ clamp(value, min, max) {
     this.barbarianUniqueNPCHitsThisThrow.clear();
     this.currentPlayerRageCharges = 0; // Reset rage charges to 0 or initial value
     this.wizardHasSummonedOrbsThisGame = false; // Reset for new game
+    this.wizardEarnedOrbsCount = 0; // Reset earned orbs count for new game
+    this.wizardOrbsEarnedThisTurn = 0; // Reset earned this turn
     this.gameOverState.active = false; // Reset game over state
 
     this.panningKeys = { up: false, down: false, left: false, right: false }; // Reset panning state
@@ -1467,6 +1582,8 @@ clamp(value, min, max) {
     // FPS calculation
     this.fpsFrameCount++;
     const now = performance.now();
+    const deltaTime = (now - this.fpsLastTime) / 1000;
+    this.fpsLastTime = now;
     const elapsedSinceLastUpdate = now - this.fpsLastUpdateTime;
 
     if (elapsedSinceLastUpdate >= this.fpsUpdateInterval) {
@@ -1553,7 +1670,7 @@ clamp(value, min, max) {
 
 
       // Update disc appearance for dead discs
-      this.discs.forEach((disc) => {
+      [...this.discs].forEach((disc) => {
         if (disc.dead) {
           // Handle both group and single mesh structures
           if (disc.mesh.isGroup) {
@@ -1592,7 +1709,7 @@ clamp(value, min, max) {
     const wizardDisc = this.discs.find(d => d.kind === 'Wizard' && d.type === 'player' && !d.dead);
     if (wizardDisc && this.wizardOrbs.length > 0) {
       const wizardCurrentPos = wizardDisc.mesh.position;
-      this.wizardOrbs.forEach(orbRef => {
+      [...this.wizardOrbs].forEach(orbRef => {
         // Ensure we're working with "live" orb objects that are part of the main this.discs array
         // especially if wizardOrbs might contain stale references after removals/re-summons.
         const liveOrb = this.discs.find(d => d.uniqueOrbId === orbRef.uniqueOrbId);
@@ -1624,7 +1741,7 @@ clamp(value, min, max) {
     }
 
     // Update and move discs
-    this.discs.forEach((disc) => {
+    [...this.discs].forEach((disc) => {
       if (disc.moving) {
         disc.updatePosition();
 
@@ -1639,16 +1756,19 @@ clamp(value, min, max) {
           disc.handleCollisionWithBox(wall, 0.8);
         });
 
-        disc.applyFriction(0.96);
+        // Apply friction (Wizards have more drag and slow down faster)
+        const currentFriction = disc.kind === 'Wizard' ? 0.92 : 0.96;
+        disc.applyFriction(currentFriction);
       }
     });
 
     // Disc-to-disc collisions
     let colliding = false;
-    for (let i = 0; i < this.discs.length; i++) {
-      const d1 = this.discs[i];
-      for (let j = i + 1; j < this.discs.length; j++) {
-        const d2 = this.discs[j];
+    const collisionArray = [...this.discs];
+    for (let i = 0; i < collisionArray.length; i++) {
+      const d1 = collisionArray[i];
+      for (let j = i + 1; j < collisionArray.length; j++) {
+        const d2 = collisionArray[j];
 
         // Skip collision between Wizard and his own orbs
         if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && this.wizardOrbs.includes(d2)) ||
@@ -1715,6 +1835,16 @@ clamp(value, min, max) {
                                     if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
                                         this.currentPlayerRageCharges++;
                                     }
+                                    // Life-leech during rage (only if HP < 3)
+                                    if (d1.rageWasUsedThisThrow && d1.hitPoints < 3) {
+                                        d1.restoreHealth(1);
+                                        this.updateDiscNames();
+                                        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
+                                    }
+                                } else if (d1.kind === 'Wizard' || d1.kind === 'Orb') {
+                                    if (this.wizardHasSummonedOrbsThisGame && (this.wizardEarnedOrbsCount + this.wizardOrbsEarnedThisTurn < 3)) {
+                                        this.wizardOrbsEarnedThisTurn++;
+                                    }
                                 }
                                 this.npcsKilledForRageCharge.add(d2.discName);
                                 this.updateRageButtonVisibility(); // Update button text/visibility
@@ -1776,6 +1906,16 @@ clamp(value, min, max) {
                                     if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
                                         this.currentPlayerRageCharges++;
                                     }
+                                    // Life-leech during rage (only if HP < 3)
+                                    if (d2.rageWasUsedThisThrow && d2.hitPoints < 3) {
+                                        d2.restoreHealth(1);
+                                        this.updateDiscNames();
+                                        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
+                                    }
+                                } else if (d2.kind === 'Wizard' || d2.kind === 'Orb') {
+                                    if (this.wizardHasSummonedOrbsThisGame && (this.wizardEarnedOrbsCount + this.wizardOrbsEarnedThisTurn < 3)) {
+                                        this.wizardOrbsEarnedThisTurn++;
+                                    }
                                 }
                                 this.npcsKilledForRageCharge.add(d1.discName);
                                 this.updateRageButtonVisibility(); // Update button text/visibility
@@ -1807,6 +1947,57 @@ clamp(value, min, max) {
                         }
                     }
                 }
+                // Case 3: NPC-NPC collision (Chain Reaction) when player is the actor
+                else if (d1.type === "NPC" && d2.type === "NPC" && this.currentDisc && this.currentDisc.type === 'player') {
+                    const actor = this.currentDisc;
+                    // Only apply if either NPC hasn't been damaged yet this throw (to prevent infinite damage loop if they stay overlapping)
+                    if (actor.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName) || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
+                        
+                        let damageToDeal = actor.attackDamage;
+                        
+                        if (actor.kind === 'Barbarian') {
+                            // Tracking unique hits for the Barbarian's damage bonus
+                            this.barbarianUniqueNPCHitsThisThrow.add(d1.discName);
+                            this.barbarianUniqueNPCHitsThisThrow.add(d2.discName);
+
+                            const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                            damageToDeal = actor.rageWasUsedThisThrow ? (2 + bonusDamage) : (actor.attackDamage + bonusDamage);
+                        }
+
+                        // Both NPCs take damage from the collision
+                        d1.takeHit(damageToDeal);
+                        d2.takeHit(damageToDeal);
+
+                        // Check for kills to grant rewards
+                        [d1, d2].forEach(npc => {
+                            if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
+                                if (actor.kind === 'Barbarian') {
+                                    if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
+                                        this.currentPlayerRageCharges++;
+                                    }
+                                    // Life-leech during rage (only if HP < 3)
+                                    if (actor.rageWasUsedThisThrow && actor.hitPoints < 3) {
+                                        actor.restoreHealth(1);
+                                        this.updateDiscNames();
+                                        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
+                                    }
+                                } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
+                                    if (this.wizardHasSummonedOrbsThisGame && (this.wizardEarnedOrbsCount + this.wizardOrbsEarnedThisTurn < 3)) {
+                                        this.wizardOrbsEarnedThisTurn++;
+                                    }
+                                }
+                                this.npcsKilledForRageCharge.add(npc.discName);
+                            }
+                        });
+                        this.updateRageButtonVisibility();
+
+                        // Mark as damaged if not raging
+                        if (!actor.canDoReboundDamage) {
+                            this.playerDamagedNPCsThisThrow.add(d1.discName);
+                            this.playerDamagedNPCsThisThrow.add(d2.discName);
+                        }
+                    }
+                }
             }
 
             const overlap = minDist - dist;
@@ -1817,12 +2008,14 @@ clamp(value, min, max) {
       }
     }
 
+    // Update and animate lava pools
+    if (this.lavaPools && this.lavaPools.length > 0) {
+      this.lavaPools.forEach(pool => pool.update(deltaTime));
+    }
+
     // Lava pool collision detection
     if (this.lavaPools && this.lavaPools.length > 0) {
-      this.discs.forEach(disc => {
-        if (disc.dead) {
-          return; // Skip dead discs
-        }
+      [...this.discs].forEach(disc => {
 
         // Rudimentary way to track if a disc is in lava for this frame.
         // Ideally, `isCurrentlyInLavaState` would be a property on the Disc class.
@@ -1845,11 +2038,29 @@ clamp(value, min, max) {
               // Assuming takeHit handles setting the disc to dead if HP <= 0
               disc.takeHit(1); // Damage on entry
 
+              // Reward player for lava kills
+              if (disc.type === 'NPC' && disc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(disc.discName)) {
+                  const actor = this.currentDisc;
+                  if (actor && actor.type === 'player') {
+                      if (actor.kind === 'Barbarian') {
+                          if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
+                              this.currentPlayerRageCharges++;
+                          }
+                      } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
+                          if (this.wizardHasSummonedOrbsThisGame && (this.wizardEarnedOrbsCount + this.wizardOrbsEarnedThisTurn < 3)) {
+                              this.wizardOrbsEarnedThisTurn++;
+                          }
+                      }
+                      this.npcsKilledForRageCharge.add(disc.discName);
+                      this.updateRageButtonVisibility();
+                  }
+              }
+
 
             }
             break; // No need to check other lava pools for this disc this frame
           }
-        }
+      }
 
         if (!foundInLavaThisFrame && disc.isCurrentlyInLavaState) {
           // Disc was in lava but is no longer (e.g., if it somehow got out, though unlikely with current logic)
@@ -1883,7 +2094,7 @@ clamp(value, min, max) {
             this.wizardHasMovedThisTurn = true;
 
             const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-            const canSummonNewOrbs = !this.wizardHasSummonedOrbsThisGame; // Wizard is alive as they just moved
+            const canSummonNewOrbs = !this.wizardHasSummonedOrbsThisGame || (this.wizardEarnedOrbsCount > 0 && activeOrbsCount < 3);
 
             if (activeOrbsCount === 0 && !canSummonNewOrbs) {
                 // No orbs left to use and cannot summon new ones.
@@ -1919,7 +2130,8 @@ clamp(value, min, max) {
                 this._updateSpotlights();
                 // Check if turn should end now
                 const activeOrbsAfterConsumption = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-                if (activeOrbsAfterConsumption === 0 && this.wizardHasMovedThisTurn) {
+                const canSummonNewOrbsAfterConsumption = !this.wizardHasSummonedOrbsThisGame || (this.wizardEarnedOrbsCount > 0 && activeOrbsAfterConsumption < 3);
+                if (activeOrbsAfterConsumption === 0 && this.wizardHasMovedThisTurn && !canSummonNewOrbsAfterConsumption) {
                     await this._proceedToNextPlayerTurn();
                 }
                 // Else: Wizard's turn continues (can move self, throw another (non-existent) orb, or end turn)
@@ -1969,6 +2181,10 @@ clamp(value, min, max) {
       return;
     }
     this.wizardHasMovedThisTurn = false; // Reset for the new turn
+
+    // If it was the Wizard's turn, or any player's turn, we find the next player.
+    // If the next turn is the Wizard's, we transfer his pending orbs.
+    // But we need to find who the next disc is first.
 
     // Deselect any currently selected disc (visually) before finding next turn.
     // The currentDisc might be an Orb, but the turn index points to the Wizard.
@@ -2035,6 +2251,12 @@ clamp(value, min, max) {
     this.currentTurnIndex = nextIndex;
     this.currentDisc = this.discs[this.currentTurnIndex]; // Correctly assign the disc for the new turn
 
+    // If it's now the Wizard's turn, transfer pending orbs earned from previous turns
+    if (this.currentDisc && this.currentDisc.kind === 'Wizard' && !this.currentDisc.dead) {
+        this.wizardEarnedOrbsCount += this.wizardOrbsEarnedThisTurn;
+        this.wizardOrbsEarnedThisTurn = 0;
+    }
+
     // Apply lava damage if the disc starts its turn in lava
     this._applyStartOfTurnLavaDamage(this.currentDisc);
 
@@ -2095,24 +2317,25 @@ clamp(value, min, max) {
     let shouldBeVisible = false;
     const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
 
-    // Primary condition: Orbs must not have been summoned yet this game.
-    if (!this.wizardHasSummonedOrbsThisGame &&
-        discForTurnContext &&
+    if (discForTurnContext &&
         discForTurnContext.kind === 'Wizard' &&
         discForTurnContext.type === 'player' &&
         !discForTurnContext.dead &&
-        // Also ensure no active orbs currently exist (e.g. if summon failed partially before flag was set,
-        // or if this is called before summonOrbs fully completes and sets the main flag).
-        this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length === 0 &&
         !this.gameOverState.active) {
-      shouldBeVisible = true;
+      
+      const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
+      
+      if (!this.wizardHasSummonedOrbsThisGame && activeOrbsCount === 0) {
+        shouldBeVisible = true;
+        this.summonOrbsButton.textContent = 'Summon Orbs';
+      } else if (this.wizardEarnedOrbsCount > 0 && activeOrbsCount < 3) {
+        shouldBeVisible = true;
+        this.summonOrbsButton.textContent = `Summon Orb (${this.wizardEarnedOrbsCount})`;
+      }
     }
 
     if (shouldBeVisible) {
       this.summonOrbsButton.style.display = 'inline-block';
-      // Potentially update text or disabled state if needed in the future
-      // e.g., this.summonOrbsButton.disabled = false;
-      // e.g., this.summonOrbsButton.textContent = 'Summon Orbs';
     } else {
       this.summonOrbsButton.style.display = 'none';
     }
@@ -2235,7 +2458,7 @@ clamp(value, min, max) {
   }
 
   _applyStartOfTurnLavaDamage(disc) {
-    if (!disc || disc.dead || !this.lavaPools || this.lavaPools.length === 0) {
+    if (!disc || !this.lavaPools || this.lavaPools.length === 0) {
       return; // No disc, or disc is dead, or no lava pools to check against
     }
 
@@ -2243,6 +2466,24 @@ clamp(value, min, max) {
       if (lavaPool.isPointInside(disc.mesh.position.x, disc.mesh.position.z)) {
         console.log(`${disc.discName} is starting turn in lava, takes 1 damage.`);
         disc.takeHit(1); // Apply 1 damage
+
+        // Reward player for lava kills at start of turn
+        if (disc.type === 'NPC' && disc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(disc.discName)) {
+            const actor = this.currentDisc;
+            if (actor && actor.type === 'player') {
+                if (actor.kind === 'Barbarian') {
+                    if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
+                        this.currentPlayerRageCharges++;
+                    }
+                } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
+                    if (this.wizardHasSummonedOrbsThisGame && (this.wizardEarnedOrbsCount + this.wizardOrbsEarnedThisTurn < 3)) {
+                        this.wizardOrbsEarnedThisTurn++;
+                    }
+                }
+                this.npcsKilledForRageCharge.add(disc.discName);
+                this.updateRageButtonVisibility();
+            }
+        }
 
         // Update game state immediately after damage
         this.updateAllDiscDeadStates();

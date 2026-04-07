@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 /**
  * Represents an irregular, blobby lava pool on the game field.
- * Creates a 2D shape and then a 3D mesh for use in a Three.js scene.
+ * Uses a texture-mapped 2D shape to create a molten, organic appearance.
  */
 class LavaPool {
     /**
@@ -10,78 +10,74 @@ class LavaPool {
      * @param {object} config - Configuration object for the lava pool.
      * @param {number} config.centerX - The X-coordinate of the center of the lava pool in world space.
      * @param {number} config.centerZ - The Z-coordinate of the center of the lava pool in world space.
-     * @param {number} [config.baseRadius=50] - The average radius of the lava pool in world units.
-     * @param {number} [config.numVertices=20] - The number of vertices to generate the shape. More vertices = smoother.
-     * @param {number} [config.irregularity=0.4] - A factor from 0 (perfect circle) to 1 (highly irregular)
-     *                                            controlling how much the shape deviates from a circle.
-     * @param {number} [config.yPosition=0.1] - The Y-coordinate for the lava pool mesh,
-     *                                          should be slightly above the ground (e.g., ground at Y=0) to prevent z-fighting.
-     * @param {THREE.Color | string | number} [config.color=0xff4500] - The color of the lava (e.g., 'orangered', 0xff4500).
+     * @param {number} [config.baseRadius=5] - The average radius of the lava pool in world units.
+     * @param {number} [config.numVertices=20] - The number of vertices to generate the shape.
+     * @param {number} [config.irregularity=0.4] - A factor from 0 to 1 controlling shape deviation.
+     * @param {number} [config.yPosition=0.05] - The Y-coordinate for the lava pool mesh.
+     * @param {number} [config.scrollSpeedX] - Custom horizontal scroll speed for the lava texture.
+     * @param {number} [config.scrollSpeedY] - Custom vertical scroll speed for the lava texture.
      */
     constructor({
         centerX,
         centerZ,
-        baseRadius = 50,
+        baseRadius = 5,
         numVertices = 20,
         irregularity = 0.4,
-        yPosition = 0.1,
-        color = 0xff4500 // Default to a reddish-orange
+        yPosition = 0.05,
+        scrollSpeedX,
+        scrollSpeedY
     }) {
         this.centerX = centerX;
         this.centerZ = centerZ;
         this.baseRadius = baseRadius;
-        this.numVertices = Math.max(3, numVertices); // Need at least 3 vertices for a shape
-        this.irregularity = Math.max(0, Math.min(1, irregularity)); // Clamp irregularity between 0 and 1
+        this.numVertices = Math.max(3, numVertices);
+        this.irregularity = Math.max(0, Math.min(1, irregularity));
         this.yPosition = yPosition;
-        this.color = new THREE.Color(color);
 
         // Stores {x, y} pairs for the 2D shape, relative to the pool's center (0,0).
-        // These x,y correspond to local X and local Y of the THREE.Shape before rotation.
         this.relativeVertices2D = [];
         this.mesh = null;
+        this.lavaTexture = null;
+
+        // Animation speeds (use provided values or default to random)
+        this.scrollSpeedX = scrollSpeedX !== undefined ? scrollSpeedX : (Math.random() - 0.5) * 0.04 + 0.03;
+        this.scrollSpeedY = scrollSpeedY !== undefined ? scrollSpeedY : (Math.random() - 0.5) * 0.04 + 0.02;
 
         this._generateShapeVertices();
         this._createMesh();
     }
 
     /**
-     * Generates the 2D vertices for the blobby shape, relative to (0,0).
-     * Uses a sum of sine waves for organic-looking irregularity.
+     * Generates the 2D vertices for the blobby shape using summed sine waves.
      * @private
      */
     _generateShapeVertices() {
         this.relativeVertices2D = [];
         const twoPi = Math.PI * 2;
 
-        // Random phases and frequencies for sine wave summation to make each blob unique
         const randomPhase1 = Math.random() * twoPi;
         const randomPhase2 = Math.random() * twoPi;
-        // Frequencies determine how many "lobes" or "waves" the blob has
-        const freq1 = 2 + Math.random() * 3; // Lower frequency component (e.g., 2-5 lobes)
-        const freq2 = 4 + Math.random() * 4; // Higher frequency component (e.g., 4-8 smaller lobes)
+        const freq1 = 2 + Math.random() * 3;
+        const freq2 = 4 + Math.random() * 4;
 
         for (let i = 0; i < this.numVertices; i++) {
             const angle = (i / this.numVertices) * twoPi;
 
             let radiusOffset = 0;
-            // Sum of sines for smoother, blobby variation.
-            // The offset is scaled by baseRadius and the irregularity factor.
             radiusOffset += Math.sin(angle * freq1 + randomPhase1) * (this.baseRadius * this.irregularity * 0.6);
             radiusOffset += Math.sin(angle * freq2 + randomPhase2) * (this.baseRadius * this.irregularity * 0.4);
 
             const currentRadius = this.baseRadius + radiusOffset;
 
-            // Generate 2D points relative to (0,0) for the shape definition
             const x = currentRadius * Math.cos(angle);
-            const y = currentRadius * Math.sin(angle); // This 'y' is the second dimension in the 2D plane of the shape
+            const y = currentRadius * Math.sin(angle);
 
             this.relativeVertices2D.push({ x: x, y: y });
         }
     }
 
     /**
-     * Creates the Three.js mesh for the lava pool.
-     * The mesh is a flat shape positioned on the XZ plane.
+     * Creates the Three.js mesh for the lava pool with texture mapping.
      * @private
      */
     _createMesh() {
@@ -90,110 +86,108 @@ class LavaPool {
             return;
         }
 
-        // The THREE.Shape is defined in its own 2D XY plane.
-        // Vertices are relative to the shape's origin (0,0).
         const shapePoints = this.relativeVertices2D.map(v => new THREE.Vector2(v.x, v.y));
         const shape = new THREE.Shape(shapePoints);
         const geometry = new THREE.ShapeGeometry(shape);
 
-        // Using MeshBasicMaterial for a simple, unlit lava color.
-        // For more advanced effects (like glowing or reacting to light), MeshStandardMaterial could be used.
-        const material = new THREE.MeshBasicMaterial({
-            color: this.color,
-            side: THREE.DoubleSide, // Render both sides, important if camera can go below ground level
+        // Load the lava texture
+        const textureLoader = new THREE.TextureLoader();
+        this.lavaTexture = textureLoader.load('images/lava-tile-1.png');
+
+        // Configure texture wrapping and variety
+        this.lavaTexture.wrapS = THREE.RepeatWrapping;
+        this.lavaTexture.wrapT = THREE.RepeatWrapping;
+
+        // Randomize texture transform for variety between pools
+        this.lavaTexture.offset.set(Math.random(), Math.random());
+        this.lavaTexture.rotation = Math.random() * Math.PI * 2;
+
+        // Scale texture repeat based on the pool's size
+        const uvScale = 0.25; // Adjust this to change the "density" of the lava pattern
+        this.lavaTexture.repeat.set(this.baseRadius * uvScale, this.baseRadius * uvScale);
+
+        // Use MeshStandardMaterial with emissive properties for a "glowing" effect
+        const material = new THREE.MeshStandardMaterial({
+            map: this.lavaTexture,
+            emissive: new THREE.Color(0xff4500),
+            emissiveMap: this.lavaTexture,
+            emissiveIntensity: 0.5,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.95
         });
 
         this.mesh = new THREE.Mesh(geometry, material);
-
-        // Position the mesh at its world center coordinates.
         this.mesh.position.set(this.centerX, this.yPosition, this.centerZ);
-
-        // Rotate the mesh to lay flat on the XZ plane (assuming a Y-up coordinate system).
-        // The shape was defined in the XY plane (local to the shape).
-        // We rotate it -90 degrees around its local X-axis.
-        // After this rotation:
-        // - Shape's local X-axis aligns with world X-axis.
-        // - Shape's local Y-axis aligns with world -Z-axis (negative Z).
         this.mesh.rotation.x = -Math.PI / 2;
-
-        this.mesh.name = "LavaPool"; // Useful for debugging or selecting in the scene
+        this.mesh.name = "LavaPool";
     }
 
     /**
-     * Returns the Three.js mesh object for this lava pool.
-     * The caller is responsible for adding this mesh to the Three.js scene.
-     * @returns {THREE.Mesh | null} The mesh object, or null if it wasn't created.
+     * Updates the lava texture animation.
+     * @param {number} deltaTime - Time since last frame in seconds.
+     */
+    update(deltaTime = 0.016) {
+        if (this.lavaTexture) {
+            this.lavaTexture.offset.x += this.scrollSpeedX * deltaTime;
+            this.lavaTexture.offset.y += this.scrollSpeedY * deltaTime;
+        }
+    }
+
+    /**
+     * @returns {THREE.Mesh | null}
      */
     getMesh() {
         return this.mesh;
     }
 
     /**
-     * Checks if a given point (worldX, worldZ) is inside the 2D footprint of the lava pool.
-     * Uses the ray casting algorithm.
-     * @param {number} worldX - The X-coordinate of the point to check in world space.
-     * @param {number} worldZ - The Z-coordinate of the point to check in world space.
-     * @returns {boolean} True if the point is inside the polygon, false otherwise.
+     * Ray casting algorithm to check if a point is inside the pool's irregular boundary.
      */
     isPointInside(worldX, worldZ) {
         if (!this.relativeVertices2D || this.relativeVertices2D.length < 3) {
             return false;
         }
 
-        // Transform the world point into the local 2D coordinate system of the shape.
-        // The shape's vertices (this.relativeVertices2D) are defined relative to its center (0,0)
-        // in a 2D plane that, after mesh transformations, aligns as:
-        // - Shape's local X maps to world X (relative to centerX).
-        // - Shape's local Y maps to world -Z (relative to centerZ).
         const localX = worldX - this.centerX;
-        const localShapeY = -(worldZ - this.centerZ); // Invert Z transformation
+        const localShapeY = -(worldZ - this.centerZ);
 
         let isInside = false;
-        let j = this.relativeVertices2D.length - 1; // Index of the last vertex
+        let j = this.relativeVertices2D.length - 1;
         for (let i = 0; i < this.relativeVertices2D.length; i++) {
-            const vi = this.relativeVertices2D[i]; // Current vertex (localShapeX_i, localShapeY_i)
-            const vj = this.relativeVertices2D[j]; // Previous vertex
+            const vi = this.relativeVertices2D[i];
+            const vj = this.relativeVertices2D[j];
 
-            // Ray casting formula component:
-            // Check if the ray (horizontal, from point to +infinity) crosses the edge (vi, vj)
             const intersect = ((vi.y > localShapeY) !== (vj.y > localShapeY)) &&
                 (localX < (vj.x - vi.x) * (localShapeY - vi.y) / (vj.y - vi.y) + vi.x);
 
             if (intersect) {
-                isInside = !isInside; // Flip a coin for each intersection
+                isInside = !isInside;
             }
-            j = i; // Move to the next edge
+            j = i;
         }
         return isInside;
     }
 
     /**
-     * Disposes of the Three.js geometry and material associated with this lava pool.
-     * This should be called when the lava pool is removed from the game to free up GPU resources.
-     * The caller is also responsible for removing the mesh from the scene.
+     * Cleans up GPU resources.
      */
     dispose() {
         if (this.mesh) {
-            if (this.mesh.geometry) {
-                this.mesh.geometry.dispose();
-            }
+            if (this.mesh.geometry) this.mesh.geometry.dispose();
             if (this.mesh.material) {
-                // If material is an array (e.g. multi-material object)
-                if (Array.isArray(this.mesh.material)) {
-                    this.mesh.material.forEach(mat => mat.dispose());
-                } else {
-                    this.mesh.material.dispose();
-                }
+                const materials = Array.isArray(this.mesh.material) ? this.mesh.material : [this.mesh.material];
+                materials.forEach(mat => {
+                    if (mat.map) mat.map.dispose();
+                    if (mat.emissiveMap) mat.emissiveMap.dispose();
+                    mat.dispose();
+                });
             }
-            // Note: The mesh itself is not "disposed", but its components are.
-            // If it's in a scene, it should be removed via scene.remove(this.mesh).
             this.mesh = null;
+            this.lavaTexture = null;
         }
-        this.relativeVertices2D = []; // Clear vertices array
+        this.relativeVertices2D = [];
     }
 }
 
-// Export the class for use in other modules.
-// If your project doesn't use ES6 modules (e.g., if THREE is a global variable from a <script> tag),
-// you might need to adjust this (e.g., `window.LavaPool = LavaPool;`).
 export { LavaPool };

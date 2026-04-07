@@ -25,7 +25,10 @@ export default class InputHandler {
         window.addEventListener('pointermove', this._handlePointerMove);
         window.addEventListener('pointerup', this._handlePointerUp);
 
-        window.addEventListener('keydown', this._handleKeyDown);
+        // Multiple listeners for keydown to ensure Escape is caught regardless of focus
+        window.addEventListener('keydown', this._handleKeyDown, { capture: true });
+        document.addEventListener('keydown', this._handleKeyDown, { capture: true });
+
         window.addEventListener('keyup', this._handleKeyUp);
         // Note: The window resize listener is still in GameController as it directly affects camera and renderer.
     }
@@ -65,19 +68,19 @@ export default class InputHandler {
     }
 
     _handleKeyDown(event) {
-        const key = event.key.toLowerCase();
+        const key = (event.key || '').toLowerCase();
         // console.log("InputHandler: KeyDown detected - key:", key, "original event.key:", event.key); // DETAILED DEBUG
 
-        if (key === 'escape' || key === 'esc') {
-            if (this.isPointerDown) { // If currently aiming/dragging
-                this.isPointerDown = false; // Cancel the drag
+        if (key === 'escape' || key === 'esc' || event.code === 'Escape' || event.keyCode === 27) {
+            if (this.isPointerDown) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.isPointerDown = false;
                 
-                // Notify GameController to cancel aiming (e.g., hide throw line, reset controls)
-                if (this.gameController.cancelAiming) {
+                if (this.gameController && typeof this.gameController.cancelAiming === 'function') {
                     this.gameController.cancelAiming();
                 }
-                // Also update UI directly if needed (e.g., hide throw info)
-                if (this.uiManager) {
+                if (this.uiManager && typeof this.uiManager.updateThrowInfo === 'function') {
                    this.uiManager.updateThrowInfo("", false);
                 }
             }
@@ -116,7 +119,20 @@ export default class InputHandler {
     }
 
     _handleKeyUp(event) {
-        const key = event.key.toLowerCase();
+        const key = (event.key || '').toLowerCase();
+
+        // Extra safety: cancel if Escape is released
+        if (key === 'escape' || key === 'esc' || event.code === 'Escape' || event.keyCode === 27) {
+            if (this.isPointerDown) {
+                this.isPointerDown = false;
+                if (this.gameController && typeof this.gameController.cancelAiming === 'function') {
+                    this.gameController.cancelAiming();
+                }
+                if (this.uiManager && typeof this.uiManager.updateThrowInfo === 'function') {
+                   this.uiManager.updateThrowInfo("", false);
+                }
+            }
+        }
 
         // Handle panning controls release
         switch (key) {
@@ -157,7 +173,8 @@ export default class InputHandler {
         this.domElement.removeEventListener('pointerdown', this._handlePointerDown);
         window.removeEventListener('pointermove', this._handlePointerMove);
         window.removeEventListener('pointerup', this._handlePointerUp);
-        window.removeEventListener('keydown', this._handleKeyDown);
+        window.removeEventListener('keydown', this._handleKeyDown, { capture: true });
+        document.removeEventListener('keydown', this._handleKeyDown, { capture: true });
         window.removeEventListener('keyup', this._handleKeyUp);
     }
 }

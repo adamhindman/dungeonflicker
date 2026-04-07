@@ -284,6 +284,10 @@ export default class Disc {
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();
+        // Orbs disappear immediately when they stop and have been consumed
+        if (this.kind === 'Orb' && this.gameController) {
+          this.gameController.removeOrb(this);
+        }
       } else if (this.hitPoints <= 0 && this.dead) {
       } else if (this.hitPoints > 0) {
       }
@@ -307,6 +311,23 @@ export default class Disc {
     // Original damage taking logic if not absorbed by an orb
     const oldHP = this.hitPoints;
     this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
+
+    // If an orb itself is reduced to 0 HP (e.g. hit directly), it should disappear
+    if (this.kind === 'Orb' && this.hitPoints <= 0 && oldHP > 0) {
+      this.die();
+      if (this.gameController) {
+        this.gameController.removeOrb(this);
+      }
+    }
+  }
+
+  /**
+   * Restores hit points to the disc, up to its max hit points.
+   * @param {number} amount - The amount of health to restore (default 1)
+   */
+  restoreHealth(amount = 1) {
+    if (this.dead) return;
+    this.hitPoints = Math.min(this.hitPoints + amount, this.maxHitPoints);
   }
 
   // Handle disc death: disable further throws, make disc gray and opaque
