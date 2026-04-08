@@ -1,5 +1,5 @@
 export default class UIManager {
-    constructor(restartGameCallback) {
+    constructor(restartGameCallback, recenterCameraCallback) {
         this.throwInfoDiv = document.getElementById("throw-info");
         this.discNamesList = document.getElementById("disc-names-list");
         this.rageButtonElement = document.getElementById("rage-button");
@@ -33,8 +33,10 @@ export default class UIManager {
         this.gameOverMessageContainer = null;
         this.gameOverMessageTextElement = null;
         this.playAgainButton = null; // Store the button reference
+        this.recenterButton = null;
 
         this._createGameOverUI(restartGameCallback);
+        this._createRecenterButton(recenterCameraCallback);
     }
 
     _createGameOverUI(restartGameCallback) {
@@ -102,6 +104,36 @@ export default class UIManager {
 
         this.gameOverMessageContainer.appendChild(this.playAgainButton);
         document.body.appendChild(this.gameOverMessageContainer);
+    }
+
+    _createRecenterButton(recenterCameraCallback) {
+        let button = document.getElementById('recenter-button');
+        if (!button) {
+            button = document.createElement('button');
+            button.id = 'recenter-button';
+            button.textContent = 'Recenter';
+            Object.assign(button.style, {
+                position: 'fixed',
+                bottom: '20px',
+                right: '20px',
+                zIndex: '1001',
+                pointerEvents: 'auto',
+                padding: '10px 20px',
+                fontSize: '16px',
+                backgroundColor: 'rgba(32, 64, 122, 0.9)',
+                border: 'none',
+                borderRadius: '5px',
+                color: 'white',
+                cursor: 'pointer'
+            });
+            document.body.appendChild(button);
+        }
+
+        if (recenterCameraCallback) {
+            button.addEventListener('click', recenterCameraCallback);
+        }
+
+        this.recenterButton = button;
     }
 
     showGameOver(playerWon) {
@@ -244,6 +276,17 @@ export default class UIManager {
                     heartsDiv.style.display = 'inline-block'; // Keep hearts on the same line as name
                     heartsDiv.textContent = redHearts + grayHearts;
                     this.currentTurnDiscNameElement.appendChild(heartsDiv);
+
+                    // Add Mana display for Wizard
+                    if (currentDisc.kind === 'Wizard' && currentDisc.gameController) {
+                        const manaDiv = document.createElement('div');
+                        manaDiv.classList.add('mana-container');
+                        manaDiv.style.display = 'block';
+                        manaDiv.style.fontSize = '0.8em';
+                        manaDiv.style.marginTop = '4px';
+                        manaDiv.textContent = `Mana: ${'🔵'.repeat(currentDisc.gameController.wizardMana)}`;
+                        this.currentTurnDiscNameElement.appendChild(manaDiv);
+                    }
 
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
                 } else {

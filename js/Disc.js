@@ -97,6 +97,7 @@ export default class Disc {
     this.gameController = gameController;
     this.description = description;
     this.relativeOffset = new THREE.Vector3(); // Used for orbs to follow the wizard
+    this.healedDiscs = new Set(); // Track discs healed by this disc (e.g., Healing Orb) this throw
 
     // Create the main disc geometry
     const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);
@@ -278,28 +279,32 @@ export default class Disc {
         this.rageWasUsedThisThrow = false;
       }
       // If this disc is an Orb, it's consumed (HP set to 0) when it stops moving
-      if (this.kind === 'Orb') {
+      if (this.kind === 'Orb' || this.kind === 'HealingOrb') {
         this.hitPoints = 0;
       }
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();
-        // Orbs disappear immediately when they stop and have been consumed
-        if (this.kind === 'Orb' && this.gameController) {
-          this.gameController.removeOrb(this);
-        }
-      } else if (this.hitPoints <= 0 && this.dead) {
-      } else if (this.hitPoints > 0) {
+      }
+
+      // Orbs disappear immediately when they stop and have been consumed
+      if ((this.kind === 'Orb' || this.kind === 'HealingOrb') && this.gameController) {
+        this.gameController.removeOrb(this);
       }
     }
   }
 
   // Reduce hit points by the specified damage amount
-  takeHit(damageAmount = 1) {
+  takeHit(damageAmount = 1, attacker = null) {
     // Orb defense logic for Wizard
     if (this.kind === 'Wizard' && this.gameController) {
       const absorbingOrb = this.gameController.wizardOrbs.find(orb => orb && orb.hitPoints > 0 && !orb.dead);
       if (absorbingOrb) {
+        // If an NPC hit the Wizard, the orb deals its damage back to the NPC
+        if (attacker && attacker.type === 'NPC') {
+          attacker.takeHit(absorbingOrb.attackDamage, this);
+        }
+
         absorbingOrb.hitPoints = 0;
         absorbingOrb.die(); // Visually mark as dead/consumed
         this.gameController.removeOrb(absorbingOrb); // Remove from game lists and scene
@@ -313,7 +318,7 @@ export default class Disc {
     this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
 
     // If an orb itself is reduced to 0 HP (e.g. hit directly), it should disappear
-    if (this.kind === 'Orb' && this.hitPoints <= 0 && oldHP > 0) {
+    if ((this.kind === 'Orb' || this.kind === 'HealingOrb') && this.hitPoints <= 0 && oldHP > 0) {
       this.die();
       if (this.gameController) {
         this.gameController.removeOrb(this);
@@ -395,6 +400,7 @@ export default class Disc {
   // Reset damage state for new throw
   resetDamageState() {
     this.hasCausedDamage = false;
+    this.healedDiscs.clear();
   }
 
   // Clean up disc and its spotlight

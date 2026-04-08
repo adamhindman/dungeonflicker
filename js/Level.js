@@ -11,6 +11,8 @@ export default class Level {
     this.textureLoader = new THREE.TextureLoader();
     this.wallMaterial = null;
     this.obstacles = [];
+    this.portals = [];
+    this.portalLights = [];
   }
 
   /**
@@ -341,6 +343,72 @@ export default class Level {
     return true;
   }
 
+  /**
+   * Spawns portals on each wall of the room.
+   */
+  spawnPortals() {
+    const portalWidth = 4;
+    const portalHeight = 4.1; // Slightly taller than walls to be visible
+    const portalDepth = 0.6;
+    const portalGeometry = new THREE.BoxGeometry(portalWidth, portalHeight, portalDepth);
+    const portalMaterial = new THREE.MeshStandardMaterial({
+      color: 0x000000,
+      emissive: 0x4b0082, // Indigo/Dark Purple
+      emissiveIntensity: 2,
+      roughness: 0.1,
+      metalness: 0.5
+    });
+
+    const portalPositions = [
+      { x: 0, z: -this.fieldDepth / 2, rotY: 0 }, // North
+      { x: 0, z: this.fieldDepth / 2, rotY: 0 },  // South
+      { x: this.fieldWidth / 2, z: 0, rotY: Math.PI / 2 }, // East
+      { x: -this.fieldWidth / 2, z: 0, rotY: Math.PI / 2 }  // West
+    ];
+
+    portalPositions.forEach((pos, index) => {
+      const portal = new THREE.Mesh(portalGeometry, portalMaterial);
+      portal.position.set(pos.x, portalHeight / 2, pos.z);
+      portal.rotation.y = pos.rotY;
+      this.scene.add(portal);
+      this.portals.push(portal);
+
+      // Add ominous purple light
+      const light = new THREE.PointLight(0x8800ff, 50, 15);
+      light.position.set(pos.x, portalHeight / 2, pos.z);
+      
+      // Offset light slightly inward from the wall so it illuminates the room
+      const offset = 1.5;
+      if (pos.z < -0.1 && pos.rotY === 0) light.position.z += offset; // North
+      else if (pos.z > 0.1 && pos.rotY === 0) light.position.z -= offset; // South
+      else if (pos.x > 0.1 && pos.rotY !== 0) light.position.x -= offset; // East
+      else if (pos.x < -0.1 && pos.rotY !== 0) light.position.x += offset; // West
+      
+      this.scene.add(light);
+      this.portalLights.push(light);
+    });
+  }
+
+  /**
+   * Checks if a position (x, z) with a given radius is colliding with any portal.
+   */
+  checkPortalCollision(x, z, radius) {
+    for (const portal of this.portals) {
+      const dx = Math.abs(x - portal.position.x);
+      const dz = Math.abs(z - portal.position.z);
+      
+      // Portals are oriented either along X or Z axis
+      const isRotated = Math.abs(portal.rotation.y) > 0.1;
+      const width = isRotated ? 0.6 : 4;
+      const depth = isRotated ? 4 : 0.6;
+
+      if (dx < (width / 2 + radius) && dz < (depth / 2 + radius)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   unload() {
     this.obstacles = [];
     if (this.floor) {
@@ -361,6 +429,18 @@ export default class Level {
       }
     }
     this.walls = {};
+
+    for (const portal of this.portals) {
+      this.scene.remove(portal);
+      if (portal.geometry) portal.geometry.dispose();
+      if (portal.material) portal.material.dispose();
+    }
+    this.portals = [];
+
+    for (const light of this.portalLights) {
+      this.scene.remove(light);
+    }
+    this.portalLights = [];
 
     if (this.wallMaterial) {
       if (this.wallMaterial.map) this.wallMaterial.map.dispose();

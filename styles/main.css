@@ -104,6 +104,8 @@ body {
         background-color: rgba(122, 32, 32, 0.9) !important;
     }
 
+
+
     #current-turn-disc-name-display {
         margin: 0;
         line-height: 1;
@@ -205,3 +207,5 @@ body {
 #disc-info-popup.dead .name {
     opacity: 0.7;
 }
+
+
