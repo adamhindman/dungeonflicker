@@ -125,7 +125,7 @@ export default class GameController {
     this.cameraRotationSpeed = Math.PI / 135; // Radians per frame. Adjust for desired speed.
 
     this.discDescriptions = {
-        Barbarian: "Deals 1 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
+        Barbarian: "Deals 2 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
         Wizard: "Summon orbs with Mana. Costs 1 Mana per orb. Kills with orbs or bumps earn Mana back. Clearing rooms grants Mana.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
         Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
@@ -180,6 +180,13 @@ export default class GameController {
       this.controls.target.copy(this.initialControlsTarget);
       this.camera.updateProjectionMatrix();
       this.controls.update();
+    }
+  }
+
+  focusCameraOnDisc(discName) {
+    const disc = this.discs.find(d => d.discName === discName);
+    if (disc && this.controls) {
+      this.controls.target.copy(disc.mesh.position);
     }
   }
 
@@ -241,7 +248,7 @@ export default class GameController {
     this.pointerDisc = null;
 
     // Instantiate UIManager
-    this.uiManager = new UIManager(this.restartGame.bind(this), this.recenterCamera.bind(this));
+    this.uiManager = new UIManager(this.restartGame.bind(this), this.recenterCamera.bind(this), this.focusCameraOnDisc.bind(this));
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
       console.error("GameController: Action buttons container not found from UIManager.");
@@ -1535,7 +1542,7 @@ clamp(value, min, max) {
         // Healing orbs count as the Wizard's move
         if (targetKind === 'HealingOrb') targetKind = 'Wizard';
 
-        const matchingDiscIndex = this.discs.findIndex(d => 
+        const matchingDiscIndex = this.discs.findIndex(d =>
             d.kind === targetKind && d.type === 'player' && !d.dead
         );
         if (matchingDiscIndex !== -1) {
@@ -1866,11 +1873,6 @@ clamp(value, min, max) {
     for (const disc of [...this.discs]) {
       if (disc.moving) {
         disc.updatePosition();
-
-        // If the wizard is moving physically, update the camera target to follow
-        if (disc.kind === 'Wizard' && disc.type === 'player' && this.controls) {
-          this.controls.target.copy(disc.mesh.position);
-        }
 
         disc.handleWallCollision(
           this.level.fieldWidth,

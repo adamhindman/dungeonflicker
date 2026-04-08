@@ -1,7 +1,8 @@
 export default class UIManager {
-    constructor(restartGameCallback, recenterCameraCallback) {
+    constructor(restartGameCallback, recenterCameraCallback, focusCameraOnDiscCallback) {
         this.throwInfoDiv = document.getElementById("throw-info");
         this.discNamesList = document.getElementById("disc-names-list");
+        this.focusCameraOnDiscCallback = focusCameraOnDiscCallback;
         this.rageButtonElement = document.getElementById("rage-button");
         this.fpsDisplayElement = document.getElementById("fps-counter");
         if (this.fpsDisplayElement) {
@@ -177,6 +178,11 @@ export default class UIManager {
         // Helper function to create a disc list item
         const createDiscListItem = (disc) => {
             const listItem = document.createElement("li");
+            listItem.addEventListener('click', () => {
+                if (this.focusCameraOnDiscCallback) {
+                    this.focusCameraOnDiscCallback(disc.discName);
+                }
+            });
             const hpDisplay = (typeof disc.hitPoints === 'number') ? disc.hitPoints : 'N/A';
             let displayName = `${disc.discName} (${hpDisplay} HP)`;
 

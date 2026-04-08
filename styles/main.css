@@ -64,7 +64,12 @@ body {
 
 #disc-names-list .turn-tracker-item {
     color: gray;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
 
+#disc-names-list .turn-tracker-item:hover {
+    background-color: rgba(255, 255, 255, 0.1);
 }
 
 #disc-names-list .turn-tracker-item.current-turn {
