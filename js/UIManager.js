@@ -38,6 +38,105 @@ export default class UIManager {
 
         this._createGameOverUI(restartGameCallback);
         this._createRecenterButton(recenterCameraCallback);
+
+        this.floatingTextContainer = document.createElement("div");
+        this.floatingTextContainer.id = "floating-text-container";
+        Object.assign(this.floatingTextContainer.style, {
+            position: "absolute",
+            top: "0",
+            left: "0",
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            zIndex: "1005",
+            overflow: "hidden"
+        });
+        document.body.appendChild(this.floatingTextContainer);
+        this.activeFloatingTexts = [];
+    }
+
+    showFloatingText(disc, amount, isHealing) {
+        const textElement = document.createElement("div");
+        const displayAmount = Math.abs(amount);
+        textElement.textContent = `${isHealing ? '+' : '-'}${displayAmount} HP`;
+        Object.assign(textElement.style, {
+            position: "absolute",
+            color: isHealing ? "#4488ff" : "#ff4444",
+            fontWeight: "bold",
+            fontFamily: "Arial, sans-serif",
+            textShadow: "1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black",
+            transform: "translate(-50%, -50%)",
+            opacity: "0",
+            fontSize: "16px",
+            whiteSpace: "nowrap",
+            pointerEvents: "none"
+        });
+
+        this.floatingTextContainer.appendChild(textElement);
+
+        this.activeFloatingTexts.push({
+            element: textElement,
+            disc: disc,
+            startTime: performance.now(),
+            duration: 2000, // 2 seconds
+            startOffsetY: 2, // Starts slightly above the disc
+            offsetX: (Math.random() - 0.5) * 1.5,
+            offsetZ: (Math.random() - 0.5) * 1.5
+        });
+    }
+
+    updateFloatingTexts(camera) {
+        if (!camera) return;
+
+        const now = performance.now();
+        for (let i = this.activeFloatingTexts.length - 1; i >= 0; i--) {
+            const ft = this.activeFloatingTexts[i];
+            const elapsed = now - ft.startTime;
+            const progress = elapsed / ft.duration;
+
+            if (progress >= 1) {
+                ft.element.remove();
+                this.activeFloatingTexts.splice(i, 1);
+                continue;
+            }
+
+            // Opacity: starts more transparent, gets solid, then fades out
+            let opacity;
+            if (progress < 0.2) {
+                opacity = 0.3 + 0.7 * (progress / 0.2);
+            } else {
+                opacity = 1 - ((progress - 0.2) / 0.8);
+            }
+
+            const currentOffsetY = ft.startOffsetY + (progress * 4); // Rises higher
+            const currentFontSize = 16 + (progress * 12); // Increases in font size
+
+            if (ft.disc && ft.disc.mesh) {
+                const pos = ft.disc.mesh.position.clone();
+                pos.x += ft.offsetX;
+                pos.y += currentOffsetY;
+                pos.z += ft.offsetZ;
+
+                pos.project(camera);
+
+                const x = (pos.x * 0.5 + 0.5) * window.innerWidth;
+                const y = (pos.y * -0.5 + 0.5) * window.innerHeight;
+
+                if (pos.z < 1) {
+                    ft.element.style.left = `${x}px`;
+                    ft.element.style.top = `${y}px`;
+                    ft.element.style.fontSize = `${currentFontSize}px`;
+                    ft.element.style.opacity = opacity.toString();
+                    ft.element.style.display = "block";
+                } else {
+                    ft.element.style.display = "none";
+                }
+            } else {
+                // If disc is destroyed, let the text stay where it was but continue to animate font size and opacity
+                ft.element.style.fontSize = `${currentFontSize}px`;
+                ft.element.style.opacity = opacity.toString();
+            }
+        }
     }
 
     _createGameOverUI(restartGameCallback) {

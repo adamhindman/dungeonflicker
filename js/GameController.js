@@ -1580,6 +1580,8 @@ clamp(value, min, max) {
     this._updateSpotlights();
     this.logCurrentTurn();
 
+    this.recenterCamera();
+
     if (this.uiManager) {
       this.uiManager.hideGameOver();
       this.updateDiscNames(); // Refresh UI list
@@ -1689,14 +1691,8 @@ clamp(value, min, max) {
 
 
     // 8. Reset Camera Position and Zoom, and ensure camera controls are enabled
-    if (this.camera) {
-      this.camera.position.copy(this.initialCameraPosition);
-      this.camera.zoom = this.initialCameraZoom;
-      this.camera.updateProjectionMatrix();
-    }
+    this.recenterCamera();
     if (this.controls) {
-      this.controls.target.set(0, 0, 0); // Assuming default target is origin
-      this.controls.update();
       this.controls.enabled = true;
     }
     this.controlsEnabled = true;
@@ -1707,6 +1703,10 @@ clamp(value, min, max) {
 
   async animate() {
     requestAnimationFrame(() => this.animate());
+
+    if (this.uiManager) {
+      this.uiManager.updateFloatingTexts(this.camera);
+    }
 
     // FPS calculation
     this.fpsFrameCount++;

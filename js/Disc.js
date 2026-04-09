@@ -85,6 +85,7 @@ export default class Disc {
     this.type = type;
     this.kind = kind;
     this.hitPoints = hitPoints;
+    this.lastHitPoints = hitPoints;
     this.maxHitPoints = hitPoints; // Store initial HP as max HP
     this.skillLevel = skillLevel;
     this.scene = scene;
@@ -281,6 +282,7 @@ export default class Disc {
       // If this disc is an Orb, it's consumed (HP set to 0) when it stops moving
       if (this.kind === 'Orb' || this.kind === 'HealingOrb') {
         this.hitPoints = 0;
+        this.lastHitPoints = 0;
       }
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
@@ -305,7 +307,12 @@ export default class Disc {
           attacker.takeHit(absorbingOrb.attackDamage, this);
         }
 
+        const oldOrbHP = absorbingOrb.hitPoints;
         absorbingOrb.hitPoints = 0;
+        if (oldOrbHP > 0 && this.gameController && this.gameController.uiManager) {
+          this.gameController.uiManager.showFloatingText(absorbingOrb, oldOrbHP, false);
+        }
+        absorbingOrb.lastHitPoints = 0;
         absorbingOrb.die(); // Visually mark as dead/consumed
         this.gameController.removeOrb(absorbingOrb); // Remove from game lists and scene
         // The Wizard does not take damage as the orb absorbed it.
@@ -316,6 +323,12 @@ export default class Disc {
     // Original damage taking logic if not absorbed by an orb
     const oldHP = this.hitPoints;
     this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
+    const actualDamage = oldHP - this.hitPoints;
+
+    if (actualDamage > 0 && this.gameController && this.gameController.uiManager) {
+      this.gameController.uiManager.showFloatingText(this, actualDamage, false);
+    }
+    this.lastHitPoints = this.hitPoints;
 
     // If an orb itself is reduced to 0 HP (e.g. hit directly), it should disappear
     if ((this.kind === 'Orb' || this.kind === 'HealingOrb') && this.hitPoints <= 0 && oldHP > 0) {
@@ -332,7 +345,14 @@ export default class Disc {
    */
   restoreHealth(amount = 1) {
     if (this.dead) return;
+    const oldHP = this.hitPoints;
     this.hitPoints = Math.min(this.hitPoints + amount, this.maxHitPoints);
+    const actualHealing = this.hitPoints - oldHP;
+
+    if (actualHealing > 0 && this.gameController && this.gameController.uiManager) {
+      this.gameController.uiManager.showFloatingText(this, actualHealing, true);
+    }
+    this.lastHitPoints = this.hitPoints;
   }
 
   // Handle disc death: disable further throws, make disc gray and opaque
