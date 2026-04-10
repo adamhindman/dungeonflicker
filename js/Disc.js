@@ -30,6 +30,13 @@ export default class Disc {
       angle: Math.PI / 4, // Same as active
       penumbra: 1.2, // Same as active
       color: 0xff0000 // Red color for rage
+    },
+    animatedDead: {
+      intensity: 80,
+      distance: 25,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0x8833CC // Purple color for reanimated
     }
   };
 
@@ -284,6 +291,11 @@ export default class Disc {
         this.hitPoints = 0;
         this.lastHitPoints = 0;
       }
+      // If this disc is an AnimatedDead, it is also consumed when it stops moving
+      if (this.kind === 'AnimatedDead') {
+        this.hitPoints = 0;
+        this.lastHitPoints = 0;
+      }
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();
@@ -293,7 +305,49 @@ export default class Disc {
       if ((this.kind === 'Orb' || this.kind === 'HealingOrb') && this.gameController) {
         this.gameController.removeOrb(this);
       }
+      // AnimatedDead: if dead and NOT the currently tracked thrown disc, clean up via GameController
+      // (if it IS the thrownDisc, waitingForDiscToStop in the animate loop handles cleanup)
+      if (this.kind === 'AnimatedDead' && this.dead && this.gameController &&
+          this.gameController.thrownDisc !== this) {
+        this.gameController.removeAnimatedDead(this);
+      }
     }
+  }
+
+  /**
+   * Revives a dead disc, restoring it to life with the given HP.
+   * Used by the Necromancer's Raise Dead and Animate Dead spells.
+   * @param {number} hp - The hit points to restore the disc to.
+   */
+  revive(hp) {
+    if (!this.dead) return;
+    this.dead = false;
+    this.hitPoints = hp;
+    this.lastHitPoints = hp;
+    this.hasThrown = false;
+    this.moving = false;
+    this.velocity.set(0, 0, 0);
+    // Restore original disc color
+    if (this.mesh.isGroup) {
+      this.mesh.children.forEach(child => {
+        if (child.material) {
+          if (child.material.color && this.initialColor !== undefined) {
+            child.material.color.set(this.initialColor);
+          }
+          child.material.transparent = true;
+          child.material.opacity = 0.9;
+        }
+      });
+    } else {
+      if (this.mesh.material) {
+        if (this.mesh.material.color && this.initialColor !== undefined) {
+          this.mesh.material.color.set(this.initialColor);
+        }
+        this.mesh.material.transparent = true;
+        this.mesh.material.opacity = 0.9;
+      }
+    }
+    this.updateSpotlightConfig('inactive');
   }
 
   // Reduce hit points by the specified damage amount
@@ -369,6 +423,9 @@ export default class Disc {
           if (child.material.color) { // Check if color property exists
             child.material.color.set(0x888888); // Set color to gray
           }
+          if (child.material.emissive) { // Clear any emissive glow (e.g., from AnimatedDead)
+            child.material.emissive.set(0x000000);
+          }
           child.material.opacity = 0.9;    // Set opacity to match alive discs but with gray color
           child.material.transparent = false; // Set transparent to false
         }
@@ -377,6 +434,9 @@ export default class Disc {
       // Handle single mesh structure
       if (this.mesh.material.color) { // Check if color property exists
         this.mesh.material.color.set(0x888888); // Set color to gray
+      }
+      if (this.mesh.material.emissive) { // Clear any emissive glow (e.g., from AnimatedDead)
+        this.mesh.material.emissive.set(0x000000);
       }
       this.mesh.material.opacity = 0.9;    // Set opacity
       this.mesh.material.transparent = false; // Set transparent to false
@@ -391,6 +451,8 @@ export default class Disc {
       this.updateSpotlightConfig('dead');
     } else if (this.kind === "Barbarian" && (this.rageIsActiveForNextThrow || this.rageWasUsedThisThrow)) {
       this.updateSpotlightConfig('raging');
+    } else if (this.kind === "AnimatedDead") {
+      this.updateSpotlightConfig('animatedDead');
     } else if (isActive) {
       this.updateSpotlightConfig('active');
     } else {

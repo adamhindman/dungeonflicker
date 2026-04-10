@@ -271,7 +271,7 @@ export default class UIManager {
         const currentDiscName = currentDisc ? currentDisc.discName : null;
 
         // Filter discs
-        const playerDiscs = discs.filter(d => d.type === 'player' && d.kind !== 'Orb');
+        const playerDiscs = discs.filter(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead');
         const npcDiscs = discs.filter(d => d.type === 'NPC');
 
         // Helper function to create a disc list item
@@ -390,6 +390,17 @@ export default class UIManager {
                         manaDiv.style.fontSize = '0.8em';
                         manaDiv.style.marginTop = '4px';
                         manaDiv.textContent = `Mana: ${'🔵'.repeat(currentDisc.gameController.wizardMana)}`;
+                        this.currentTurnDiscNameElement.appendChild(manaDiv);
+                    }
+
+                    // Add Mana display for Necromancer
+                    if (currentDisc.kind === 'Necromancer' && currentDisc.gameController) {
+                        const manaDiv = document.createElement('div');
+                        manaDiv.classList.add('mana-container');
+                        manaDiv.style.display = 'block';
+                        manaDiv.style.fontSize = '0.8em';
+                        manaDiv.style.marginTop = '4px';
+                        manaDiv.textContent = `Mana: ${'💀'.repeat(currentDisc.gameController.necromancerMana)}`;
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 

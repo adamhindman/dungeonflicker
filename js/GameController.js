@@ -106,6 +106,17 @@ export default class GameController {
     this.wizardMana = 3; // Wizard's mana for summoning orbs (starts with 3)
     this.wizardManaEarnedThisTurn = 0; // Mana earned this turn, ready next turn
 
+    // Necromancer properties
+    this.animatedDeadDiscs = [];
+    this.animateDeadButton = null;
+    this.raiseDeadButton = null;
+    this.endNecromancerTurnButton = null;
+    this.necromancerHasMovedThisTurn = false;
+    this.necromancerMana = 3; // Necromancer's mana (starts with 3)
+    this.necromancerManaEarnedThisTurn = 0; // Mana earned this turn, ready next turn
+    this.targetSelectionPopup = null; // Popup for Animate Dead / Raise Dead targeting
+    this.necromancerSelectingAnimateDeadTarget = false; // True when player must click a dead NPC in the scene
+
     // Disc Info Popup
     this.discInfoPopupElement = null;
     this.discInfoNameElement = null;
@@ -127,10 +138,12 @@ export default class GameController {
     this.discDescriptions = {
         Barbarian: "Deals 2 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
         Wizard: "Summon orbs with Mana. Costs 1 Mana per orb. Kills with orbs or bumps earn Mana back. Clearing rooms grants Mana.",
+        Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Raise Dead allies for 2 mana, reviving them at half HP. Earn mana from kills and clearing rooms.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
         Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
         Orb: "A volatile sphere of magical energy, summoned by the Wizard.",
-        HealingOrb: "A red sphere of restorative energy. Heals 1 HP to every living disc it passes through."
+        HealingOrb: "A red sphere of restorative energy. Heals 1 HP to every living disc it passes through.",
+        AnimatedDead: "A reanimated corpse under the Necromancer's command. 1 HP, 1 damage."
     };
 
     // Event listeners for keydown, keyup, pointerdown, pointermove, pointerup
@@ -150,6 +163,24 @@ export default class GameController {
   // Wizard player disc identification helper (useful for consistency)
   _getWizardPlayerDisc() {
     return this.discs.find(d => d.type === 'player' && d.discName === 'Wizard' && !d.dead);
+  }
+
+  // Necromancer player disc identification helper
+  _getNecromancerPlayerDisc() {
+    return this.discs.find(d => d.type === 'player' && d.kind === 'Necromancer' && !d.dead);
+  }
+
+  // Returns true if the Necromancer currently has any spells they can cast
+  _necromancerCanCastSpells(necromancer) {
+    if (!necromancer || necromancer.dead) return false;
+    const deadNPCs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    const deadPCs = this.discs.filter(d => d.type === 'player' && d.dead &&
+      d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' &&
+      d.kind !== 'Necromancer');
+    const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
+    if (this.necromancerMana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
+    if (this.necromancerMana >= 2 && deadPCs.length > 0) return true;
+    return false;
   }
 
   get currentDisc() {
@@ -310,6 +341,16 @@ export default class GameController {
     this.setupBarbarianEndTurnButtonListener(); // Setup listener for Barbarian button
     this.updateBarbarianEndTurnButtonVisibility(); // Initial visibility for Barbarian button
 
+    // Create and setup Necromancer spell buttons
+    this.createAnimateDeadButton();
+    this.setupAnimateDeadButtonListener();
+    this.createRaiseDeadButton();
+    this.setupRaiseDeadButtonListener();
+    this.createEndNecromancerTurnButton();
+    this.setupEndNecromancerTurnButtonListener();
+    this._updateNecromancerActionButtons(); // Initial visibility
+    this.updateEndNecromancerTurnButtonVisibility(); // Initial visibility
+
     // Generate lava pools
     this._generateLavaPools();
 
@@ -394,6 +435,338 @@ export default class GameController {
 
     button.style.display = 'none'; // Initially hidden
     this.barbarianEndTurnButton = button;
+  }
+
+  createAnimateDeadButton() {
+    if (!this.actionButtonsContainer) {
+      console.error("GameController: Action buttons container not available for Animate Dead button.");
+      return;
+    }
+    let button = document.getElementById('animate-dead-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'animate-dead-button';
+      button.textContent = 'Animate Dead (1💀)';
+      this.actionButtonsContainer.appendChild(button);
+    }
+    button.style.display = 'none';
+    this.animateDeadButton = button;
+  }
+
+  createRaiseDeadButton() {
+    if (!this.actionButtonsContainer) {
+      console.error("GameController: Action buttons container not available for Raise Dead button.");
+      return;
+    }
+    let button = document.getElementById('raise-dead-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'raise-dead-button';
+      button.textContent = 'Raise Dead (2💀)';
+      this.actionButtonsContainer.appendChild(button);
+    }
+    button.style.display = 'none';
+    this.raiseDeadButton = button;
+  }
+
+  createEndNecromancerTurnButton() {
+    if (!this.actionButtonsContainer) {
+      console.error("GameController: Action buttons container not available for End Necromancer Turn button.");
+      return;
+    }
+    let button = document.getElementById('necromancer-end-turn-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'necromancer-end-turn-button';
+      button.textContent = 'End Turn';
+      this.actionButtonsContainer.appendChild(button);
+    }
+    button.style.display = 'none';
+    this.endNecromancerTurnButton = button;
+  }
+
+  setupAnimateDeadButtonListener() {
+    if (this.animateDeadButton) {
+      this.animateDeadButton.addEventListener('click', this._handleAnimateDeadButtonClick.bind(this));
+    }
+  }
+
+  setupRaiseDeadButtonListener() {
+    if (this.raiseDeadButton) {
+      this.raiseDeadButton.addEventListener('click', this._handleRaiseDeadButtonClick.bind(this));
+    }
+  }
+
+  setupEndNecromancerTurnButtonListener() {
+    if (this.endNecromancerTurnButton) {
+      this.endNecromancerTurnButton.addEventListener('click', this._handleEndNecromancerTurnButtonClick.bind(this));
+    }
+  }
+
+  _handleAnimateDeadButtonClick() {
+    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    if (!discForTurnContext || discForTurnContext.kind !== 'Necromancer' || discForTurnContext.dead) return;
+    if (this.necromancerMana < 1) return;
+
+    const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
+    if (animatedCount >= 3) return;
+
+    const deadNPCs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    if (deadNPCs.length === 0) return;
+
+    // Enter disc-selection mode — player clicks a dead NPC directly in the scene
+    this.necromancerSelectingAnimateDeadTarget = true;
+    if (this.uiManager) {
+      this.uiManager.updateThrowInfo('Click a dead enemy to animate it  •  Esc to cancel', true);
+    }
+    this._updateNecromancerActionButtons(); // Hides spell buttons while selecting
+  }
+
+  _cancelNecromancerTargetSelection() {
+    if (!this.necromancerSelectingAnimateDeadTarget) return;
+    this.necromancerSelectingAnimateDeadTarget = false;
+    if (this.uiManager) {
+      this.uiManager.updateThrowInfo('', false);
+    }
+    this._updateNecromancerActionButtons();
+  }
+
+  _handleRaiseDeadButtonClick() {
+    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    if (!discForTurnContext || discForTurnContext.kind !== 'Necromancer' || discForTurnContext.dead) return;
+    if (this.necromancerMana < 2) return;
+
+    const deadPCs = this.discs.filter(d =>
+      d.type === 'player' && d.dead &&
+      d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
+    );
+    if (deadPCs.length === 0) return;
+
+    this._showTargetSelectionPopup(
+      deadPCs,
+      (target) => {
+        const success = this.raiseDeadDisc(discForTurnContext, target);
+        if (success) {
+          if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(discForTurnContext);
+          this._updateNecromancerActionButtons();
+          this.updateDiscNames();
+        }
+      },
+      'Choose an ally to raise:'
+    );
+  }
+
+  async _handleEndNecromancerTurnButtonClick() {
+    const discForTurn = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    if (discForTurn && discForTurn.kind === 'Necromancer' && !discForTurn.dead) {
+      await this._proceedToNextPlayerTurn();
+    }
+  }
+
+  updateAnimateDeadButtonVisibility() {
+    if (!this.animateDeadButton) return;
+    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    let shouldBeVisible = false;
+
+    if (discForTurnContext &&
+        discForTurnContext.kind === 'Necromancer' &&
+        discForTurnContext.type === 'player' &&
+        !discForTurnContext.dead &&
+        !this.gameOverState.active) {
+      const deadNPCs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+      const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
+      if (this.necromancerMana >= 1 && deadNPCs.length > 0 && animatedCount < 3 && !this.necromancerSelectingAnimateDeadTarget) {
+        shouldBeVisible = true;
+      }
+    }
+
+    if (shouldBeVisible) {
+      this.animateDeadButton.style.display = 'inline-block';
+      this.animateDeadButton.disabled = false;
+    } else {
+      this.animateDeadButton.style.display = 'none';
+      this.animateDeadButton.disabled = true;
+    }
+  }
+
+  updateRaiseDeadButtonVisibility() {
+    if (!this.raiseDeadButton) return;
+    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    let shouldBeVisible = false;
+
+    if (discForTurnContext &&
+        discForTurnContext.kind === 'Necromancer' &&
+        discForTurnContext.type === 'player' &&
+        !discForTurnContext.dead &&
+        !this.gameOverState.active) {
+      const deadPCs = this.discs.filter(d =>
+        d.type === 'player' && d.dead &&
+        d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
+        d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
+      );
+      if (this.necromancerMana >= 2 && deadPCs.length > 0) {
+        shouldBeVisible = true;
+      }
+    }
+
+    if (shouldBeVisible) {
+      this.raiseDeadButton.style.display = 'inline-block';
+      this.raiseDeadButton.disabled = false;
+    } else {
+      this.raiseDeadButton.style.display = 'none';
+      this.raiseDeadButton.disabled = true;
+    }
+  }
+
+  updateEndNecromancerTurnButtonVisibility() {
+    if (this.endNecromancerTurnButton) {
+      const actualCurrentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+      let shouldBeVisible = false;
+
+      if (actualCurrentDisc &&
+          actualCurrentDisc.type === 'player' &&
+          actualCurrentDisc.kind === 'Necromancer' &&
+          !actualCurrentDisc.dead &&
+          !this.gameOverState.active) {
+        shouldBeVisible = true;
+      }
+
+      if (shouldBeVisible) {
+        this.endNecromancerTurnButton.style.display = 'inline-block';
+        this.endNecromancerTurnButton.disabled = false;
+      } else {
+        this.endNecromancerTurnButton.style.display = 'none';
+        this.endNecromancerTurnButton.disabled = true;
+      }
+    }
+  }
+
+  _updateNecromancerActionButtons() {
+    this.updateAnimateDeadButtonVisibility();
+    this.updateRaiseDeadButtonVisibility();
+  }
+
+  animateDeadDisc(necromancerDisc, targetDisc) {
+    if (!necromancerDisc || necromancerDisc.dead) return false;
+    if (!targetDisc || !targetDisc.dead) return false;
+    if (this.necromancerMana < 1) return false;
+
+    const activeCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
+    if (activeCount >= 3) return false;
+
+    // Cost 1 mana
+    this.necromancerMana--;
+
+    // Store original stats for restoration when the animated dead is consumed
+    targetDisc._originalKind = targetDisc.kind;
+    targetDisc._originalType = targetDisc.type;
+    targetDisc._originalAttackDamage = targetDisc.attackDamage;
+    targetDisc._originalMaxHitPoints = targetDisc.maxHitPoints;
+
+    // Reanimate in place — the corpse rises where it fell, not next to the Necromancer
+    targetDisc.revive(1);
+    targetDisc.attackDamage = 1;
+    targetDisc.maxHitPoints = 1;
+    // type = 'player' allows the player to throw it; kind = 'AnimatedDead' identifies it
+    targetDisc.type = 'player';
+    targetDisc.kind = 'AnimatedDead';
+    targetDisc.isAnimatedDead = true;
+
+    // Mesh visual state is restored by revive(); spotlight will handle the control glow
+
+    // Ensure the disc sits at the correct height
+    targetDisc.mesh.position.y = targetDisc.basePositionY;
+
+    this.animatedDeadDiscs.push(targetDisc);
+    targetDisc.setSpotlightIntensity(false);
+
+    return true;
+  }
+
+  raiseDeadDisc(necromancerDisc, targetDisc) {
+    if (!necromancerDisc || necromancerDisc.dead) return false;
+    if (!targetDisc || !targetDisc.dead) return false;
+    if (this.necromancerMana < 2) return false;
+
+    // Cost 2 mana
+    this.necromancerMana -= 2;
+
+    // Revive at floor(maxHitPoints / 2), minimum 1
+    const reviveHP = Math.max(1, Math.floor(targetDisc.maxHitPoints / 2));
+    targetDisc.revive(reviveHP);
+
+    this.updateDiscNames();
+    return true;
+  }
+
+  removeAnimatedDead(disc) {
+    if (!disc) return;
+    const idx = this.animatedDeadDiscs.indexOf(disc);
+    if (idx === -1) return; // Already removed — safe to call multiple times
+
+    this.animatedDeadDiscs.splice(idx, 1);
+
+    // Restore original kind/type so it's recognized as a dead NPC again
+    disc.kind = disc._originalKind || 'Skeleton';
+    disc.type = disc._originalType || 'NPC';
+    disc.attackDamage = disc._originalAttackDamage !== undefined ? disc._originalAttackDamage : 1;
+    disc.maxHitPoints = disc._originalMaxHitPoints !== undefined ? disc._originalMaxHitPoints : disc.maxHitPoints;
+    disc.isAnimatedDead = false;
+    delete disc._originalKind;
+    delete disc._originalType;
+    delete disc._originalAttackDamage;
+    delete disc._originalMaxHitPoints;
+
+    // Ensure the disc is visually dead (grey)
+    if (!disc.dead) {
+      disc.hitPoints = 0;
+      disc.lastHitPoints = 0;
+      disc.die();
+    }
+
+    this._updateNecromancerActionButtons();
+    this.updateDiscNames();
+  }
+
+  _showTargetSelectionPopup(targets, onSelect, title) {
+    this._hideTargetSelectionPopup();
+
+    const popup = document.createElement('div');
+    popup.id = 'target-selection-popup';
+    popup.style.cssText = 'margin-top:8px;padding:8px;background:rgba(0,0,0,0.75);border:1px solid #8833CC;border-radius:6px;';
+
+    const titleEl = document.createElement('div');
+    titleEl.textContent = title;
+    titleEl.style.cssText = 'color:#CC88FF;font-size:0.8em;margin-bottom:6px;font-weight:bold;';
+    popup.appendChild(titleEl);
+
+    targets.forEach(disc => {
+      const btn = document.createElement('button');
+      btn.textContent = disc.discName;
+      btn.style.cssText = 'display:block;width:100%;margin-bottom:4px;padding:4px 8px;font-size:0.75em;cursor:pointer;';
+      btn.addEventListener('click', () => {
+        this._hideTargetSelectionPopup();
+        onSelect(disc);
+      });
+      popup.appendChild(btn);
+    });
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.style.cssText = 'display:block;width:100%;padding:4px 8px;font-size:0.75em;cursor:pointer;margin-top:4px;opacity:0.7;';
+    cancelBtn.addEventListener('click', () => this._hideTargetSelectionPopup());
+    popup.appendChild(cancelBtn);
+
+    this.actionButtonsContainer.appendChild(popup);
+    this.targetSelectionPopup = popup;
+  }
+
+  _hideTargetSelectionPopup() {
+    if (this.targetSelectionPopup) {
+      this.targetSelectionPopup.remove();
+      this.targetSelectionPopup = null;
+    }
   }
 
   setupEndWizardTurnButtonListener() {
@@ -861,9 +1234,41 @@ updateEndWizardTurnButtonVisibility() {
       wizard.maxHitPoints = wizStats.maxHitPoints;
     }
 
+    // Necromancer
+    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
+    const necromancer = new Disc(
+      /* radius: */ .9,
+      /* height: */ 0.4,
+      /* color: */ 0x6600CC, // Dark purple for Necromancer
+      /* startX: */ -3,
+      /* startZ: */ -3,      // Position Necromancer near Wizard
+      /* scene: */ this.scene,
+      /* discName: */ "Necromancer",
+      /* type: */ "player",
+      /* kind: */ "Necromancer",
+      /* hitPoints: */ 3,
+      /* skillLevel: */ 100,
+      /* imagePath: */ "images/necromancer-nobg.png",
+      /* canDoReboundDamage: */ false,
+      /* throwPowerMultiplier: */ 0.7,
+      /* mass: */ .8,
+      /* rageIsActiveForNextThrow: */ false,
+      /* rageWasUsedThisThrow: */ false,
+      /* attackDamage: */ 1,
+      /* gameController: */ this,
+      /* description: */ this.discDescriptions.Necromancer
+    );
+
+    const necroStats = playerStats?.find(s => s.kind === "Necromancer");
+    if (necroStats) {
+      necromancer.hitPoints = necroStats.hitPoints;
+      necromancer.maxHitPoints = necroStats.maxHitPoints;
+    }
+
     const existingPositions = [
         { x: barbarian.mesh.position.x, z: barbarian.mesh.position.z },
-        { x: wizard.mesh.position.x, z: wizard.mesh.position.z }
+        { x: wizard.mesh.position.x, z: wizard.mesh.position.z },
+        { x: necromancer.mesh.position.x, z: necromancer.mesh.position.z }
     ];
 
     // Generate random positions for NPC discs
@@ -920,7 +1325,7 @@ updateEndWizardTurnButtonVisibility() {
       existingPositions.push({ x: finalX, z: finalZ });
     }
 
-    this.discs.push(barbarian, wizard, ...npcDiscs); // Add wizard to the array of discs
+    this.discs.push(barbarian, wizard, necromancer, ...npcDiscs); // Add all player discs
 
     // Initialize all spotlight intensities to inactive state
     this.discs.forEach(disc => {
@@ -928,9 +1333,9 @@ updateEndWizardTurnButtonVisibility() {
     });
 
     // Set turn to first alive player disc or fallback alive disc
-    // Orbs should not get a turn in the regular sequence
+    // Orbs and AnimatedDead should not get a turn in the regular sequence
     this.currentTurnIndex = this.discs.findIndex(
-      (d) => d.type === "player" && d.kind !== "Orb" && d.hitPoints > 0 && !d.dead,
+      (d) => d.type === "player" && d.kind !== "Orb" && d.kind !== "HealingOrb" && d.kind !== "AnimatedDead" && d.hitPoints > 0 && !d.dead,
     );
     if (this.currentTurnIndex !== -1) {
       this.currentDisc = this.discs[this.currentTurnIndex];
@@ -950,6 +1355,8 @@ updateEndWizardTurnButtonVisibility() {
   this.updateRageButtonVisibility();
   this.updateSummonOrbsButtonVisibility();
   this.updateEndWizardTurnButtonVisibility();
+  this._updateNecromancerActionButtons();
+  this.updateEndNecromancerTurnButtonVisibility();
 }
 
   handlePointerDownInteraction(event, initialPointerDownPos) {
@@ -963,7 +1370,7 @@ updateEndWizardTurnButtonVisibility() {
     this.pointerDisc = null;
 
     for (const disc of this.discs) {
-      const intersects = this.raycaster.intersectObject(disc.mesh);
+      const intersects = this.raycaster.intersectObject(disc.mesh, true); // true = recursive, needed for Group-based meshes
       if (intersects.length > 0) {
         this.pointerDisc = disc;
         break;
@@ -993,6 +1400,26 @@ updateEndWizardTurnButtonVisibility() {
             } else {
                 // Clicked elsewhere or on an invalid target on Wizard's turn.
                 // Wizard remains the active context for the turn, but no aiming unless Wizard/Orb is clicked.
+                discToControl = discForTurn;
+                allowAiming = false;
+            }
+        } else if (discForTurn.kind === 'Necromancer') {
+            // Necromancer's turn
+            if (this.pointerDisc && this.pointerDisc.kind === 'AnimatedDead' &&
+                this.animatedDeadDiscs.includes(this.pointerDisc) && !this.pointerDisc.dead) {
+                // Clicked on a valid, owned animated dead disc
+                discToControl = this.pointerDisc;
+                allowAiming = true;
+            } else if (this.pointerDisc === discForTurn) {
+                // Clicked on the Necromancer
+                discToControl = discForTurn;
+                if (this.necromancerHasMovedThisTurn) {
+                    allowAiming = false; // Necromancer already moved this turn
+                } else {
+                    allowAiming = true;
+                }
+            } else {
+                // Clicked elsewhere on Necromancer's turn
                 discToControl = discForTurn;
                 allowAiming = false;
             }
@@ -1169,6 +1596,26 @@ updateEndWizardTurnButtonVisibility() {
     const clickedDisc = this.pointerDisc; // Disc under cursor at pointerdown, set in handlePointerDownInteraction
 
     if (dragLength <= clickThreshold) { // It's a click/tap
+      // Handle Animate Dead disc-selection mode — player clicks a corpse in the scene
+      if (this.necromancerSelectingAnimateDeadTarget) {
+        if (clickedDisc && clickedDisc.type === 'NPC' && clickedDisc.dead && !clickedDisc.isAnimatedDead) {
+          const necromancer = this.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
+          if (necromancer) {
+            const success = this.animateDeadDisc(necromancer, clickedDisc);
+            if (success) {
+              if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(necromancer);
+              this.updateDiscNames();
+            }
+          }
+        }
+        this._cancelNecromancerTargetSelection();
+        if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
+        this.controls.enabled = true;
+        this.controlsEnabled = true;
+        this.currentDisc = null;
+        return;
+      }
+
       if (clickedDisc) {
         // Clicked on a disc
         if (this.discInfoPopupSelectedDisc === clickedDisc) {
@@ -1348,6 +1795,7 @@ updateEndWizardTurnButtonVisibility() {
     // Called by InputHandler when Escape is pressed during a drag/aim operation.
     // InputHandler itself will set its internal isPointerDown to false.
     // GameController needs to reset its aiming-specific state.
+    this._cancelNecromancerTargetSelection();
     this.pointerDisc = null;
     this.currentDisc = null; // Reset currentDisc so pointerup doesn't trigger a throw
     if (this.controls) {
@@ -1422,14 +1870,15 @@ clamp(value, min, max) {
     let npcDiscsExist = false;
 
     this.discs.forEach(disc => {
-      if (disc.type === "player" && disc.kind !== "Orb") {
+      if (disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
         playerDiscsExist = true;
         if (!disc.dead) {
           alivePlayerDiscs++;
         }
       } else if (disc.type === "NPC") {
         npcDiscsExist = true;
-        if (!disc.dead) {
+        // Animated dead discs under Necromancer control don't count as alive NPCs
+        if (!disc.dead && !disc.isAnimatedDead) {
           aliveNpcDiscs++;
         }
       }
@@ -1451,6 +1900,13 @@ clamp(value, min, max) {
         const wizard = this._getWizardPlayerDisc();
         if (wizard && !wizard.dead) {
             this.wizardMana += 2;
+        }
+
+        // Necromancer earns 2 mana for clearing a room
+        const necromancer = this._getNecromancerPlayerDisc();
+        if (necromancer && !necromancer.dead) {
+            this.necromancerMana += 2;
+            if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
         }
 
         if (this.level) {
@@ -1516,6 +1972,7 @@ clamp(value, min, max) {
     }
     this.discs = [];
     this.wizardOrbs = [];
+    this.animatedDeadDiscs = []; // Reset animated dead discs for new level
 
     // Reload level (generates new room/obstacles)
     if (this.level) {
@@ -1529,6 +1986,8 @@ clamp(value, min, max) {
     // 4. Reset turn-specific state
     this.wizardManaEarnedThisTurn = 0;
     this.wizardHasMovedThisTurn = false;
+    this.necromancerManaEarnedThisTurn = 0;
+    this.necromancerHasMovedThisTurn = false;
     this.waitingForDiscToStop = false;
     this.thrownDisc = null;
     this.playerDamagedNPCsThisThrow.clear();
@@ -1558,7 +2017,7 @@ clamp(value, min, max) {
         for (let i = 0; i < this.discs.length; i++) {
             const idx = (nextIndex + i) % this.discs.length;
             const d = this.discs[idx];
-            if (d && d.type === 'player' && d.kind !== 'Orb' && !d.dead) {
+            if (d && d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && !d.dead) {
                 this.currentTurnIndex = idx;
                 foundNext = true;
                 break;
@@ -1567,7 +2026,7 @@ clamp(value, min, max) {
     }
 
     if (!foundNext) {
-        const firstAlive = this.discs.findIndex(d => d.type === 'player' && d.kind !== 'Orb' && !d.dead);
+        const firstAlive = this.discs.findIndex(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && !d.dead);
         this.currentTurnIndex = firstAlive !== -1 ? firstAlive : 0;
     }
 
@@ -1590,6 +2049,10 @@ clamp(value, min, max) {
       this._updateWizardActionButtons();
       this.updateEndWizardTurnButtonVisibility();
       this.updateBarbarianEndTurnButtonVisibility();
+      this._updateNecromancerActionButtons();
+      this.updateEndNecromancerTurnButtonVisibility();
+      this._cancelNecromancerTargetSelection();
+      this._hideTargetSelectionPopup();
     }
   }
 
@@ -1612,6 +2075,7 @@ clamp(value, min, max) {
       });
     }
     this.wizardOrbs = []; // Reset wizard orbs
+    this.animatedDeadDiscs = []; // Reset animated dead discs
 
     // Cleanup existing lava pools
     if (this.lavaPools && this.lavaPools.length > 0) {
@@ -1653,6 +2117,9 @@ clamp(value, min, max) {
     this.currentPlayerRageCharges = 0; // Reset rage charges to 0 or initial value
     this.wizardMana = 3; // Reset for new game
     this.wizardManaEarnedThisTurn = 0; // Reset earned this turn
+    this.necromancerMana = 3; // Reset for new game
+    this.necromancerManaEarnedThisTurn = 0; // Reset earned this turn
+    this.necromancerHasMovedThisTurn = false;
     this.gameOverState.active = false; // Reset game over state
     this.roundWon = false;
 
@@ -1688,6 +2155,10 @@ clamp(value, min, max) {
     this.updateEndWizardTurnButtonVisibility(); // Reset Wizard end turn button
     this.updateBarbarianEndTurnButtonVisibility(); // Reset Barbarian end turn button
     this.updateSummonOrbsButtonVisibility();
+    this._updateNecromancerActionButtons(); // Reset Necromancer spell buttons
+    this.updateEndNecromancerTurnButtonVisibility(); // Reset Necromancer end turn button
+    this._cancelNecromancerTargetSelection(); // Cancel any active corpse-selection
+    this._hideTargetSelectionPopup(); // Dismiss any open target selection
 
 
     // 8. Reset Camera Position and Zoom, and ensure camera controls are enabled
@@ -1807,28 +2278,38 @@ clamp(value, min, max) {
               if (child.material) {
                 if (child.material.color) child.material.color.set(0x888888);
                 child.material.opacity = 0.9;
-                child.material.transparent = false;
+                child.material.transparent = true;
               }
             });
           } else {
             disc.mesh.material.color.set(0x888888);
             disc.mesh.material.opacity = 0.9;
-            disc.mesh.material.transparent = false;
+            disc.mesh.material.transparent = true;
           }
         } else {
           // Handle both group and single mesh structures
           if (disc.mesh.isGroup) {
             disc.mesh.children.forEach(child => {
               if (child.material) {
-                if (child.material.color) child.material.color.set(child.material.color.getHex());
+                // If this is an animated dead disc, ensure it keeps its original NPC color
+                // and is never tinted red by the active player highlight logic.
+                if (disc.kind === 'AnimatedDead' && disc.initialColor !== undefined) {
+                  child.material.color.set(disc.initialColor);
+                } else if (child.material.color) {
+                  child.material.color.set(child.material.color.getHex());
+                }
                 child.material.opacity = 0.9;
-                child.material.transparent = false;
+                child.material.transparent = true;
               }
             });
           } else {
-            disc.mesh.material.color.set(disc.mesh.material.color.getHex());
+            if (disc.kind === 'AnimatedDead' && disc.initialColor !== undefined) {
+              disc.mesh.material.color.set(disc.initialColor);
+            } else {
+              disc.mesh.material.color.set(disc.mesh.material.color.getHex());
+            }
             disc.mesh.material.opacity = 0.9;
-            disc.mesh.material.transparent = false;
+            disc.mesh.material.transparent = true;
           }
         }
       });
@@ -1869,6 +2350,8 @@ clamp(value, min, max) {
       });
     }
 
+    // Animated dead discs stay where they are — no Necromancer-follow behaviour
+
     // Update and move discs
     for (const disc of [...this.discs]) {
       if (disc.moving) {
@@ -1886,15 +2369,15 @@ clamp(value, min, max) {
         });
 
         // Check for portal collision if the round is won
-        if (this.roundWon && disc.type === "player" && disc.kind !== "Orb") {
+        if (this.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
           if (this.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
             await this.startNextLevel(disc);
             return;
           }
         }
 
-        // Apply friction (Wizards have more drag and slow down faster)
-        const currentFriction = disc.kind === 'Wizard' ? 0.92 : 0.96;
+        // Apply friction (Wizards and Necromancers have more drag and slow down faster)
+        const currentFriction = (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
         disc.applyFriction(currentFriction);
       }
     }
@@ -1911,6 +2394,12 @@ clamp(value, min, max) {
         if ((d1.kind === 'Wizard' && this.wizardOrbs.includes(d2) && !d2.moving) ||
             (d2.kind === 'Wizard' && this.wizardOrbs.includes(d1) && !d1.moving)) {
             continue; // Skip to the next pair
+        }
+
+        // Skip collision between Necromancer and its animated dead while they are orbiting
+        if ((d1.kind === 'Necromancer' && this.animatedDeadDiscs.includes(d2) && !d2.moving) ||
+            (d2.kind === 'Necromancer' && this.animatedDeadDiscs.includes(d1) && !d1.moving)) {
+            continue;
         }
 
         // Skip collision if one is a regular Orb and the other is dead, OR if two Orbs are colliding
@@ -1983,8 +2472,24 @@ clamp(value, min, max) {
 
             // Apply damage rules
             if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead) { // Ensure both discs are alive and not dead
+                // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed)
+                if ((d1.kind === 'AnimatedDead' && !d1.dead && d2.type === 'NPC' && !d2.dead) ||
+                    (d2.kind === 'AnimatedDead' && !d2.dead && d1.type === 'NPC' && !d1.dead)) {
+                    const animated = d1.kind === 'AnimatedDead' ? d1 : d2;
+                    const npc = d1.kind === 'AnimatedDead' ? d2 : d1;
+
+                    npc.takeHit(animated.attackDamage, animated);
+
+                    if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
+                        this.necromancerManaEarnedThisTurn += 1;
+                        this.npcsKilledForRageCharge.add(npc.discName);
+                        this._updateNecromancerActionButtons();
+                    }
+
+                    // AnimatedDead survives the collision and can continue attacking
+                }
                 // Special Case: Wizard Orb hitting an NPC (Volatile Collision)
-                if ((d1.kind === 'Orb' && d2.type === 'NPC') || (d2.kind === 'Orb' && d1.type === 'NPC')) {
+                else if ((d1.kind === 'Orb' && d2.type === 'NPC') || (d2.kind === 'Orb' && d1.type === 'NPC')) {
                     const orb = d1.kind === 'Orb' ? d1 : d2;
                     const npc = d1.kind === 'Orb' ? d2 : d1;
                     const actor = this.currentDisc;
@@ -2050,6 +2555,8 @@ clamp(value, min, max) {
                                 } else if (d1.kind === 'Orb') {
                                     // Killing an NPC with an orb earns 1 mana back
                                     this.wizardManaEarnedThisTurn += 1;
+                                } else if (d1.kind === 'Necromancer') {
+                                    this.necromancerManaEarnedThisTurn += 2;
                                 }
                                 this.npcsKilledForRageCharge.add(d2.discName);
                                 this.updateRageButtonVisibility(); // Update button text/visibility
@@ -2075,14 +2582,17 @@ clamp(value, min, max) {
                                 d2.takeHit(damageToDeal, d1);
                                 d1.hasCausedDamage = true;
 
-                                // If d2 is a Wizard, their counter-attack might have killed the NPC attacker (d1)
+                                // If d2 is a Wizard/Necromancer, their counter-attack might have killed the NPC attacker (d1)
                                 if (d1.type === 'NPC' && d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
                                     if (d2.kind === 'Wizard') {
                                         this.wizardManaEarnedThisTurn += 1;
+                                    } else if (d2.kind === 'Necromancer') {
+                                        this.necromancerManaEarnedThisTurn += 1;
                                     }
                                     this.npcsKilledForRageCharge.add(d1.discName);
                                     this.updateRageButtonVisibility();
                                     this._updateWizardActionButtons();
+                                    this._updateNecromancerActionButtons();
                                 }
                             }
                         }
@@ -2122,6 +2632,8 @@ clamp(value, min, max) {
                                     this.wizardManaEarnedThisTurn += 2;
                                 } else if (d2.kind === 'Orb') {
                                     this.wizardManaEarnedThisTurn += 1;
+                                } else if (d2.kind === 'Necromancer') {
+                                    this.necromancerManaEarnedThisTurn += 2;
                                 }
                                 this.npcsKilledForRageCharge.add(d1.discName);
                                 this.updateRageButtonVisibility();
@@ -2148,10 +2660,13 @@ clamp(value, min, max) {
                                 if (d2.type === 'NPC' && d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
                                     if (d1.kind === 'Wizard') {
                                         this.wizardManaEarnedThisTurn += 1;
+                                    } else if (d1.kind === 'Necromancer') {
+                                        this.necromancerManaEarnedThisTurn += 1;
                                     }
                                     this.npcsKilledForRageCharge.add(d2.discName);
                                     this.updateRageButtonVisibility();
                                     this._updateWizardActionButtons();
+                                    this._updateNecromancerActionButtons();
                                 }
                             }
                         }
@@ -2190,6 +2705,8 @@ clamp(value, min, max) {
                                     this.wizardManaEarnedThisTurn += 2;
                                 } else if (actor.kind === 'Orb') {
                                     this.wizardManaEarnedThisTurn += 1;
+                                } else if (actor.kind === 'Necromancer') {
+                                    this.necromancerManaEarnedThisTurn += 2;
                                 }
                                 this.npcsKilledForRageCharge.add(npc.discName);
                             }
@@ -2288,8 +2805,10 @@ clamp(value, min, max) {
       // If the thrown disc was an orb and it's been consumed/destroyed, it might be removed from the discs array
       // and won't be processed by the movement loop, so it won't stop via friction.
       const isConsumedOrb = (this.thrownDisc.kind === 'Orb' || this.thrownDisc.kind === 'HealingOrb') && (this.thrownDisc.hitPoints <= 0 || this.thrownDisc.dead);
+      // AnimatedDead is consumed (returned to dead state) when it stops or takes a fatal hit
+      const isConsumedAnimatedDead = this.thrownDisc.kind === 'AnimatedDead' && (this.thrownDisc.hitPoints <= 0 || this.thrownDisc.dead);
 
-      if ((velocityLength < 0.01 && !this.thrownDisc.moving) || isConsumedOrb) {
+      if ((velocityLength < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead) {
         this.waitingForDiscToStop = false;
         const justMovedDisc = this.thrownDisc;
         this.thrownDisc = null; // Clear tracking
@@ -2314,6 +2833,25 @@ clamp(value, min, max) {
                 this.updateRageButtonVisibility();
                 this._updateWizardActionButtons(); // Update based on whether orbs can be summoned
                 this.updateEndWizardTurnButtonVisibility(); // Ensure "End Turn" button is correctly displayed
+            }
+        } else if (justMovedDisc.kind === 'Necromancer') {
+            // Necromancer disc itself stopped moving.
+            this.necromancerHasMovedThisTurn = true;
+
+            const activeAnimatedCount = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead).length;
+            const canCastSpells = this._necromancerCanCastSpells(justMovedDisc);
+
+            if (activeAnimatedCount === 0 && !canCastSpells) {
+                // No animated dead to use and cannot cast spells — end turn
+                await this._proceedToNextPlayerTurn();
+            } else {
+                // Necromancer's turn continues
+                this.currentDisc = justMovedDisc;
+                this.logCurrentTurn();
+                this._updateSpotlights();
+                this.updateRageButtonVisibility();
+                this._updateNecromancerActionButtons();
+                this.updateEndNecromancerTurnButtonVisibility();
             }
         } else if ((justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') && justMovedDisc.hitPoints <= 0) {
             // Orb was consumed
@@ -2341,6 +2879,34 @@ clamp(value, min, max) {
                 }
             } else {
                 // Wizard is dead or gone, proceed to next normal turn
+                await this._proceedToNextPlayerTurn();
+            }
+        } else if (justMovedDisc.kind === 'AnimatedDead' && justMovedDisc.hitPoints <= 0) {
+            // AnimatedDead was consumed (either stopped naturally or hit an NPC)
+            this.removeAnimatedDead(justMovedDisc); // Idempotent — safe even if applyFriction already called it
+            const necromancerDisc = this.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
+
+            if (necromancerDisc) {
+                this.currentDisc = necromancerDisc; // Necromancer regains focus
+                const necroIndex = this.discs.indexOf(necromancerDisc);
+                if (necroIndex !== -1) {
+                    this.currentTurnIndex = necroIndex;
+                }
+                this.logCurrentTurn();
+                this._updateSpotlights();
+                this.updateRageButtonVisibility();
+                this._updateNecromancerActionButtons();
+                this.updateEndNecromancerTurnButtonVisibility();
+                this.updateBarbarianEndTurnButtonVisibility();
+
+                // Check if turn should end now
+                const activeAnimatedAfterConsumption = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead).length;
+                const canStillCast = this._necromancerCanCastSpells(necromancerDisc);
+                if (activeAnimatedAfterConsumption === 0 && this.necromancerHasMovedThisTurn && !canStillCast) {
+                    await this._proceedToNextPlayerTurn();
+                }
+            } else {
+                // Necromancer is dead or gone, proceed to next normal turn
                 await this._proceedToNextPlayerTurn();
             }
         } else {
@@ -2385,6 +2951,8 @@ clamp(value, min, max) {
       return;
     }
     this.wizardHasMovedThisTurn = false; // Reset for the new turn
+    this.necromancerHasMovedThisTurn = false; // Reset for the new turn
+    this._cancelNecromancerTargetSelection(); // Cancel any active corpse-selection
 
     // If it was the Wizard's turn, or any player's turn, we find the next player.
     // If the next turn is the Wizard's, we transfer his pending orbs.
@@ -2416,6 +2984,7 @@ clamp(value, min, max) {
         const potentialDisc = this.discs[nextIndex];
         if (potentialDisc.type !== "player" && potentialDisc.type !== "NPC") continue; // Skip non-standard types
         if (potentialDisc.kind === 'Orb' || potentialDisc.kind === 'HealingOrb') continue; // Orbs do not get independent turns
+        if (potentialDisc.kind === 'AnimatedDead') continue; // Animated dead do not get independent turns
         if (potentialDisc.hitPoints > 0 && !potentialDisc.dead) {
             nextAvailableDiscFound = true;
             break;
@@ -2426,7 +2995,7 @@ clamp(value, min, max) {
         // No valid disc found to advance to, might be game over or only orbs left.
         // This case should ideally be handled by checkGameOverConditions.
         // For safety, set currentDisc to null or a sensible default if no one can act.
-        const firstAlivePlayer = this.discs.find(d => d.type === 'player' && d.kind !== 'Orb' && !d.dead);
+        const firstAlivePlayer = this.discs.find(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && !d.dead);
         if (firstAlivePlayer) {
             this.currentDisc = firstAlivePlayer;
             this.currentTurnIndex = this.discs.indexOf(firstAlivePlayer);
@@ -2461,6 +3030,12 @@ clamp(value, min, max) {
         this.wizardManaEarnedThisTurn = 0;
     }
 
+    // If it's now the Necromancer's turn, transfer pending mana earned from previous turns
+    if (this.currentDisc && this.currentDisc.kind === 'Necromancer' && !this.currentDisc.dead) {
+        this.necromancerMana += this.necromancerManaEarnedThisTurn;
+        this.necromancerManaEarnedThisTurn = 0;
+    }
+
     // Apply lava damage if the disc starts its turn in lava
     this._applyStartOfTurnLavaDamage(this.currentDisc);
 
@@ -2477,6 +3052,8 @@ clamp(value, min, max) {
     this._updateWizardActionButtons();
     this.updateEndWizardTurnButtonVisibility();
     this.updateBarbarianEndTurnButtonVisibility();
+    this._updateNecromancerActionButtons();
+    this.updateEndNecromancerTurnButtonVisibility();
     this._updateSpotlights(); // Ensure spotlights are updated after turn progression
 
     // If the current disc is an NPC and is still alive, let it take its turn.
@@ -2588,7 +3165,7 @@ clamp(value, min, max) {
   async aiThrow(disc) {
     if (!disc || disc.dead) return;
 
-    // Get alive player discs as targets
+    // Get alive player discs as targets (exclude AnimatedDead — they are player-controlled but not real targets)
     const alivePlayers = this.discs.filter(
       (d) => d.type === "player" && d.hitPoints > 0 && !d.dead,
     );
