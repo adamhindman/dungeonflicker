@@ -240,6 +240,9 @@ export default class Level {
     // Clone materials per-mesh for independent per-wall opacity control
     this._initTransparency();
 
+    // Scatter vine-tile overlays on wall and obstacle faces
+    this._scatterVineTilesOnWalls();
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0);
     this.scene.add(ambientLight);
 
@@ -442,6 +445,90 @@ export default class Level {
     this._doorSlabStartY = DOOR_HEIGHT / 2;
     // Rise above the wall so it disappears into the architecture
     this._doorSlabEndY = wallH + DOOR_HEIGHT;
+  }
+
+  /**
+   * Scatter vine-tile overlay quads on wall and obstacle faces.
+   * Each quad is a TILE×TILE PlaneGeometry placed on a TILE-aligned grid,
+   * offset slightly in front of the surface to prevent z-fighting.
+   * All quads share one material; the geometry per quad is small and cheap.
+   */
+  _scatterVineTilesOnWalls() {
+    const TILE   = 6;    // tile size in world units (matches repeating texture)
+    const CHANCE = 0.25; // probability each grid position gets a vine tile
+    const OFFSET = 0.27; // distance in front of the wall face
+
+    this._vineTileMeshes = [];
+    this._vineTileTexture = this.textureLoader.load("images/tile-stone-vines-1.png");
+    this._vineMat = new THREE.MeshStandardMaterial({
+      map: this._vineTileTexture,
+      roughness: 0.6,
+      metalness: 0.2,
+    });
+
+    const addTile = (x, y, z, rotY) => {
+      const geo  = new THREE.PlaneGeometry(TILE, TILE);
+      const mesh = new THREE.Mesh(geo, this._vineMat);
+      mesh.position.set(x, y, z);
+      mesh.rotation.y = rotY;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      this._vineTileMeshes.push(mesh);
+    };
+
+    // Returns true if a tile centered at (localH from wall center, centerY)
+    // falls inside the door opening on the named wall.
+    const isInDoorOpening = (wallName, localH, centerY) => {
+      if (!wallName || this.doorWall !== wallName) return false;
+      // Expand by TILE/2 so any tile whose edge overlaps the opening is excluded.
+      return Math.abs(localH) < this.DOOR_WIDTH / 2 + TILE / 2 &&
+             centerY < this.DOOR_HEIGHT + TILE / 2;
+    };
+
+    // Walk a TILE-aligned grid on one face and maybe place a vine tile.
+    // spanH / spanV are the face extents; lh is centred (0 = face midpoint).
+    const scatterFace = (spanH, spanV, wallName, placeFn) => {
+      const cols = Math.floor(spanH / TILE);
+      const rows = Math.floor(spanV / TILE);
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          const lh = (c + 0.5) * TILE - spanH / 2;
+          const cy = (r + 0.5) * TILE;
+          if (isInDoorOpening(wallName, lh, cy)) continue;
+          if (Math.random() > CHANCE) continue;
+          placeFn(lh, cy);
+        }
+      }
+    };
+
+    const W = this.fieldWidth;
+    const D = this.fieldDepth;
+    const H = this.wallHeight;
+
+    // Outer walls — inner face only (slightly inside the wall, facing into the room)
+    // North (z = -D/2): inner face faces +Z → rotY = 0
+    scatterFace(W, H, 'north', (lh, cy) => addTile(lh,              cy, -D / 2 + OFFSET,  0));
+    // South (z = +D/2): inner face faces -Z → rotY = Math.PI
+    scatterFace(W, H, 'south', (lh, cy) => addTile(lh,              cy,  D / 2 - OFFSET,  Math.PI));
+    // East  (x = +W/2): inner face faces -X → rotY = -Math.PI/2
+    scatterFace(D, H, 'east',  (lh, cy) => addTile( W / 2 - OFFSET, cy,  lh,             -Math.PI / 2));
+    // West  (x = -W/2): inner face faces +X → rotY = +Math.PI/2
+    scatterFace(D, H, 'west',  (lh, cy) => addTile(-W / 2 + OFFSET, cy,  lh,              Math.PI / 2));
+
+    // Obstacle faces — all four vertical sides of non-pillar obstacles
+    for (const obs of this.obstacles) {
+      if (obs.type === 'pillar') continue;
+      const { x: ox, z: oz, width: ow, depth: od } = obs;
+
+      // South face (+Z normal), rotY = 0
+      scatterFace(ow, H, null, (lh, cy) => addTile(ox + lh, cy, oz + od / 2 + OFFSET,  0));
+      // North face (-Z normal), rotY = Math.PI
+      scatterFace(ow, H, null, (lh, cy) => addTile(ox + lh, cy, oz - od / 2 - OFFSET,  Math.PI));
+      // East face  (+X normal), rotY = +Math.PI/2
+      scatterFace(od, H, null, (lh, cy) => addTile(ox + ow / 2 + OFFSET, cy, oz + lh,  Math.PI / 2));
+      // West face  (-X normal), rotY = -Math.PI/2
+      scatterFace(od, H, null, (lh, cy) => addTile(ox - ow / 2 - OFFSET, cy, oz + lh, -Math.PI / 2));
+    }
   }
 
   /**
@@ -786,5 +873,14 @@ export default class Level {
       this.wallMaterial.dispose();
       this.wallMaterial = null;
     }
+
+    // Vine tile overlays
+    for (const mesh of (this._vineTileMeshes || [])) {
+      this.scene.remove(mesh);
+      if (mesh.geometry) mesh.geometry.dispose();
+    }
+    this._vineTileMeshes = [];
+    if (this._vineMat) { this._vineMat.dispose(); this._vineMat = null; }
+    if (this._vineTileTexture) { this._vineTileTexture.dispose(); this._vineTileTexture = null; }
   }
 }
