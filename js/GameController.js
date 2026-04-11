@@ -112,12 +112,18 @@ export default class GameController {
     this.animatedDeadDiscs = [];
     this.animateDeadButton = null;
     this.raiseDeadButton = null;
+    this.focusPrevAnimatedButton = null;
+    this.focusNextAnimatedButton = null;
     this.endNecromancerTurnButton = null;
     this.necromancerHasMovedThisTurn = false;
     this.necromancerMana = 3; // Necromancer's mana (starts with 3)
     this.necromancerManaEarnedThisTurn = 0; // Mana earned this turn, ready next turn
     this.targetSelectionPopup = null; // Popup for Animate Dead / Raise Dead targeting
     this.necromancerSelectingAnimateDeadTarget = false; // True when player must click a dead NPC in the scene
+    this._animatedDeadFocusIndex = 0; // Cycles through live animated dead discs for camera focus
+    this._animatedDeadMovedThisTurn = new Set(); // Tracks which AnimatedDead discs have already moved this turn
+    this._animateDeadTargetBeams = []; // Volumetric beam meshes shown during Animate Dead target selection
+    this._animateDeadHoveredDisc = null; // Corpse currently under cursor during target selection
 
     // Disc Info Popup
     this.discInfoPopupElement = null;
@@ -251,7 +257,12 @@ export default class GameController {
 
     // Setup renderer and add canvas to DOM
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer.localClippingEnabled = true; // Required for per-material clip planes (door slab)
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Camera-occlusion wall fading (reused each frame to avoid allocation)
+    this._wallFadeRaycaster = new THREE.Raycaster();
+    this._wallFadeDir = new THREE.Vector3();
     document.body.appendChild(this.renderer.domElement);
 
     // Setup orbit controls for camera interaction
@@ -352,6 +363,8 @@ export default class GameController {
     this.setupAnimateDeadButtonListener();
     this.createRaiseDeadButton();
     this.setupRaiseDeadButtonListener();
+    this.createFocusAnimatedButtons();
+    this.setupFocusAnimatedButtonListeners();
     this.createEndNecromancerTurnButton();
     this.setupEndNecromancerTurnButtonListener();
     this._updateNecromancerActionButtons(); // Initial visibility
@@ -376,7 +389,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'summon-orbs-button';
-      button.textContent = 'Summon Orb';
+      button.textContent = '[1] Summon Orb';
       // Example: Apply a class for consistent styling if you have one for game buttons
       // button.classList.add('game-ui-button');
       this.actionButtonsContainer.appendChild(button);
@@ -397,7 +410,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'summon-healing-orbs-button';
-      button.textContent = 'Summon Healing Orb';
+      button.textContent = '[2] Summon Healing Orb';
       this.actionButtonsContainer.appendChild(button);
     }
 
@@ -416,7 +429,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'radius-blast-button';
-      button.textContent = 'Radius Blast (2 Mana)';
+      button.textContent = '[3] Radius Blast (2 Mana)';
       this.actionButtonsContainer.appendChild(button);
     }
 
@@ -435,7 +448,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'wizard-end-turn-button';
-      button.textContent = 'End Turn';
+      button.textContent = '[Space] End Turn';
       this.actionButtonsContainer.appendChild(button);
     }
 
@@ -454,7 +467,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'barbarian-end-turn-button';
-      button.textContent = 'End Turn';
+      button.textContent = '[Space] End Turn';
       this.actionButtonsContainer.appendChild(button);
     }
 
@@ -471,7 +484,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'animate-dead-button';
-      button.textContent = 'Animate Dead (1💀)';
+      button.textContent = '[1] Animate Dead (1💀)';
       this.actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -487,11 +500,74 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'raise-dead-button';
-      button.textContent = 'Raise Dead (2💀)';
+      button.textContent = '[2] Raise Dead (2💀)';
       this.actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
     this.raiseDeadButton = button;
+  }
+
+  createFocusAnimatedButtons() {
+    if (!this.actionButtonsContainer) return;
+
+    let prev = document.getElementById('focus-animated-prev-button');
+    if (!prev) {
+      prev = document.createElement('button');
+      prev.id = 'focus-animated-prev-button';
+      prev.textContent = '<';
+      this.actionButtonsContainer.appendChild(prev);
+    }
+    prev.style.display = 'none';
+    this.focusPrevAnimatedButton = prev;
+
+    let next = document.getElementById('focus-animated-next-button');
+    if (!next) {
+      next = document.createElement('button');
+      next.id = 'focus-animated-next-button';
+      next.textContent = '>';
+      this.actionButtonsContainer.appendChild(next);
+    }
+    next.style.display = 'none';
+    this.focusNextAnimatedButton = next;
+  }
+
+  setupFocusAnimatedButtonListeners() {
+    if (this.focusPrevAnimatedButton) {
+      this.focusPrevAnimatedButton.addEventListener('click', this.focusPrevAnimatedDead.bind(this));
+    }
+    if (this.focusNextAnimatedButton) {
+      this.focusNextAnimatedButton.addEventListener('click', this.focusNextAnimatedDead.bind(this));
+    }
+  }
+
+  updateFocusAnimatedButtonVisibility() {
+    const currentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex)
+      ? this.discs[this.currentTurnIndex] : null;
+    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
+    const shouldShow = currentDisc && currentDisc.kind === 'Necromancer' && !currentDisc.dead && liveMinions.length > 1;
+    const display = shouldShow ? 'inline-block' : 'none';
+    if (this.focusPrevAnimatedButton) {
+      this.focusPrevAnimatedButton.style.display = display;
+      this.focusPrevAnimatedButton.disabled = !shouldShow;
+    }
+    if (this.focusNextAnimatedButton) {
+      this.focusNextAnimatedButton.style.display = display;
+      this.focusNextAnimatedButton.disabled = !shouldShow;
+    }
+  }
+
+  focusPrevAnimatedDead() {
+    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
+    if (!liveMinions.length) return;
+    this._animatedDeadFocusIndex = (this._animatedDeadFocusIndex - 1 + liveMinions.length) % liveMinions.length;
+    if (this.controls) this.controls.target.copy(liveMinions[this._animatedDeadFocusIndex].mesh.position);
+  }
+
+  focusNextAnimatedDead() {
+    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
+    if (!liveMinions.length) return;
+    this._animatedDeadFocusIndex = (this._animatedDeadFocusIndex + 1) % liveMinions.length;
+    if (this.controls) this.controls.target.copy(liveMinions[this._animatedDeadFocusIndex].mesh.position);
   }
 
   createEndNecromancerTurnButton() {
@@ -503,7 +579,7 @@ export default class GameController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'necromancer-end-turn-button';
-      button.textContent = 'End Turn';
+      button.textContent = '[Space] End Turn';
       this.actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -541,6 +617,8 @@ export default class GameController {
 
     // Enter disc-selection mode — player clicks a dead NPC directly in the scene
     this.necromancerSelectingAnimateDeadTarget = true;
+    deadNPCs.forEach(d => d.updateSpotlightConfig('animateDeadTarget'));
+    this._spawnAnimateDeadBeams(deadNPCs);
     if (this.uiManager) {
       this.uiManager.updateThrowInfo('Click a dead enemy to animate it  •  Esc to cancel', true);
     }
@@ -550,10 +628,43 @@ export default class GameController {
   _cancelNecromancerTargetSelection() {
     if (!this.necromancerSelectingAnimateDeadTarget) return;
     this.necromancerSelectingAnimateDeadTarget = false;
+    this._animateDeadHoveredDisc = null;
+    // Restore dead spotlight on any corpses that were highlighted as targets
+    this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead)
+              .forEach(d => d.updateSpotlightConfig('dead'));
+    this._clearAnimateDeadBeams();
     if (this.uiManager) {
       this.uiManager.updateThrowInfo('', false);
     }
     this._updateNecromancerActionButtons();
+  }
+
+  _spawnAnimateDeadBeams(discs) {
+    this._clearAnimateDeadBeams();
+    if (!discs.length) return;
+    const wallH = this.level ? this.level.wallHeight : 8;
+    const beamH = 200;
+    this._animateDeadBeamGeo = new THREE.CylinderGeometry(1.0, 1.0, beamH, 16, 1, true);
+    this._animateDeadBeamMat = new THREE.MeshBasicMaterial({
+      color: 0x9933ff,
+      transparent: true,
+      opacity: 0.13,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    discs.forEach(d => {
+      const beam = new THREE.Mesh(this._animateDeadBeamGeo, this._animateDeadBeamMat);
+      beam.position.set(d.mesh.position.x, beamH / 2, d.mesh.position.z);
+      this.scene.add(beam);
+      this._animateDeadTargetBeams.push(beam);
+    });
+  }
+
+  _clearAnimateDeadBeams() {
+    this._animateDeadTargetBeams.forEach(b => this.scene.remove(b));
+    this._animateDeadTargetBeams = [];
+    if (this._animateDeadBeamGeo) { this._animateDeadBeamGeo.dispose(); this._animateDeadBeamGeo = null; }
+    if (this._animateDeadBeamMat) { this._animateDeadBeamMat.dispose(); this._animateDeadBeamMat = null; }
   }
 
   _handleRaiseDeadButtonClick() {
@@ -670,6 +781,7 @@ export default class GameController {
   _updateNecromancerActionButtons() {
     this.updateAnimateDeadButtonVisibility();
     this.updateRaiseDeadButtonVisibility();
+    this.updateFocusAnimatedButtonVisibility();
   }
 
   animateDeadDisc(necromancerDisc, targetDisc) {
@@ -1467,6 +1579,33 @@ updateEndWizardTurnButtonVisibility() {
   this.updateEndNecromancerTurnButtonVisibility();
 }
 
+  handlePointerHover(event) {
+    if (!this.necromancerSelectingAnimateDeadTarget) return;
+
+    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    const eligibleDiscs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    let hovered = null;
+    for (const disc of eligibleDiscs) {
+      if (this.raycaster.intersectObject(disc.mesh, true).length > 0) {
+        hovered = disc;
+        break;
+      }
+    }
+
+    if (hovered === this._animateDeadHoveredDisc) return;
+
+    if (this._animateDeadHoveredDisc) {
+      this._animateDeadHoveredDisc.updateSpotlightConfig('animateDeadTarget');
+    }
+    this._animateDeadHoveredDisc = hovered;
+    if (hovered) {
+      hovered.updateSpotlightConfig('animateDeadHovered');
+    }
+  }
+
   handlePointerDownInteraction(event, initialPointerDownPos) {
     if (this.gameOverState.active) {
       return;
@@ -1514,8 +1653,9 @@ updateEndWizardTurnButtonVisibility() {
         } else if (discForTurn.kind === 'Necromancer') {
             // Necromancer's turn
             if (this.pointerDisc && this.pointerDisc.kind === 'AnimatedDead' &&
-                this.animatedDeadDiscs.includes(this.pointerDisc) && !this.pointerDisc.dead) {
-                // Clicked on a valid, owned animated dead disc
+                this.animatedDeadDiscs.includes(this.pointerDisc) && !this.pointerDisc.dead &&
+                !this._animatedDeadMovedThisTurn.has(this.pointerDisc)) {
+                // Clicked on a valid, owned animated dead disc that hasn't moved yet this turn
                 discToControl = this.pointerDisc;
                 allowAiming = true;
             } else if (this.pointerDisc === discForTurn) {
@@ -1948,6 +2088,93 @@ clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+/**
+ * Each frame: fade wall meshes that are between the camera and the play area.
+ *
+ * Two techniques are combined:
+ *
+ * 1. OUTER WALLS — boundary proximity.
+ *    A single center-ray can't detect outer walls: the camera at y≈35 looking
+ *    at y=0 passes ~31 units above an 8-unit wall by the time it crosses the
+ *    field boundary. Instead, for each mesh near a field boundary we compute
+ *    how far the camera has moved toward (or past) that boundary on the XZ
+ *    plane, and derive a fade fraction directly from that distance.
+ *    FADE_START units before the wall the fade begins; it reaches full fade
+ *    FADE_END units past the wall.
+ *
+ * 2. INTERNAL OBSTACLES — ray intersection.
+ *    The center-ray from camera to orbit-target DOES pass through interior
+ *    obstacles (they're low enough relative to camera height), so a standard
+ *    Raycaster hit-test handles those.
+ */
+_updateWallFade(deltaTime) {
+  if (!this.level || !this.camera || !this.controls) return;
+
+  const visualWalls = this.level.getVisualWalls();
+  if (!visualWalls.length) return;
+
+  // ── Raycaster for internal obstacles ──────────────────────────────────────
+  this._wallFadeDir
+    .subVectors(this.controls.target, this.camera.position)
+    .normalize();
+  this._wallFadeRaycaster.set(this.camera.position, this._wallFadeDir);
+  this._wallFadeRaycaster.far =
+    this.camera.position.distanceTo(this.controls.target);
+  const hits = new Set(
+    this._wallFadeRaycaster.intersectObjects(visualWalls).map(h => h.object)
+  );
+
+  // ── Boundary-proximity fade for outer walls ────────────────────────────────
+  const cam  = this.camera.position;
+  const fw   = this.level.fieldWidth  / 2;  // 24 — east/west boundary
+  const fd   = this.level.fieldDepth  / 2;  // 18 — north/south boundary
+  // Fade begins FADE_START units before the wall (inside the field) and
+  // reaches full opacity-reduction FADE_END units past the wall.
+  const FADE_START    = 8;
+  const FADE_END      = 3;
+  const BOUNDARY_TOL  = 1.5; // mesh must be within this many units of a boundary
+  const FADED  = 0.6;
+  const OPAQUE = 1.0;
+  const SPEED  = 80;
+
+  for (const mesh of visualWalls) {
+    const wx = mesh.position.x;
+    const wz = mesh.position.z;
+
+    // Start from raycaster result (handles internal obstacles)
+    let fadeAmount = hits.has(mesh) ? 1.0 : 0.0;
+
+    // South boundary  (wz ≈ +fd)
+    if (Math.abs(wz - fd) < BOUNDARY_TOL) {
+      const d = cam.z - fd; // positive = camera is past the wall
+      fadeAmount = Math.max(fadeAmount,
+        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
+    }
+    // North boundary  (wz ≈ -fd)
+    if (Math.abs(wz + fd) < BOUNDARY_TOL) {
+      const d = -cam.z - fd;
+      fadeAmount = Math.max(fadeAmount,
+        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
+    }
+    // East boundary  (wx ≈ +fw)
+    if (Math.abs(wx - fw) < BOUNDARY_TOL) {
+      const d = cam.x - fw;
+      fadeAmount = Math.max(fadeAmount,
+        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
+    }
+    // West boundary  (wx ≈ -fw)
+    if (Math.abs(wx + fw) < BOUNDARY_TOL) {
+      const d = -cam.x - fw;
+      fadeAmount = Math.max(fadeAmount,
+        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
+    }
+
+    const targetOpacity = OPAQUE - fadeAmount * (OPAQUE - FADED);
+    mesh.material.opacity +=
+      (targetOpacity - mesh.material.opacity) * Math.min(deltaTime * SPEED, 1);
+  }
+}
+
 // --- Game Over UI is now handled by UIManager ---
 
 // --- Game Over Logic ---
@@ -2018,7 +2245,7 @@ clamp(value, min, max) {
         }
 
         if (this.level) {
-          this.level.spawnPortals();
+          this.level.openDoor();
         }
       }
     }
@@ -2228,6 +2455,7 @@ clamp(value, min, max) {
     this.necromancerMana = 3; // Reset for new game
     this.necromancerManaEarnedThisTurn = 0; // Reset earned this turn
     this.necromancerHasMovedThisTurn = false;
+    this._animatedDeadMovedThisTurn.clear();
     this.gameOverState.active = false; // Reset game over state
     this.roundWon = false;
 
@@ -2292,6 +2520,9 @@ clamp(value, min, max) {
     const now = performance.now();
     const deltaTime = (now - this.fpsLastTime) / 1000;
     this.fpsLastTime = now;
+
+    // Fade walls that sit between the camera and the scene centre
+    this._updateWallFade(deltaTime);
     const elapsedSinceLastUpdate = now - this.fpsLastUpdateTime;
 
     if (elapsedSinceLastUpdate >= this.fpsUpdateInterval) {
@@ -2468,6 +2699,15 @@ clamp(value, min, max) {
       if (disc.moving) {
         disc.updatePosition();
 
+        // Check door entry BEFORE the boundary-bounce so a disc heading into
+        // the open doorway isn't pushed back before the transition fires.
+        if (this.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
+          if (this.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
+            await this.startNextLevel(disc);
+            return;
+          }
+        }
+
         disc.handleWallCollision(
           this.level.fieldWidth,
           this.level.fieldDepth,
@@ -2478,14 +2718,6 @@ clamp(value, min, max) {
         walls.forEach((wall) => {
           disc.handleCollisionWithBox(wall, 0.8);
         });
-
-        // Check for portal collision if the round is won
-        if (this.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
-          if (this.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
-            await this.startNextLevel(disc);
-            return;
-          }
-        }
 
         // Apply friction (Wizards and Necromancers have more drag and slow down faster)
         const currentFriction = (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
@@ -2864,6 +3096,9 @@ clamp(value, min, max) {
       }
     }
 
+    // Update door animation (slab lift)
+    if (this.level) this.level.update(deltaTime);
+
     // Update and animate lava pools
     if (this.lavaPools && this.lavaPools.length > 0) {
       this.lavaPools.forEach(pool => pool.update(deltaTime));
@@ -3021,7 +3256,8 @@ clamp(value, min, max) {
                 await this._proceedToNextPlayerTurn();
             }
         } else if (justMovedDisc.kind === 'AnimatedDead') {
-            // AnimatedDead stopped — remove it only if HP reached 0
+            // AnimatedDead stopped — mark it as having moved this turn
+            this._animatedDeadMovedThisTurn.add(justMovedDisc);
             if (justMovedDisc.hitPoints <= 0) {
                 this.removeAnimatedDead(justMovedDisc);
             }
@@ -3040,10 +3276,10 @@ clamp(value, min, max) {
                 this.updateEndNecromancerTurnButtonVisibility();
                 this.updateBarbarianEndTurnButtonVisibility();
 
-                // Check if turn should end now
-                const activeAnimatedAfterConsumption = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead).length;
+                // Auto-end if the Necromancer has moved, all live animated dead have moved, and no spells remain
+                const unmovedAnimated = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead && !this._animatedDeadMovedThisTurn.has(d)).length;
                 const canStillCast = this._necromancerCanCastSpells(necromancerDisc);
-                if (activeAnimatedAfterConsumption === 0 && this.necromancerHasMovedThisTurn && !canStillCast) {
+                if (unmovedAnimated === 0 && this.necromancerHasMovedThisTurn && !canStillCast) {
                     await this._proceedToNextPlayerTurn();
                 }
             } else {
@@ -3093,6 +3329,7 @@ clamp(value, min, max) {
     }
     this.wizardHasMovedThisTurn = false; // Reset for the new turn
     this.necromancerHasMovedThisTurn = false; // Reset for the new turn
+    this._animatedDeadMovedThisTurn.clear(); // Reset per-minion move tracking
     this._cancelNecromancerTargetSelection(); // Cancel any active corpse-selection
 
     // If it was the Wizard's turn, or any player's turn, we find the next player.

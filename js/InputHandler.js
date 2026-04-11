@@ -13,6 +13,7 @@ export default class InputHandler {
         this._handlePointerDown = this._handlePointerDown.bind(this);
         this._handlePointerMove = this._handlePointerMove.bind(this);
         this._handlePointerUp = this._handlePointerUp.bind(this);
+        this._handlePointerHover = this._handlePointerHover.bind(this);
         this._handleKeyDown = this._handleKeyDown.bind(this);
         this._handleKeyUp = this._handleKeyUp.bind(this);
 
@@ -23,6 +24,7 @@ export default class InputHandler {
         this.domElement.addEventListener('pointerdown', this._handlePointerDown);
         // Add pointermove and pointerup to window to capture drags outside the element
         window.addEventListener('pointermove', this._handlePointerMove);
+        window.addEventListener('pointermove', this._handlePointerHover);
         window.addEventListener('pointerup', this._handlePointerUp);
 
         // Multiple listeners for keydown to ensure Escape is caught regardless of focus
@@ -43,6 +45,12 @@ export default class InputHandler {
         // and if it's the current player's turn for that disc.
         if (this.gameController.handlePointerDownInteraction) {
             this.gameController.handlePointerDownInteraction(event, this.pointerDownInitialPos);
+        }
+    }
+
+    _handlePointerHover(event) {
+        if (this.gameController.handlePointerHover) {
+            this.gameController.handlePointerHover(event);
         }
     }
 
@@ -68,6 +76,9 @@ export default class InputHandler {
     }
 
     _handleKeyDown(event) {
+        if (event._handledByInputHandler) return;
+        event._handledByInputHandler = true;
+
         const key = (event.key || '').toLowerCase();
         // console.log("InputHandler: KeyDown detected - key:", key, "original event.key:", event.key); // DETAILED DEBUG
 
@@ -115,6 +126,49 @@ export default class InputHandler {
                     this.gameController.setCameraRotation(1);  // 1 for right
                 }
                 break;
+            case 'r':
+                if (this.gameController.recenterCamera) {
+                    this.gameController.recenterCamera();
+                }
+                break;
+            case ',':
+            case '<':
+                if (this.gameController.focusPrevAnimatedDead) {
+                    this.gameController.focusPrevAnimatedDead();
+                }
+                break;
+            case '.':
+            case '>':
+                if (this.gameController.focusNextAnimatedDead) {
+                    this.gameController.focusNextAnimatedDead();
+                }
+                break;
+            case ' ': {
+                // Spacebar = end turn: click whichever end-turn button is currently visible
+                event.preventDefault();
+                const container = document.getElementById('action-buttons-container');
+                if (container) {
+                    const endTurnBtn = [...container.querySelectorAll('button')]
+                        .find(b => b.id.includes('end-turn') && b.style.display !== 'none' && !b.disabled);
+                    if (endTurnBtn) endTurnBtn.click();
+                }
+                break;
+            }
+            case '1':
+            case '2':
+            case '3':
+            case '4':
+            case '5': {
+                // Numbered keys = action/spell buttons in visible order (excluding end-turn)
+                const idx = parseInt(key) - 1;
+                const container = document.getElementById('action-buttons-container');
+                if (container) {
+                    const actionBtns = [...container.querySelectorAll('button')]
+                        .filter(b => !b.id.includes('end-turn') && b.style.display !== 'none' && !b.disabled);
+                    if (actionBtns[idx]) actionBtns[idx].click();
+                }
+                break;
+            }
         }
     }
 
@@ -172,6 +226,7 @@ export default class InputHandler {
     dispose() {
         this.domElement.removeEventListener('pointerdown', this._handlePointerDown);
         window.removeEventListener('pointermove', this._handlePointerMove);
+        window.removeEventListener('pointermove', this._handlePointerHover);
         window.removeEventListener('pointerup', this._handlePointerUp);
         window.removeEventListener('keydown', this._handleKeyDown, { capture: true });
         document.removeEventListener('keydown', this._handleKeyDown, { capture: true });

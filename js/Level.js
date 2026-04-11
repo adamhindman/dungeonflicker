@@ -5,14 +5,34 @@ export default class Level {
     this.scene = scene;
     this.fieldWidth = 32 * 1.5;
     this.fieldDepth = 24 * 1.5;
-    this.wallHeight = 4;
+    this.wallHeight = 8;
     this.walls = {};
     this.floor = null;
     this.textureLoader = new THREE.TextureLoader();
     this.wallMaterial = null;
     this.obstacles = [];
+    // Legacy portal arrays kept for safety (unused with new door system)
     this.portals = [];
     this.portalLights = [];
+
+    // Door system
+    this.DOOR_WIDTH = 4;
+    this.DOOR_HEIGHT = 5.2;
+    this.doorWall = null;       // 'north' | 'south' | 'east' | 'west'
+    this.doorSlab = null;       // The stone slab mesh that rises when opened
+    this.doorFrameMeshes = [];  // Posts, lintel, black void plane
+    this._frameMat = null;      // Cloned wall material for frame (slightly darker)
+    this._slabMat = null;       // Cloned wall material for slab, same color as frame
+    this._voidMesh = null;      // The black plane behind the slab; pulses purple when open
+    this._doorLight = null;     // PointLight that glows when door is open
+    this._doorLightTime = 0;    // Accumulated time for light pulse
+    this.doorIsOpen = false;
+    this._doorAnimating = false;
+    this._doorAnimProgress = 0;
+    this._doorSlabStartY = 0;
+    this._doorSlabEndY = 0;
+    this._doorOpeningCenter = null; // { x, z }
+    this._doorIsNS = true;          // true = north/south wall, false = east/west
   }
 
   /**
@@ -25,10 +45,10 @@ export default class Level {
     for (let i = 0; i < uv.count; i++) {
       let u = uv.getX(i);
       let v = uv.getY(i);
-      
+
       const nx = Math.abs(norm.getX(i));
       const ny = Math.abs(norm.getY(i));
-      
+
       if (nx > 0.5) { // +/- X faces (Sides)
         u *= depth / 6;
         v *= height / 6;
@@ -51,7 +71,7 @@ export default class Level {
     for (let i = 0; i < uv.count; i++) {
       let u = uv.getX(i);
       let v = uv.getY(i);
-      
+
       const ny = Math.abs(norm.getY(i));
 
       if (ny < 0.5) { // Sides
@@ -68,7 +88,47 @@ export default class Level {
 
   getAllWalls() {
     // Return all wall meshes including internal walls
-    return Object.values(this.walls).filter((wall) => wall !== undefined);
+    const walls = Object.values(this.walls).filter((wall) => wall !== undefined);
+    // Include the door slab for collision while the door is closed
+    if (this.doorSlab && !this.doorIsOpen) {
+      walls.push(this.doorSlab);
+    }
+    return walls;
+  }
+
+  /**
+   * Returns all MeshStandardMaterial wall meshes eligible for camera-occlusion
+   * fading. Excludes the void plane (MeshBasicMaterial) whose colour is driven
+   * separately by the glow system.
+   */
+  getVisualWalls() {
+    const meshes = [];
+    for (const wall of Object.values(this.walls)) {
+      if (wall && wall.material instanceof THREE.MeshStandardMaterial) {
+        meshes.push(wall);
+      }
+    }
+    for (const mesh of this.doorFrameMeshes) {
+      if (mesh.material instanceof THREE.MeshStandardMaterial) {
+        meshes.push(mesh);
+      }
+    }
+    if (this.doorSlab) meshes.push(this.doorSlab);
+    return meshes;
+  }
+
+  /**
+   * Gives every visual wall mesh its own cloned material so the camera-
+   * occlusion system can set opacity independently per mesh.
+   * Called once after all geometry is built.
+   */
+  _initTransparency() {
+    for (const mesh of this.getVisualWalls()) {
+      const clone = mesh.material.clone();
+      clone.transparent = true;
+      clone.opacity = 1.0;
+      mesh.material = clone;
+    }
   }
 
   load() {
@@ -76,7 +136,7 @@ export default class Level {
       this.fieldWidth,
       this.fieldDepth,
     );
-    
+
     // Enhanced texture loading with error handling for Chrome compatibility
     const loadTextureWithFallback = (path, onSuccess, onError) => {
       const texture = this.textureLoader.load(
@@ -174,6 +234,12 @@ export default class Level {
 
     this.generateRandomObstacles();
 
+    // Build door in one randomly chosen wall
+    this._createDoor();
+
+    // Clone materials per-mesh for independent per-wall opacity control
+    this._initTransparency();
+
     const ambientLight = new THREE.AmbientLight(0xffffff, 0);
     this.scene.add(ambientLight);
 
@@ -189,6 +255,272 @@ export default class Level {
     directionalLight.shadow.camera.near = 0.1;
     directionalLight.shadow.camera.far = 100;
     this.scene.add(directionalLight);
+  }
+
+  /**
+   * Picks a random wall and replaces it with two wall segments flanking a door
+   * opening. A stone slab fills the opening until openDoor() is called.
+   * Frame posts and lintel surround three sides of the slab.
+   * A black void plane sits just behind the slab, visible once it rises.
+   *
+   * TODO: When supporting irregular walls, filter to walls large enough for
+   *       the door before choosing randomly.
+   */
+  _createDoor() {
+    const wallNames = ['north', 'south', 'east', 'west'];
+    this.doorWall = wallNames[Math.floor(Math.random() * wallNames.length)];
+
+    const DOOR_WIDTH  = this.DOOR_WIDTH;
+    const DOOR_HEIGHT = this.DOOR_HEIGHT;
+    const wallH       = this.wallHeight;
+    const wallThick   = 0.5;
+    const frameThick  = 0.7;   // Slightly proud of wall face
+    const postWidth   = 0.5;
+    // Lintel is the same thickness as the side posts. The gap above it is
+    // filled with a plain wall segment so the frame reads as a uniform border.
+    const lintelH     = postWidth;
+    const overDoorH   = wallH - DOOR_HEIGHT - lintelH; // plain stone above frame
+
+    const isNS = this.doorWall === 'north' || this.doorWall === 'south';
+    this._doorIsNS = isNS;
+
+    // World-space centre of the wall where the door sits
+    const wallPos = {
+      x: this.doorWall === 'east'  ?  this.fieldWidth  / 2
+       : this.doorWall === 'west'  ? -this.fieldWidth  / 2
+       : 0,
+      z: this.doorWall === 'north' ? -this.fieldDepth / 2
+       : this.doorWall === 'south' ?  this.fieldDepth / 2
+       : 0,
+    };
+
+    // Remove the original full-length wall mesh
+    const original = this.walls[this.doorWall];
+    if (original) {
+      this.scene.remove(original);
+      original.geometry.dispose();
+      delete this.walls[this.doorWall];
+    }
+
+    // Frame material: slightly darker than the wall to read as a carved frame.
+    // Emissive channel will be activated when the door opens.
+    this._frameMat = this.wallMaterial.clone();
+    this._frameMat.color.setHex(0x999999);
+    this._frameMat.emissive = new THREE.Color(0x000000);
+    this._frameMat.emissiveIntensity = 0;
+
+    // Slab material: same color as the frame, with a horizontal clip plane at
+    // the top of the frame so it disappears cleanly as it rises.
+    this._slabMat = this.wallMaterial.clone();
+    this._slabMat.color.setHex(0x999999);
+    this._slabMat.clippingPlanes = [
+      new THREE.Plane(new THREE.Vector3(0, -1, 0), wallH),
+    ];
+    this._slabMat.clipShadows = true;
+
+    // Helper: build + add a wall-material mesh to the scene
+    const addWallMesh = (geo, x, y, z) => {
+      const mesh = new THREE.Mesh(geo, this.wallMaterial);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.scene.add(mesh);
+      return mesh;
+    };
+
+    // Helper: build + add a frame-material mesh to doorFrameMeshes
+    const addFrameMesh = (geo, x, y, z) => {
+      const mesh = new THREE.Mesh(geo, this._frameMat);
+      mesh.position.set(x, y, z);
+      this.scene.add(mesh);
+      this.doorFrameMeshes.push(mesh);
+      return mesh;
+    };
+
+    const totalLen     = isNS ? this.fieldWidth : this.fieldDepth;
+    const segLen       = (totalLen - DOOR_WIDTH) / 2;
+    const segOffset    = segLen / 2 + DOOR_WIDTH / 2;
+
+    if (isNS) {
+      // ── Two horizontal wall segments ──────────────────────────────────────
+      for (const sign of [-1, 1]) {
+        const geo = new THREE.BoxGeometry(segLen, wallH, wallThick);
+        this.applyWallUVs(geo, segLen, wallH, wallThick);
+        const mesh = addWallMesh(geo, sign * segOffset, wallH / 2, wallPos.z);
+        this.walls[`${this.doorWall}_${sign > 0 ? 'right' : 'left'}`] = mesh;
+      }
+
+      // ── Frame: left and right posts ────────────────────────────────────────
+      for (const sign of [-1, 1]) {
+        const geo = new THREE.BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
+        this.applyWallUVs(geo, postWidth, DOOR_HEIGHT, frameThick);
+        addFrameMesh(geo, sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, wallPos.z);
+      }
+
+      // ── Frame: lintel (top beam, same thickness as side posts) ───────────────
+      const lintelW = DOOR_WIDTH + postWidth * 2;
+      const lintelGeo = new THREE.BoxGeometry(lintelW, lintelH, frameThick);
+      this.applyWallUVs(lintelGeo, lintelW, lintelH, frameThick);
+      addFrameMesh(lintelGeo, 0, DOOR_HEIGHT + lintelH / 2, wallPos.z);
+
+      // ── Plain stone wall above the frame ──────────────────────────────────
+      if (overDoorH > 0) {
+        const overGeo = new THREE.BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
+        this.applyWallUVs(overGeo, DOOR_WIDTH, overDoorH, wallThick);
+        const overMesh = addWallMesh(overGeo, 0, DOOR_HEIGHT + lintelH + overDoorH / 2, wallPos.z);
+        this.walls[`${this.doorWall}_above`] = overMesh;
+      }
+
+      // ── Black void (revealed when slab rises; turns purple when door opens) ─
+      const voidGeo = new THREE.PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
+      const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+      const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+      // Place slightly outside the wall so it sits behind the slab
+      const voidSign = this.doorWall === 'north' ? -1 : 1;
+      voidMesh.position.set(0, DOOR_HEIGHT / 2, wallPos.z + voidSign * 0.4);
+      this.scene.add(voidMesh);
+      this.doorFrameMeshes.push(voidMesh);
+      this._voidMesh = voidMesh;
+
+      // ── Stone slab (blocks the opening until door opens) ───────────────────
+      const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
+      this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
+      this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+      this.doorSlab.position.set(0, DOOR_HEIGHT / 2, wallPos.z);
+      this.scene.add(this.doorSlab);
+
+    } else {
+      // ── East / West wall: two segments along Z ─────────────────────────────
+      for (const sign of [-1, 1]) {
+        const geo = new THREE.BoxGeometry(wallThick, wallH, segLen);
+        this.applyWallUVs(geo, wallThick, wallH, segLen);
+        const mesh = addWallMesh(geo, wallPos.x, wallH / 2, sign * segOffset);
+        this.walls[`${this.doorWall}_${sign > 0 ? 'pos' : 'neg'}`] = mesh;
+      }
+
+      // ── Frame: left and right posts (along Z) ─────────────────────────────
+      for (const sign of [-1, 1]) {
+        const geo = new THREE.BoxGeometry(frameThick, DOOR_HEIGHT, postWidth);
+        this.applyWallUVs(geo, frameThick, DOOR_HEIGHT, postWidth);
+        addFrameMesh(geo, wallPos.x, DOOR_HEIGHT / 2, sign * (DOOR_WIDTH / 2 + postWidth / 2));
+      }
+
+      // ── Frame: lintel (same thickness as side posts) ──────────────────────
+      const lintelD = DOOR_WIDTH + postWidth * 2;
+      const lintelGeo = new THREE.BoxGeometry(frameThick, lintelH, lintelD);
+      this.applyWallUVs(lintelGeo, frameThick, lintelH, lintelD);
+      addFrameMesh(lintelGeo, wallPos.x, DOOR_HEIGHT + lintelH / 2, 0);
+
+      // ── Plain stone wall above the frame ──────────────────────────────────
+      if (overDoorH > 0) {
+        const overGeo = new THREE.BoxGeometry(wallThick, overDoorH, DOOR_WIDTH);
+        this.applyWallUVs(overGeo, wallThick, overDoorH, DOOR_WIDTH);
+        const overMesh = addWallMesh(overGeo, wallPos.x, DOOR_HEIGHT + lintelH + overDoorH / 2, 0);
+        this.walls[`${this.doorWall}_above`] = overMesh;
+      }
+
+      // ── Black void (turns purple when door opens) ─────────────────────────
+      const voidGeo = new THREE.PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
+      const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
+      const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+      voidMesh.rotation.y = Math.PI / 2;
+      const voidSign = this.doorWall === 'east' ? 1 : -1;
+      voidMesh.position.set(wallPos.x + voidSign * 0.4, DOOR_HEIGHT / 2, 0);
+      this.scene.add(voidMesh);
+      this.doorFrameMeshes.push(voidMesh);
+      this._voidMesh = voidMesh;
+
+      // ── Stone slab ─────────────────────────────────────────────────────────
+      const slabGeo = new THREE.BoxGeometry(wallThick, DOOR_HEIGHT, DOOR_WIDTH);
+      this.applyWallUVs(slabGeo, wallThick, DOOR_HEIGHT, DOOR_WIDTH);
+      this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+      this.doorSlab.position.set(wallPos.x, DOOR_HEIGHT / 2, 0);
+      this.scene.add(this.doorSlab);
+    }
+
+    this._doorOpeningCenter = { x: wallPos.x, z: wallPos.z };
+    this._doorSlabStartY = DOOR_HEIGHT / 2;
+    // Rise above the wall so it disappears into the architecture
+    this._doorSlabEndY = wallH + DOOR_HEIGHT;
+  }
+
+  /**
+   * Triggers the slab-lift animation and activates doorway glow effects.
+   * Call this when the room is cleared.
+   */
+  openDoor() {
+    if (this.doorIsOpen || this._doorAnimating || !this.doorSlab) return;
+    this._doorAnimating = true;
+    this._doorAnimProgress = 0;
+
+    // Activate emissive glow on the door frame
+    if (this._frameMat) {
+      this._frameMat.emissive.setHex(0x660099);
+      this._frameMat.emissiveIntensity = 0.6;
+    }
+
+    // Place a pulsing point light just inside the doorway
+    const cx = this._doorOpeningCenter ? this._doorOpeningCenter.x : 0;
+    const cz = this._doorOpeningCenter ? this._doorOpeningCenter.z : 0;
+    const INSET = 2.0; // units into the room
+    let lx = cx, lz = cz;
+    if (this._doorIsNS) {
+      lz += (this.doorWall === 'north') ? INSET : -INSET;
+    } else {
+      lx += (this.doorWall === 'east') ? -INSET : INSET;
+    }
+
+    this._doorLight = new THREE.PointLight(0x6600ff, 60, 12, 2);
+    this._doorLight.position.set(lx, this.DOOR_HEIGHT * 0.5, lz);
+    this.scene.add(this._doorLight);
+    this._doorLightTime = 0;
+  }
+
+  /**
+   * Advance the door-open animation and pulse the glow effects.
+   * Called each frame by GameController.
+   */
+  update(deltaTime) {
+    // ── Slab lift animation ──────────────────────────────────────────────────
+    if (this._doorAnimating && this.doorSlab) {
+      const ANIM_DURATION = 0.8; // seconds
+      this._doorAnimProgress += deltaTime / ANIM_DURATION;
+
+      if (this._doorAnimProgress >= 1.0) {
+        this._doorAnimProgress = 1.0;
+        this._doorAnimating = false;
+        this.doorIsOpen = true;
+      }
+
+      // Ease in-out (quadratic)
+      const t = this._doorAnimProgress;
+      const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      this.doorSlab.position.y =
+        this._doorSlabStartY + (this._doorSlabEndY - this._doorSlabStartY) * ease;
+    }
+
+    // ── Glow pulse (runs whenever the light exists, including during animation) ──
+    if (this._doorLight) {
+      this._doorLightTime += deltaTime;
+      // Slow, uneven pulse — two overlapping sine waves for an organic flicker
+      const pulse = 0.65
+        + 0.25 * Math.sin(this._doorLightTime * 2.3)
+        + 0.10 * Math.sin(this._doorLightTime * 5.7);
+      this._doorLight.intensity = 60 * pulse;
+
+      if (this._frameMat) {
+        this._frameMat.emissiveIntensity = 0.55 * pulse;
+      }
+
+      // Pulse the void plane from deep purple to bright purple in sync
+      if (this._voidMesh) {
+        this._voidMesh.material.color.setRGB(
+          pulse * 0.45,
+          0,
+          pulse * 0.9,
+        );
+      }
+    }
   }
 
   /**
@@ -248,8 +580,8 @@ export default class Level {
         for (const existing of this.obstacles) {
           const dx = Math.abs(x - existing.x);
           const dz = Math.abs(z - existing.z);
-          
-          // Different separation based on types. 
+
+          // Different separation based on types.
           // Pillars can be closer to things than walls can.
           let separation = 3.5;
           if (type === "pillar" && existing.type === "pillar") separation = 2.5;
@@ -344,69 +676,28 @@ export default class Level {
   }
 
   /**
-   * Spawns portals on each wall of the room.
-   */
-  spawnPortals() {
-    const portalWidth = 4;
-    const portalHeight = 4.1; // Slightly taller than walls to be visible
-    const portalDepth = 0.6;
-    const portalGeometry = new THREE.BoxGeometry(portalWidth, portalHeight, portalDepth);
-    const portalMaterial = new THREE.MeshStandardMaterial({
-      color: 0x000000,
-      emissive: 0x4b0082, // Indigo/Dark Purple
-      emissiveIntensity: 2,
-      roughness: 0.1,
-      metalness: 0.5
-    });
-
-    const portalPositions = [
-      { x: 0, z: -this.fieldDepth / 2, rotY: 0 }, // North
-      { x: 0, z: this.fieldDepth / 2, rotY: 0 },  // South
-      { x: this.fieldWidth / 2, z: 0, rotY: Math.PI / 2 }, // East
-      { x: -this.fieldWidth / 2, z: 0, rotY: Math.PI / 2 }  // West
-    ];
-
-    portalPositions.forEach((pos, index) => {
-      const portal = new THREE.Mesh(portalGeometry, portalMaterial);
-      portal.position.set(pos.x, portalHeight / 2, pos.z);
-      portal.rotation.y = pos.rotY;
-      this.scene.add(portal);
-      this.portals.push(portal);
-
-      // Add ominous purple light
-      const light = new THREE.PointLight(0x8800ff, 50, 15);
-      light.position.set(pos.x, portalHeight / 2, pos.z);
-      
-      // Offset light slightly inward from the wall so it illuminates the room
-      const offset = 1.5;
-      if (pos.z < -0.1 && pos.rotY === 0) light.position.z += offset; // North
-      else if (pos.z > 0.1 && pos.rotY === 0) light.position.z -= offset; // South
-      else if (pos.x > 0.1 && pos.rotY !== 0) light.position.x -= offset; // East
-      else if (pos.x < -0.1 && pos.rotY !== 0) light.position.x += offset; // West
-      
-      this.scene.add(light);
-      this.portalLights.push(light);
-    });
-  }
-
-  /**
-   * Checks if a position (x, z) with a given radius is colliding with any portal.
+   * Returns true when the disc (x, z, radius) has entered the door opening
+   * after the door is open. Used by GameController to trigger level transition.
    */
   checkPortalCollision(x, z, radius) {
-    for (const portal of this.portals) {
-      const dx = Math.abs(x - portal.position.x);
-      const dz = Math.abs(z - portal.position.z);
-      
-      // Portals are oriented either along X or Z axis
-      const isRotated = Math.abs(portal.rotation.y) > 0.1;
-      const width = isRotated ? 0.6 : 4;
-      const depth = isRotated ? 4 : 0.6;
+    if (!this.doorIsOpen || !this._doorOpeningCenter) return false;
 
-      if (dx < (width / 2 + radius) && dz < (depth / 2 + radius)) {
-        return true;
-      }
+    const cx = this._doorOpeningCenter.x;
+    const cz = this._doorOpeningCenter.z;
+    // How close the disc centre must be (perpendicularly) to the wall plane
+    // to count as having entered. Radius + 1 handles the moment just before
+    // handleWallCollision would push it back.
+    const wallReach = radius + 1.0;
+
+    if (this._doorIsNS) {
+      // Door spans X; disc must be centred in the opening and near the wall Z
+      return Math.abs(x - cx) < this.DOOR_WIDTH / 2 &&
+             Math.abs(z - cz) < wallReach;
+    } else {
+      // Door spans Z; disc must be centred in the opening and near the wall X
+      return Math.abs(z - cz) < this.DOOR_WIDTH / 2 &&
+             Math.abs(x - cx) < wallReach;
     }
-    return false;
   }
 
   unload() {
@@ -426,10 +717,58 @@ export default class Level {
       if (wall) {
         this.scene.remove(wall);
         if (wall.geometry) wall.geometry.dispose();
+        // Each wall has its own cloned material from _initTransparency
+        if (wall.material) wall.material.dispose();
       }
     }
     this.walls = {};
 
+    // Clean up door slab (tracked separately, not in walls dict)
+    if (this.doorSlab) {
+      this.scene.remove(this.doorSlab);
+      if (this.doorSlab.geometry) this.doorSlab.geometry.dispose();
+      if (this.doorSlab.material) this.doorSlab.material.dispose();
+      this.doorSlab = null;
+    }
+
+    // Clean up door frame meshes (posts, lintel, void plane).
+    // Each StandardMaterial mesh has its own clone; the void plane has its own
+    // MeshBasicMaterial. All are safe to dispose individually.
+    for (const mesh of this.doorFrameMeshes) {
+      this.scene.remove(mesh);
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) mesh.material.dispose();
+    }
+    this.doorFrameMeshes = [];
+
+    // Dispose template materials (no longer assigned to any mesh after
+    // _initTransparency cloned them, but still occupy GPU memory)
+    if (this._frameMat) {
+      this._frameMat.dispose();
+      this._frameMat = null;
+    }
+    if (this._slabMat) {
+      this._slabMat.dispose();
+      this._slabMat = null;
+    }
+
+    this._voidMesh = null;
+
+    // Remove the door glow light
+    if (this._doorLight) {
+      this.scene.remove(this._doorLight);
+      this._doorLight = null;
+    }
+    this._doorLightTime = 0;
+
+    // Reset door state for next level
+    this.doorWall = null;
+    this.doorIsOpen = false;
+    this._doorAnimating = false;
+    this._doorAnimProgress = 0;
+    this._doorOpeningCenter = null;
+
+    // Legacy portal cleanup (arrays are always empty with new door system)
     for (const portal of this.portals) {
       this.scene.remove(portal);
       if (portal.geometry) portal.geometry.dispose();

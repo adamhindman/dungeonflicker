@@ -37,6 +37,20 @@ export default class Disc {
       angle: Math.PI / 10,
       penumbra: 0.3,
       color: 0x000000 // Black glow for reanimated
+    },
+    animateDeadTarget: {
+      intensity: 15,
+      distance: 10,
+      angle: Math.PI / 5,
+      penumbra: 1.0,
+      color: 0x9933ff // Purple — marks a corpse eligible for Animate Dead
+    },
+    animateDeadHovered: {
+      intensity: 80,
+      distance: 18,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0xcc66ff // Bright purple — corpse currently under cursor
     }
   };
 

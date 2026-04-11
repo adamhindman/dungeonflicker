@@ -211,7 +211,7 @@ export default class UIManager {
         if (!button) {
             button = document.createElement('button');
             button.id = 'recenter-button';
-            button.textContent = 'Recenter';
+            button.textContent = '[R] Recenter';
             Object.assign(button.style, {
                 position: 'fixed',
                 bottom: '20px',
@@ -431,7 +431,7 @@ export default class UIManager {
             // Ensure charges and maxCharges are numbers before calling toFixed or similar
             const currentCharges = typeof charges === 'number' ? charges : 0;
             const maximumCharges = typeof maxCharges === 'number' ? maxCharges : 0;
-            this.rageButtonElement.textContent = `Rage (${currentCharges}/${maximumCharges})`;
+            this.rageButtonElement.textContent = `[1] Rage (${currentCharges}/${maximumCharges})`;
         }
     }
 
