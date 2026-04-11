@@ -100,7 +100,9 @@ export default class GameController {
     this.wizardOrbs = [];
     this.summonOrbsButton = null;
     this.summonHealingOrbsButton = null;
+    this.radiusBlastButton = null;
     this.endWizardTurnButton = null;
+    this._radiusBlastRings = [];
     this.barbarianEndTurnButton = null; // Property for Barbarian's end turn button
     this.wizardHasMovedThisTurn = false; // Track if Wizard has moved in the current turn
     this.wizardMana = 3; // Wizard's mana for summoning orbs (starts with 3)
@@ -325,6 +327,10 @@ export default class GameController {
     this.createSummonHealingOrbsButton();
     this.setupSummonHealingOrbsButtonListener();
 
+    // Create and setup Radius Blast button
+    this.createRadiusBlastButton();
+    this.setupRadiusBlastButtonListener();
+
     // updateSummonOrbsButtonVisibility will be called by initDiscs and advanceTurn
 
     // Setup Rage button
@@ -397,6 +403,25 @@ export default class GameController {
 
     button.style.display = 'none';
     this.summonHealingOrbsButton = button;
+  }
+
+  createRadiusBlastButton() {
+    if (!this.actionButtonsContainer) {
+      console.error("GameController: Action buttons container not available for Radius Blast button.");
+      return;
+    }
+
+    let button = document.getElementById('radius-blast-button');
+
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'radius-blast-button';
+      button.textContent = 'Radius Blast (2 Mana)';
+      this.actionButtonsContainer.appendChild(button);
+    }
+
+    button.style.display = 'none';
+    this.radiusBlastButton = button;
   }
 
   createEndWizardTurnButton() {
@@ -673,7 +698,8 @@ export default class GameController {
     targetDisc.kind = 'AnimatedDead';
     targetDisc.isAnimatedDead = true;
 
-    // Mesh visual state is restored by revive(); spotlight will handle the control glow
+    // Store the Necromancer's color so the animation loop can apply it every frame
+    targetDisc._animatedDeadColor = necromancerDisc.initialColor;
 
     // Ensure the disc sits at the correct height
     targetDisc.mesh.position.y = targetDisc.basePositionY;
@@ -695,6 +721,9 @@ export default class GameController {
     // Revive at floor(maxHitPoints / 2), minimum 1
     const reviveHP = Math.max(1, Math.floor(targetDisc.maxHitPoints / 2));
     targetDisc.revive(reviveHP);
+    // Enforce the correct HP in case revive() returned early (e.g. dead flag out of sync)
+    targetDisc.hitPoints = reviveHP;
+    targetDisc.lastHitPoints = reviveHP;
 
     this.updateDiscNames();
     return true;
@@ -717,6 +746,7 @@ export default class GameController {
     delete disc._originalType;
     delete disc._originalAttackDamage;
     delete disc._originalMaxHitPoints;
+    delete disc._animatedDeadColor;
 
     // Ensure the disc is visually dead (grey)
     if (!disc.dead) {
@@ -867,6 +897,80 @@ updateEndWizardTurnButtonVisibility() {
     } else {
       console.error("GameController: Summon Healing Orbs button not found to attach listener.");
     }
+  }
+
+  setupRadiusBlastButtonListener() {
+    if (this.radiusBlastButton) {
+      this.radiusBlastButton.addEventListener('click', this._handleRadiusBlastButtonClick.bind(this));
+    } else {
+      console.error("GameController: Radius Blast button not found to attach listener.");
+    }
+  }
+
+  _handleRadiusBlastButtonClick() {
+    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+    if (!discForTurnContext || discForTurnContext.kind !== 'Wizard' || discForTurnContext.dead) return;
+
+    if (this.wizardMana >= 2) {
+      this.castRadiusBlast(discForTurnContext);
+    }
+  }
+
+  castRadiusBlast(wizardDisc) {
+    if (!wizardDisc || wizardDisc.dead || this.wizardMana < 2) return;
+
+    this.wizardMana -= 2;
+
+    const BLAST_RADIUS = 6;
+    const BLAST_FORCE = 2.5;
+    const wizardPos = wizardDisc.mesh.position;
+
+    this.discs.forEach(disc => {
+      if (disc === wizardDisc || disc.dead) return;
+
+      const dx = disc.mesh.position.x - wizardPos.x;
+      const dz = disc.mesh.position.z - wizardPos.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+
+      if (dist > 0 && dist <= BLAST_RADIUS) {
+        const falloff = 1 - dist / BLAST_RADIUS;
+        const force = BLAST_FORCE * falloff;
+        disc.velocity.x += (dx / dist) * force;
+        disc.velocity.z += (dz / dist) * force;
+        disc.moving = true;
+      }
+    });
+
+    // Spawn two expanding shockwave rings — the second lags by 0.15s
+    const ringY = wizardDisc.mesh.position.y + 0.1;
+    const originX = wizardDisc.mesh.position.x;
+    const originZ = wizardDisc.mesh.position.z;
+    const RING_DURATION = 0.45; // seconds for each ring to fully expand and fade
+
+    for (let i = 0; i < 2; i++) {
+      const geometry = new THREE.TorusGeometry(1, 0.03, 8, 64);
+      const material = new THREE.MeshBasicMaterial({
+        color: 0x88CCFF,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+      });
+      const ring = new THREE.Mesh(geometry, material);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(originX, ringY, originZ);
+      this.scene.add(ring);
+
+      this._radiusBlastRings.push({
+        mesh: ring,
+        delay: i * 0.15,
+        elapsed: 0,
+        duration: RING_DURATION,
+        maxRadius: BLAST_RADIUS,
+      });
+    }
+
+    if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(wizardDisc);
+    this._updateWizardActionButtons();
   }
 
   _handleSummonOrbsButtonClick() {
@@ -1326,6 +1430,10 @@ updateEndWizardTurnButtonVisibility() {
     }
 
     this.discs.push(barbarian, wizard, necromancer, ...npcDiscs); // Add all player discs
+
+    // Immediately mark any player discs that carried over as dead (hitPoints=0 from playerStats)
+    // so they appear in the Raise Dead target list without waiting for the animation loop.
+    this.updateAllDiscDeadStates();
 
     // Initialize all spotlight intensities to inactive state
     this.discs.forEach(disc => {
@@ -2291,10 +2399,12 @@ clamp(value, min, max) {
           if (disc.mesh.isGroup) {
             disc.mesh.children.forEach(child => {
               if (child.material) {
-                // If this is an animated dead disc, ensure it keeps its original NPC color
-                // and is never tinted red by the active player highlight logic.
+                // If this is an animated dead disc, ensure it keeps the Necromancer's color
+                // and is never tinted by the active player highlight logic.
                 if (disc.kind === 'AnimatedDead' && disc.initialColor !== undefined) {
-                  child.material.color.set(disc.initialColor);
+                  const animColor = disc._animatedDeadColor !== undefined ? disc._animatedDeadColor : disc.initialColor;
+                  // Textured top-face planes should stay white so the texture renders correctly.
+                  child.material.color.set(child.material.map ? 0xffffff : animColor);
                 } else if (child.material.color) {
                   child.material.color.set(child.material.color.getHex());
                 }
@@ -2304,7 +2414,8 @@ clamp(value, min, max) {
             });
           } else {
             if (disc.kind === 'AnimatedDead' && disc.initialColor !== undefined) {
-              disc.mesh.material.color.set(disc.initialColor);
+              const animColor = disc._animatedDeadColor !== undefined ? disc._animatedDeadColor : disc.initialColor;
+              disc.mesh.material.color.set(animColor);
             } else {
               disc.mesh.material.color.set(disc.mesh.material.color.getHex());
             }
@@ -2478,18 +2589,23 @@ clamp(value, min, max) {
                     const animated = d1.kind === 'AnimatedDead' ? d1 : d2;
                     const npc = d1.kind === 'AnimatedDead' ? d2 : d1;
 
-                    npc.takeHit(animated.attackDamage, animated);
+                    if (this.currentDisc === animated) {
+                        // Animated dead was thrown by the Necromancer — deal damage to NPC
+                        npc.takeHit(animated.attackDamage, animated);
 
-                    if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
-                        this.necromancerManaEarnedThisTurn += 1;
-                        this.npcsKilledForRageCharge.add(npc.discName);
-                        this._updateNecromancerActionButtons();
+                        if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
+                            this.necromancerManaEarnedThisTurn += 1;
+                            this.npcsKilledForRageCharge.add(npc.discName);
+                            this._updateNecromancerActionButtons();
+                        }
+                    } else if (this.currentDisc === npc) {
+                        // NPC was directly thrown into the animated dead — deal damage
+                        animated.takeHit(npc.attackDamage, npc);
                     }
-
-                    // AnimatedDead survives the collision and can continue attacking
+                    // Anything else (residual motion, indirect hit) — no damage
                 }
                 // Special Case: Wizard Orb hitting an NPC (Volatile Collision)
-                else if ((d1.kind === 'Orb' && d2.type === 'NPC') || (d2.kind === 'Orb' && d1.type === 'NPC')) {
+                else if (this.thrownDisc !== null && ((d1.kind === 'Orb' && d2.type === 'NPC') || (d2.kind === 'Orb' && d1.type === 'NPC'))) {
                     const orb = d1.kind === 'Orb' ? d1 : d2;
                     const npc = d1.kind === 'Orb' ? d2 : d1;
                     const actor = this.currentDisc;
@@ -2515,7 +2631,7 @@ clamp(value, min, max) {
                     }
                 }
                 // Case 1: d1 is the current acting disc
-                else if (d1 === this.currentDisc) {
+                else if (this.thrownDisc !== null && d1 === this.currentDisc) {
                     if (d1.type === "player" && d2.type === "NPC") {
                         // Player (d1) hits NPC (d2) - Rage allows multiple hits on the same NPC
                         if (d1.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
@@ -2599,7 +2715,7 @@ clamp(value, min, max) {
                     }
                 }
                 // Case 2: d2 is the current acting disc
-                else if (d2 === this.currentDisc) {
+                else if (this.thrownDisc !== null && d2 === this.currentDisc) {
                     if (d2.type === "player" && d1.type === "NPC") {
                         if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
                             if (d2.kind === 'Barbarian' && d1.type === 'NPC') {
@@ -2673,7 +2789,7 @@ clamp(value, min, max) {
                     }
                 }
                 // Case 3: NPC-NPC collision (Chain Reaction) when player is the actor
-                else if (d1.type === "NPC" && d2.type === "NPC" && this.currentDisc && this.currentDisc.type === 'player') {
+                else if (this.thrownDisc !== null && d1.type === "NPC" && d2.type === "NPC" && this.currentDisc && this.currentDisc.type === 'player') {
                     const actor = this.currentDisc;
                     if (actor.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName) || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
 
@@ -2721,6 +2837,29 @@ clamp(value, min, max) {
                 }
             }
           }
+        }
+      }
+    }
+
+    // Update radius blast shockwave rings
+    if (this._radiusBlastRings.length > 0) {
+      for (let i = this._radiusBlastRings.length - 1; i >= 0; i--) {
+        const r = this._radiusBlastRings[i];
+        r.elapsed += deltaTime;
+
+        const activeTime = r.elapsed - r.delay;
+        if (activeTime <= 0) continue; // still in delay
+
+        const t = Math.min(activeTime / r.duration, 1); // 0 → 1
+        const currentRadius = r.maxRadius * t;
+        r.mesh.scale.set(currentRadius, currentRadius, 1);
+        r.mesh.material.opacity = 0.85 * (1 - t);
+
+        if (t >= 1) {
+          this.scene.remove(r.mesh);
+          r.mesh.geometry.dispose();
+          r.mesh.material.dispose();
+          this._radiusBlastRings.splice(i, 1);
         }
       }
     }
@@ -2881,9 +3020,11 @@ clamp(value, min, max) {
                 // Wizard is dead or gone, proceed to next normal turn
                 await this._proceedToNextPlayerTurn();
             }
-        } else if (justMovedDisc.kind === 'AnimatedDead' && justMovedDisc.hitPoints <= 0) {
-            // AnimatedDead was consumed (either stopped naturally or hit an NPC)
-            this.removeAnimatedDead(justMovedDisc); // Idempotent — safe even if applyFriction already called it
+        } else if (justMovedDisc.kind === 'AnimatedDead') {
+            // AnimatedDead stopped — remove it only if HP reached 0
+            if (justMovedDisc.hitPoints <= 0) {
+                this.removeAnimatedDead(justMovedDisc);
+            }
             const necromancerDisc = this.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
 
             if (necromancerDisc) {
@@ -3024,9 +3165,9 @@ clamp(value, min, max) {
     this.currentTurnIndex = nextIndex;
     this.currentDisc = this.discs[this.currentTurnIndex]; // Correctly assign the disc for the new turn
 
-    // If it's now the Wizard's turn, transfer pending mana earned from previous turns
+    // If it's now the Wizard's turn, transfer pending mana earned from previous turns and grant +1 passive mana
     if (this.currentDisc && this.currentDisc.kind === 'Wizard' && !this.currentDisc.dead) {
-        this.wizardMana += this.wizardManaEarnedThisTurn;
+        this.wizardMana += this.wizardManaEarnedThisTurn + 1;
         this.wizardManaEarnedThisTurn = 0;
     }
 
@@ -3095,6 +3236,31 @@ clamp(value, min, max) {
   _updateWizardActionButtons() {
     this.updateSummonOrbsButtonVisibility();
     this.updateSummonHealingOrbsButtonVisibility();
+    this.updateRadiusBlastButtonVisibility();
+  }
+
+  updateRadiusBlastButtonVisibility() {
+    if (!this.radiusBlastButton) return;
+
+    let shouldBeVisible = false;
+    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
+
+    if (discForTurnContext &&
+        discForTurnContext.kind === 'Wizard' &&
+        discForTurnContext.type === 'player' &&
+        !discForTurnContext.dead &&
+        !this.gameOverState.active &&
+        this.wizardMana >= 2) {
+      shouldBeVisible = true;
+    }
+
+    if (shouldBeVisible) {
+      this.radiusBlastButton.style.display = 'inline-block';
+      this.radiusBlastButton.disabled = false;
+    } else {
+      this.radiusBlastButton.style.display = 'none';
+      this.radiusBlastButton.disabled = true;
+    }
   }
 
   updateSummonOrbsButtonVisibility() {

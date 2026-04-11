@@ -33,10 +33,10 @@ export default class Disc {
     },
     animatedDead: {
       intensity: 80,
-      distance: 25,
-      angle: Math.PI / 4,
-      penumbra: 1.2,
-      color: 0x8833CC // Purple color for reanimated
+      distance: 15,
+      angle: Math.PI / 10,
+      penumbra: 0.3,
+      color: 0x000000 // Black glow for reanimated
     }
   };
 
@@ -94,6 +94,7 @@ export default class Disc {
     this.hitPoints = hitPoints;
     this.lastHitPoints = hitPoints;
     this.maxHitPoints = hitPoints; // Store initial HP as max HP
+    this.dead = false;
     this.skillLevel = skillLevel;
     this.scene = scene;
     this.canDoReboundDamage = canDoReboundDamage;
@@ -200,6 +201,7 @@ export default class Disc {
     this.moving = false;
     this.hasThrown = false;
     this.hasCausedDamage = false;
+    this.animatedDeadRing = null;
   }
 
   updatePosition() {
@@ -210,6 +212,11 @@ export default class Disc {
       8,
       this.mesh.position.z
     );
+    // Update animated dead ring position to follow disc
+    if (this.animatedDeadRing) {
+      this.animatedDeadRing.position.x = this.mesh.position.x;
+      this.animatedDeadRing.position.z = this.mesh.position.z;
+    }
   }
 
   handleWallCollision(fieldWidth, fieldDepth, bounceDamping) {
@@ -291,11 +298,6 @@ export default class Disc {
         this.hitPoints = 0;
         this.lastHitPoints = 0;
       }
-      // If this disc is an AnimatedDead, it is also consumed when it stops moving
-      if (this.kind === 'AnimatedDead') {
-        this.hitPoints = 0;
-        this.lastHitPoints = 0;
-      }
       // Death handling when stopped and no hit points
       if (this.hitPoints <= 0 && !this.dead) {
         this.die();
@@ -332,7 +334,8 @@ export default class Disc {
       this.mesh.children.forEach(child => {
         if (child.material) {
           if (child.material.color && this.initialColor !== undefined) {
-            child.material.color.set(this.initialColor);
+            // Don't tint texture-mapped faces; only restore color on the base cylinder.
+            child.material.color.set(child.material.map ? 0xffffff : this.initialColor);
           }
           child.material.transparent = true;
           child.material.opacity = 0.9;
@@ -379,7 +382,7 @@ export default class Disc {
     this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
     const actualDamage = oldHP - this.hitPoints;
 
-    if (actualDamage > 0 && this.gameController && this.gameController.uiManager) {
+    if (actualDamage > 0 && this.gameController && this.gameController.uiManager && this.kind !== 'Orb' && this.kind !== 'HealingOrb') {
       this.gameController.uiManager.showFloatingText(this, actualDamage, false);
     }
     this.lastHitPoints = this.hitPoints;
@@ -441,6 +444,7 @@ export default class Disc {
       this.mesh.material.opacity = 0.9;    // Set opacity
       this.mesh.material.transparent = false; // Set transparent to false
     }
+    this.hideAnimatedDeadRing();
     // Update spotlight to dead configuration when disc dies
     this.updateSpotlightConfig('dead');
   }
@@ -448,16 +452,42 @@ export default class Disc {
   // Set spotlight parameters based on active/inactive state
   setSpotlightIntensity(isActive) {
     if (this.dead) {
+      this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('dead');
     } else if (this.kind === "Barbarian" && (this.rageIsActiveForNextThrow || this.rageWasUsedThisThrow)) {
+      this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('raging');
     } else if (this.kind === "AnimatedDead") {
-      this.updateSpotlightConfig('animatedDead');
+      this.showAnimatedDeadRing();
+      this.updateSpotlightConfig('inactive');
     } else if (isActive) {
+      this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('active');
     } else {
+      this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('inactive');
     }
+  }
+
+  showAnimatedDeadRing() {
+    if (this.animatedDeadRing) return;
+    const geometry = new THREE.TorusGeometry(this.radius, 0.3, 8, 48);
+    const material = new THREE.MeshPhongMaterial({
+      color: 0x8833CC,
+      emissive: 0x441166,
+    });
+    this.animatedDeadRing = new THREE.Mesh(geometry, material);
+    this.animatedDeadRing.rotation.x = Math.PI / 2;
+    this.animatedDeadRing.position.set(this.mesh.position.x, 0.06, this.mesh.position.z);
+    this.scene.add(this.animatedDeadRing);
+  }
+
+  hideAnimatedDeadRing() {
+    if (!this.animatedDeadRing) return;
+    this.scene.remove(this.animatedDeadRing);
+    this.animatedDeadRing.geometry.dispose();
+    this.animatedDeadRing.material.dispose();
+    this.animatedDeadRing = null;
   }
 
   // Update spotlight with configuration for the given state
@@ -487,6 +517,7 @@ export default class Disc {
 
   // Clean up disc and its spotlight
   dispose() {
+    this.hideAnimatedDeadRing();
     if (this.scene) {
       this.scene.remove(this.mesh);
       this.scene.remove(this.spotlight);
