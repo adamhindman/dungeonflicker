@@ -276,8 +276,12 @@ export default class GameController {
     this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
     this.barbarianUniqueNPCHitsThisThrow = new Set(); // Tracks unique NPCs hit by Barbarian per throw
 
+    // Level progression — 1-based counter; shape sequence cycles: rect → circle → hexagon.
+    this.currentLevelNumber = 1;
+
     // Load the level and walls
     this.level = new Level(this.scene);
+    this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
     this.level.load();
 
     // Initialize disc array and turn index
@@ -326,6 +330,9 @@ export default class GameController {
 
     // UI elements (throwInfoDiv, fpsDisplayElement, GameOverUI) are now managed by UIManager
     // Event listeners (pointerdown, pointermove, pointerup, keydown, keyup) are now managed by InputHandler
+
+    // Generate lava pools first so disc spawning can avoid them
+    this._generateLavaPools();
 
     // Initialize discs for gameplay
     this.initDiscs();
@@ -1033,8 +1040,8 @@ updateEndWizardTurnButtonVisibility() {
 
     this.wizardMana -= 2;
 
-    const BLAST_RADIUS = 6;
-    const BLAST_FORCE = 2.5;
+    const BLAST_RADIUS = 8;
+    const BLAST_FORCE = 3.5;
     const wizardPos = wizardDisc.mesh.position;
 
     this.discs.forEach(disc => {
@@ -1050,8 +1057,12 @@ updateEndWizardTurnButtonVisibility() {
         disc.velocity.x += (dx / dist) * force;
         disc.velocity.z += (dz / dist) * force;
         disc.moving = true;
+        disc.takeHit(1, wizardDisc);
       }
     });
+
+    this.updateAllDiscDeadStates();
+    this.checkGameOverConditions();
 
     // Spawn two expanding shockwave rings — the second lags by 0.15s
     const ringY = wizardDisc.mesh.position.y + 0.1;
@@ -1320,10 +1331,18 @@ updateEndWizardTurnButtonVisibility() {
     }
   }
 
-  // Helper method to check if a position is valid (not inside obstacles and optionally other discs)
+  // Helper method to check if a position is valid (not inside obstacles, lava, and optionally other discs)
   isPositionValid(x, z, discRadius, checkDiscs = false, excludeDiscs = []) {
     const isValidInLevel = this.level.isPositionValid(x, z, discRadius);
     if (!isValidInLevel) return false;
+
+    // Reject positions that overlap with any lava pool (center + baseRadius + disc radius + small buffer).
+    for (const pool of (this.lavaPools || [])) {
+      const dx = x - pool.centerX;
+      const dz = z - pool.centerZ;
+      const minDist = pool.baseRadius + discRadius + 0.5;
+      if (dx * dx + dz * dz < minDist * minDist) return false;
+    }
 
     if (checkDiscs && this.discs) {
       for (const disc of this.discs) {
@@ -1351,6 +1370,9 @@ updateEndWizardTurnButtonVisibility() {
     // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
     // Create discs with explicit parameters:
     // (radius, height, color, startX, startZ, scene, discName, type, kind, hitPoints, skillLevel, imagePath, canDoReboundDamage, throwPowerMultiplier, mass, rageIsActiveForNextThrow)
+
+    const isHexLevel      = !!(this.level && this.level.hexRings);
+    const isBullseyeLevel = !!(this.level && this.level.bullseyeRings);
 
     // Helper function to generate random positions for NPC discs
     const generateRandomPosition = (discRadius, existingPositions, minDistance = 4) => {
@@ -1386,6 +1408,83 @@ updateEndWizardTurnButtonVisibility() {
       return null;
     };
 
+    // For the hexagonal level, place NPCs on the elevated outer ring instead of
+    // anywhere in the field.
+    const generateOuterRingPosition = (discRadius, existingPositions, minDistance = 4) => {
+      const { RC_in, RA_in } = this.level.hexRings;
+      const innerR = RC_in + 1.5;   // clear of the inner ramp edge
+      const outerR = RA_in - 2.5;   // clear of the outer walls
+      const MAX_ATTEMPTS = 100;
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = innerR + Math.random() * (outerR - innerR);
+        const x = Math.sin(angle) * r;
+        const z = Math.cos(angle) * r;
+        if (!this.isPositionValid(x, z, discRadius)) continue;
+        let tooClose = false;
+        for (const pos of existingPositions) {
+          if (Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2) < minDistance) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (!tooClose) return { x, z };
+      }
+      return null;
+    };
+
+    // Bullseye level: place NPCs on a specific concentric ring.
+    // innerR / outerR are the ring boundaries; a small margin keeps them clear of
+    // ring edges and column obstacles.
+    const generateBullseyeRingPos = (innerR, outerR, discRadius, existingPositions, minDistance = 4) => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r     = innerR + 1.5 + Math.random() * (outerR - innerR - 3);
+        const x     = Math.sin(angle) * r;
+        const z     = Math.cos(angle) * r;
+        if (!this.isPositionValid(x, z, discRadius)) continue;
+        let tooClose = false;
+        for (const pos of existingPositions) {
+          if (Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2) < minDistance) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (!tooClose) return { x, z };
+      }
+      return null;
+    };
+
+    // PC start positions.
+    // Bullseye: near the inner-ring edge (r ≈ 6.5), 120° apart.
+    // Hex: random positions anywhere on the upper ring (same pool as NPCs).
+    const BULLSEYE_PC_R = 6.5;
+    const hexPCPositions = [];
+    const _hexPCPos = (radius) => {
+      const pos = isHexLevel
+        ? generateOuterRingPosition(radius, hexPCPositions, 5)
+        : null;
+      if (pos) hexPCPositions.push(pos);
+      return pos;
+    };
+
+    const _barbPos  = isHexLevel ? _hexPCPos(1.25) : null;
+    const _wizPos   = isHexLevel ? _hexPCPos(0.9)  : null;
+    const _necroPos = isHexLevel ? _hexPCPos(1.0)  : null;
+
+    const barbStartX  = isBullseyeLevel ? Math.sin(0)                * BULLSEYE_PC_R
+                      : isHexLevel && _barbPos  ? _barbPos.x  : 0;
+    const barbStartZ  = isBullseyeLevel ? Math.cos(0)                * BULLSEYE_PC_R
+                      : isHexLevel && _barbPos  ? _barbPos.z  : 0;
+    const wizStartX   = isBullseyeLevel ? Math.sin( 2 * Math.PI / 3) * BULLSEYE_PC_R
+                      : isHexLevel && _wizPos   ? _wizPos.x   : 0;
+    const wizStartZ   = isBullseyeLevel ? Math.cos( 2 * Math.PI / 3) * BULLSEYE_PC_R
+                      : isHexLevel && _wizPos   ? _wizPos.z   : -3;
+    const necroStartX = isBullseyeLevel ? Math.sin(-2 * Math.PI / 3) * BULLSEYE_PC_R
+                      : isHexLevel && _necroPos ? _necroPos.x : -3;
+    const necroStartZ = isBullseyeLevel ? Math.cos(-2 * Math.PI / 3) * BULLSEYE_PC_R
+                      : isHexLevel && _necroPos ? _necroPos.z : -3;
+
     // Create player discs
     // Barbarian (Player 1)
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
@@ -1394,8 +1493,8 @@ updateEndWizardTurnButtonVisibility() {
       /* radius: */ 1.25, // don't change this
       /* height: */ 0.4,
       /* color: */ 0x0088ff, // Barbarian color
-      /* startX: */ 0,
-      /* startZ: */ 0,       // Barbarian position
+      /* startX: */ barbStartX,
+      /* startZ: */ barbStartZ,
       /* scene: */ this.scene,
       /* discName: */ "Barbarian", // Updated name
       /* type: */ "player",
@@ -1425,8 +1524,8 @@ updateEndWizardTurnButtonVisibility() {
       /* radius: */ .9,
       /* height: */ 0.4,
       /* color: */ 0x00C0C0, // Muted cyan color for Wizard
-      /* startX: */ 0,
-      /* startZ: */ -3,      // Position Wizard behind Barbarian
+      /* startX: */ wizStartX,
+      /* startZ: */ wizStartZ,
       /* scene: */ this.scene,
       /* discName: */ "Wizard",
       /* type: */ "player",
@@ -1456,8 +1555,8 @@ updateEndWizardTurnButtonVisibility() {
       /* radius: */ .9,
       /* height: */ 0.4,
       /* color: */ 0x6600CC, // Dark purple for Necromancer
-      /* startX: */ -3,
-      /* startZ: */ -3,      // Position Necromancer near Wizard
+      /* startX: */ necroStartX,
+      /* startZ: */ necroStartZ,
       /* scene: */ this.scene,
       /* discName: */ "Necromancer",
       /* type: */ "player",
@@ -1510,8 +1609,20 @@ updateEndWizardTurnButtonVisibility() {
     const npcDiscs = [];
     // Skeletons (NPCs)
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
+    let npcIdx = 0;
     for (const npc of npcData) {
-      const position = generateRandomPosition(1.5, existingPositions);
+      let position;
+      if (isBullseyeLevel) {
+        // First 4 NPCs on the middle ring (r 8–16), remaining on the outer ring (r 16–22).
+        position = npcIdx < 4
+          ? generateBullseyeRingPos(8, 16, 1.5, existingPositions)
+          : generateBullseyeRingPos(16, 22, 1.5, existingPositions);
+      } else if (isHexLevel) {
+        position = generateOuterRingPosition(1.5, existingPositions);
+      } else {
+        position = generateRandomPosition(1.5, existingPositions);
+      }
+      npcIdx++;
       const finalX = position ? position.x : (Math.random() - 0.5) * this.level.fieldWidth * 0.7;
       const finalZ = position ? position.z : (Math.random() - 0.5) * this.level.fieldDepth * 0.7;
 
@@ -2267,6 +2378,13 @@ _updateWallFade(deltaTime) {
     // will be handled by checks in other methods (e.g., advanceTurn, onPointerDown)
   }
 
+  /** Returns the room shape for a given 1-based level number. */
+  _shapeForLevel(n) {
+    // Level sequence cycles: hexagonal → bullseye → rectangular → circular → repeat.
+    const sequence = ['hexagon', 'bullseye', 'rect', 'circle'];
+    return sequence[(n - 1) % sequence.length];
+  }
+
   async startNextLevel(triggeringDisc = null) {
     // 1. Save critical state before clearing
     const playerStats = this.discs
@@ -2311,12 +2429,14 @@ _updateWallFade(deltaTime) {
 
     // Reload level (generates new room/obstacles)
     if (this.level) {
+      this.currentLevelNumber++;
+      this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
       this.level.load();
     }
 
-    // 3. Re-initialize world
-    this.initDiscs(playerStats);
+    // 3. Re-initialize world (lava first so disc spawning can avoid pools)
     this._generateLavaPools();
+    this.initDiscs(playerStats);
 
     // 4. Reset turn-specific state
     this.wizardManaEarnedThisTurn = 0;
@@ -2431,16 +2551,16 @@ _updateWallFade(deltaTime) {
     // 3. Reload the level
     // Assuming this.level is already instantiated, if not, it might need new Level(this.scene)
     if (this.level) {
+      this.currentLevelNumber = 1;
+      this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
       this.level.load();
     } else {
       return; // Cannot proceed without a level
     }
 
-    // 4. Re-initialize discs
-    this.initDiscs(); // This will populate this.discs with new instances
-
-    // Regenerate lava pools
+    // 4. Re-initialize world (lava first so disc spawning can avoid pools)
     this._generateLavaPools();
+    this.initDiscs(); // This will populate this.discs with new instances
 
     // 5. Reset core game state variables
     this.currentTurnIndex = 0;
@@ -2699,6 +2819,14 @@ _updateWallFade(deltaTime) {
       if (disc.moving) {
         disc.updatePosition();
 
+        // Hexagonal level: apply gravity component along ramp slope to velocity.
+        // Discs on ramps are accelerated toward the pit; flat zones have no effect.
+        if (this.level && this.level.hexRings) {
+          const slope = this.level.getTerrainSlopeForce(disc.mesh.position.x, disc.mesh.position.z);
+          disc.velocity.x += slope.fx;
+          disc.velocity.z += slope.fz;
+        }
+
         // Check door entry BEFORE the boundary-bounce so a disc heading into
         // the open doorway isn't pushed back before the transition fires.
         if (this.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
@@ -2719,9 +2847,111 @@ _updateWallFade(deltaTime) {
           disc.handleCollisionWithBox(wall, 0.8);
         });
 
+        // Circular obstacle collision for pillars and triangular columns.
+        // Box3.setFromObject on a 3-segment prism produces an asymmetric AABB
+        // that misses from certain approach angles; a 2D circle push is exact.
+        for (const obs of (this.level.obstacles || [])) {
+          if (obs.type !== 'pillar' && obs.type !== 'triangle') continue;
+          const obsRadius = obs.width / 2;
+          const dx = disc.mesh.position.x - obs.x;
+          const dz = disc.mesh.position.z - obs.z;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          const minDist = disc.radius + obsRadius;
+          if (dist < minDist && dist > 0.001) {
+            const nx = dx / dist;
+            const nz = dz / dist;
+            // Push disc out of overlap
+            disc.mesh.position.x = obs.x + nx * minDist;
+            disc.mesh.position.z = obs.z + nz * minDist;
+            // Reflect velocity component along normal
+            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+            if (vDotN < 0) {
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+            }
+          }
+        }
+
+        // Hexagonal level: enforce circular outer boundary (replaces AABB collision
+        // on the large rotated wall panels, which inflate badly).
+        if (this.level && this.level.hexRings) {
+          const { RA_in } = this.level.hexRings;
+          const dx = disc.mesh.position.x;
+          const dz = disc.mesh.position.z;
+          const r  = Math.sqrt(dx * dx + dz * dz);
+          const maxR = RA_in - disc.radius;
+          if (r > maxR && r > 0.001) {
+            const nx = dx / r;
+            const nz = dz / r;
+            disc.mesh.position.x = nx * maxR;
+            disc.mesh.position.z = nz * maxR;
+            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+            if (vDotN > 0) {
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+            }
+          }
+        }
+
         // Apply friction (Wizards and Necromancers have more drag and slow down faster)
         const currentFriction = (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
         disc.applyFriction(currentFriction);
+      }
+    }
+
+    // Bullseye level: rotate every disc's world position with the ring it is standing on.
+    // This makes the rings act as a conveyor — discs are carried regardless of their own velocity.
+    if (this.level && this.level.bullseyeRings) {
+      const { inner, middle, outer } = this.level.bullseyeRings;
+      for (const disc of this.discs) {
+        const dx = disc.mesh.position.x;
+        const dz = disc.mesh.position.z;
+        const r  = Math.sqrt(dx * dx + dz * dz);
+        let omega = 0;
+        if (r < 8)       omega = inner.rotDir  * inner.speed;   // inner ring
+        else if (r < 16) omega = middle.rotDir * middle.speed;  // middle ring
+        else if (r < 22) omega = outer.rotDir  * outer.speed;   // outer ring
+        if (omega === 0) continue;
+        const dTheta = omega * deltaTime;
+        const cos = Math.cos(dTheta);
+        const sin = Math.sin(dTheta);
+        // Use Three.js Y-rotation convention: x' = x·cos + z·sin, z' = −x·sin + z·cos
+        disc.mesh.position.x =  dx * cos + dz * sin;
+        disc.mesh.position.z = -dx * sin + dz * cos;
+        // Keep animated-dead ring and spotlight in sync when disc isn't self-moving
+        if (disc.animatedDeadRing) {
+          disc.animatedDeadRing.position.x = disc.mesh.position.x;
+          disc.animatedDeadRing.position.z = disc.mesh.position.z;
+        }
+        if (disc.spotlight) {
+          disc.spotlight.position.x = disc.mesh.position.x;
+          disc.spotlight.position.z = disc.mesh.position.z;
+        }
+        // Keep the throw-direction line anchored to the disc while the ring carries it.
+        if (disc === this.currentDisc && this.throwDirectionLine && this.throwDirectionLine.visible) {
+          const rotateVec = (v) => {
+            const vx = v.x, vz = v.z;
+            v.x =  vx * cos + vz * sin;
+            v.z = -vx * sin + vz * cos;
+          };
+          if (this._prevLineStart) rotateVec(this._prevLineStart);
+          if (this._prevLineEnd)   rotateVec(this._prevLineEnd);
+          const pos = this.throwDirectionLine.geometry.attributes.position;
+          if (pos) {
+            pos.setXYZ(0, this._prevLineStart.x, this._prevLineStart.y, this._prevLineStart.z);
+            pos.setXYZ(1, this._prevLineEnd.x,   this._prevLineEnd.y,   this._prevLineEnd.z);
+            pos.needsUpdate = true;
+          }
+        }
+      }
+    }
+
+    // Hexagonal level: snap every disc's Y to the terrain height directly below it.
+    // This keeps all discs riding the surface regardless of whether they're moving.
+    if (this.level && this.level.hexRings) {
+      for (const disc of this.discs) {
+        const h = this.level.getTerrainHeightAt(disc.mesh.position.x, disc.mesh.position.z);
+        disc.mesh.position.y = h + disc.basePositionY;
       }
     }
 
@@ -3712,6 +3942,89 @@ _updateWallFade(deltaTime) {
     if (!this.level || !this.scene) {
         console.error("Level or scene not initialized. Cannot generate lava pools.");
         return;
+    }
+    // Remove any existing lava pool meshes and clear the list before regenerating.
+    for (const pool of this.lavaPools) {
+      if (pool.getMesh()) this.scene.remove(pool.getMesh());
+    }
+    this.lavaPools = [];
+    // Hexagonal level: center pit pool + random pools on the flat outer ring.
+    if (this.level.hexRings) {
+      const { LOW_Y, MED_Y, RC_in, RA_in } = this.level.hexRings;
+
+      // Center pit — fills the floor.
+      const centerPool = new LavaPool({
+        centerX:      0,
+        centerZ:      0,
+        baseRadius:   3.8,
+        numVertices:  10,
+        irregularity: 0.15,
+        yPosition:    LOW_Y + 0.05,
+      });
+      if (centerPool.getMesh()) {
+        this.scene.add(centerPool.getMesh());
+        this.lavaPools.push(centerPool);
+      }
+
+      // Random pools on the flat ring (RC_in..RA_in).
+      const POOL_INNER_R = RC_in + 3.0;
+      const POOL_OUTER_R = RA_in - 4.0;
+      const numPools = 2 + Math.floor(Math.random() * 3); // 2–4 pools
+      const poolY    = MED_Y + 0.05;
+      for (let i = 0; i < numPools; i++) {
+        let placed = false;
+        for (let attempt = 0; attempt < 80 && !placed; attempt++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r     = POOL_INNER_R + Math.random() * (POOL_OUTER_R - POOL_INNER_R);
+          const x     = Math.sin(angle) * r;
+          const z     = Math.cos(angle) * r;
+          const radius = 1.5 + Math.random() * 1.5;
+
+          // Check separation from existing pools.
+          let tooClose = false;
+          for (const p of this.lavaPools) {
+            const dx = x - p.centerX;
+            const dz = z - p.centerZ;
+            if (Math.sqrt(dx * dx + dz * dz) < radius + p.baseRadius + 3) {
+              tooClose = true;
+              break;
+            }
+          }
+          if (tooClose) continue;
+
+          const pool = new LavaPool({
+            centerX:      x,
+            centerZ:      z,
+            baseRadius:   radius,
+            numVertices:  8 + Math.floor(Math.random() * 4),
+            irregularity: 0.2 + Math.random() * 0.2,
+            yPosition:    poolY,
+          });
+          if (pool.getMesh()) {
+            this.scene.add(pool.getMesh());
+            this.lavaPools.push(pool);
+          }
+          placed = true;
+        }
+      }
+      return;
+    }
+
+    // Bullseye level: place a single fixed lava pool at the centre of the inner ring.
+    if (this.level.bullseyeRings) {
+      const lavaPool = new LavaPool({
+        centerX:     0,
+        centerZ:     0,
+        baseRadius:  3.5,
+        numVertices: 12,
+        irregularity: 0.15,
+        yPosition:   0.05,
+      });
+      if (lavaPool.getMesh()) {
+        this.scene.add(lavaPool.getMesh());
+        this.lavaPools.push(lavaPool);
+      }
+      return;
     }
 
     // Determine the number of lava pools for this level (randomly 1 or 2 for now)
