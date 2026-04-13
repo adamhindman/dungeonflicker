@@ -389,7 +389,7 @@ export default class UIManager {
                         manaDiv.style.display = 'block';
                         manaDiv.style.fontSize = '0.8em';
                         manaDiv.style.marginTop = '4px';
-                        manaDiv.textContent = `Mana: ${'🔵'.repeat(currentDisc.gameController.wizardMana)}`;
+                        manaDiv.textContent = `Mana: ${'🔵'.repeat(currentDisc.gameController.wizardController.mana)}`;
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 
@@ -400,7 +400,7 @@ export default class UIManager {
                         manaDiv.style.display = 'block';
                         manaDiv.style.fontSize = '0.8em';
                         manaDiv.style.marginTop = '4px';
-                        manaDiv.textContent = `Mana: ${'💀'.repeat(currentDisc.gameController.necromancerMana)}`;
+                        manaDiv.textContent = `Mana: ${'💀'.repeat(currentDisc.gameController.necromancerController.mana)}`;
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 

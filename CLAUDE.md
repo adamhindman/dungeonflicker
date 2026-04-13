@@ -56,3 +56,7 @@ When filtering for "real" player discs (e.g., for win conditions), exclude `Orb`
 ### Assets
 
 Static assets live in `public/` and are served at the root. Disc images are in `public/images/` as `*-nobg.png` files referenced by `imagePath` in each Disc subclass constructor.
+
+### Forbidden Actions
+
+- Never attempt to write or run tests. All tests will be administered by the user.

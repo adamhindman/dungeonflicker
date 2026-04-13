@@ -6,6 +6,9 @@ import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
 import Skeleton from './Skeleton.js';
 import Warden from './Warden.js';
+import { BarbarianController } from './BarbarianController.js';
+import { WizardController } from './WizardController.js';
+import { NecromancerController } from './NecromancerController.js';
 
 // Pre-converted hex color values for NPCs
 import { LavaPool } from './LavaPool.js';
@@ -54,6 +57,9 @@ export default class GameController {
     this.currentTurnIndex = 0;
     this._currentDisc = null;
 
+    // Turn-start beam animations (descending column of light)
+    this._turnStartBeams = [];
+
     // Input and interaction state
     this.raycaster = null;
     this.mouse = new THREE.Vector2();
@@ -67,10 +73,9 @@ export default class GameController {
 
     // FPS calculation
     this.fpsFrameCount = 0;
-    this.fpsLastTime = performance.now(); // For calculating delta time
-    this.fpsLastUpdateTime = performance.now(); // For timing FPS display updates
-    this.fpsUpdateInterval = 1000; // Update display every 1 second (in ms)
-    this.barbarianUniqueNPCHitsThisThrow = new Set(); // Tracks unique NPCs hit by Barbarian per throw
+    this.fpsLastTime = performance.now();
+    this.fpsLastUpdateTime = performance.now();
+    this.fpsUpdateInterval = 1000;
 
     // Visual helpers
     this.throwDirectionLine = null;
@@ -79,51 +84,19 @@ export default class GameController {
 
     // Game state flags
     this.waitingForDiscToStop = false;
-    this.playerDamagedNPCsThisThrow = new Set(); // Tracks NPCs damaged by player in the current throw
-    // Rage charge tracking (earned by kills)
-    this.currentPlayerRageCharges = 0; // How many Rage charges player currently has
-    this.maxRageChargesCap = 3;      // Max number of Rage charges player can hold
-    this.npcsKilledForRageCharge = new Set(); // Tracks NPCs already killed for a Rage charge this game
+    this.playerDamagedNPCsThisThrow = new Set();
+    this.npcsKilledForRageCharge = new Set(); // Shared kill-tracking across all characters
 
     // Game Over State
     this.gameOverState = { active: false, playerWon: false };
     this.roundWon = false;
-    // gameOverMessageContainer and gameOverMessageTextElement are managed by UIManager
 
-    // Rage Button related properties
-    // rageButtonElement is managed by UIManager
-    this.boundHandleRageButtonClick = null;
+    this.thrownDisc = null;
 
-    this.thrownDisc = null; // Track the disc that was just thrown
-
-    // Wizard Orb properties
-    this.wizardOrbs = [];
-    this.summonOrbsButton = null;
-    this.summonHealingOrbsButton = null;
-    this.radiusBlastButton = null;
-    this.endWizardTurnButton = null;
-    this._radiusBlastRings = [];
-    this.barbarianEndTurnButton = null; // Property for Barbarian's end turn button
-    this.wizardHasMovedThisTurn = false; // Track if Wizard has moved in the current turn
-    this.wizardMana = 3; // Wizard's mana for summoning orbs (starts with 3)
-    this.wizardManaEarnedThisTurn = 0; // Mana earned this turn, ready next turn
-
-    // Necromancer properties
-    this.animatedDeadDiscs = [];
-    this.animateDeadButton = null;
-    this.raiseDeadButton = null;
-    this.focusPrevAnimatedButton = null;
-    this.focusNextAnimatedButton = null;
-    this.endNecromancerTurnButton = null;
-    this.necromancerHasMovedThisTurn = false;
-    this.necromancerMana = 3; // Necromancer's mana (starts with 3)
-    this.necromancerManaEarnedThisTurn = 0; // Mana earned this turn, ready next turn
-    this.targetSelectionPopup = null; // Popup for Animate Dead / Raise Dead targeting
-    this.necromancerSelectingAnimateDeadTarget = false; // True when player must click a dead NPC in the scene
-    this._animatedDeadFocusIndex = 0; // Cycles through live animated dead discs for camera focus
-    this._animatedDeadMovedThisTurn = new Set(); // Tracks which AnimatedDead discs have already moved this turn
-    this._animateDeadTargetBeams = []; // Volumetric beam meshes shown during Animate Dead target selection
-    this._animateDeadHoveredDisc = null; // Corpse currently under cursor during target selection
+    // Character controllers (instantiated here, initialized in init())
+    this.barbarianController = new BarbarianController(this);
+    this.wizardController = new WizardController(this);
+    this.necromancerController = new NecromancerController(this);
 
     // Disc Info Popup
     this.discInfoPopupElement = null;
@@ -161,34 +134,6 @@ export default class GameController {
 
     this.animate = this.animate.bind(this);
     this.animate();
-  }
-
-  // Barbarian player disc identification helper
-  _getBarbarianPlayerDisc() {
-    return this.discs.find(d => d.type === 'player' && d.discName === 'Barbarian' && !d.dead);
-  }
-
-  // Wizard player disc identification helper (useful for consistency)
-  _getWizardPlayerDisc() {
-    return this.discs.find(d => d.type === 'player' && d.discName === 'Wizard' && !d.dead);
-  }
-
-  // Necromancer player disc identification helper
-  _getNecromancerPlayerDisc() {
-    return this.discs.find(d => d.type === 'player' && d.kind === 'Necromancer' && !d.dead);
-  }
-
-  // Returns true if the Necromancer currently has any spells they can cast
-  _necromancerCanCastSpells(necromancer) {
-    if (!necromancer || necromancer.dead) return false;
-    const deadNPCs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
-    const deadPCs = this.discs.filter(d => d.type === 'player' && d.dead &&
-      d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' &&
-      d.kind !== 'Necromancer');
-    const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    if (this.necromancerMana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
-    if (this.necromancerMana >= 2 && deadPCs.length > 0) return true;
-    return false;
   }
 
   get currentDisc() {
@@ -274,8 +219,6 @@ export default class GameController {
     this.controls.maxDistance = 45;
     // Prevent camera from going below ~15 degrees from horizontal
     this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
-    this.barbarianUniqueNPCHitsThisThrow = new Set(); // Tracks unique NPCs hit by Barbarian per throw
-
     // Level progression — 1-based counter; shape sequence cycles: rect → circle → hexagon.
     this.currentLevelNumber = 1;
 
@@ -337,45 +280,10 @@ export default class GameController {
     // Initialize discs for gameplay
     this.initDiscs();
 
-    // Create and setup Summon Orbs button
-    this.createSummonOrbsButton();
-    this.setupSummonOrbsButtonListener();
-
-    // Create and setup Summon Healing Orbs button
-    this.createSummonHealingOrbsButton();
-    this.setupSummonHealingOrbsButtonListener();
-
-    // Create and setup Radius Blast button
-    this.createRadiusBlastButton();
-    this.setupRadiusBlastButtonListener();
-
-    // updateSummonOrbsButtonVisibility will be called by initDiscs and advanceTurn
-
-    // Setup Rage button
-    this.setupRageButtonListener();
-    this.updateRageButtonVisibility(); // Initial check for Rage button visibility
-    this._updateWizardActionButtons(); // Initial check for Wizard action buttons
-
-    // Create and setup End Wizard Turn button
-    this.createEndWizardTurnButton();
-    this.setupEndWizardTurnButtonListener();
-    this.updateEndWizardTurnButtonVisibility(); // Initial visibility
-
-    this.createBarbarianEndTurnButton();
-    this.setupBarbarianEndTurnButtonListener(); // Setup listener for Barbarian button
-    this.updateBarbarianEndTurnButtonVisibility(); // Initial visibility for Barbarian button
-
-    // Create and setup Necromancer spell buttons
-    this.createAnimateDeadButton();
-    this.setupAnimateDeadButtonListener();
-    this.createRaiseDeadButton();
-    this.setupRaiseDeadButtonListener();
-    this.createFocusAnimatedButtons();
-    this.setupFocusAnimatedButtonListeners();
-    this.createEndNecromancerTurnButton();
-    this.setupEndNecromancerTurnButtonListener();
-    this._updateNecromancerActionButtons(); // Initial visibility
-    this.updateEndNecromancerTurnButtonVisibility(); // Initial visibility
+    // Initialize character controllers (buttons, listeners, initial visibility)
+    this.barbarianController.init(this.actionButtonsContainer);
+    this.wizardController.init(this.actionButtonsContainer);
+    this.necromancerController.init(this.actionButtonsContainer);
 
     // Generate lava pools
     this._generateLavaPools();
@@ -384,952 +292,14 @@ export default class GameController {
     this.updateDiscNames(); // Explicitly update the disc list after all initialization
   }
 
-  createSummonOrbsButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for Summon Orbs button.");
-      return;
-    }
+  // ─── WIZARD / NECROMANCER / BARBARIAN character logic lives in their
+  //     respective controller classes (WizardController, NecromancerController,
+  //     BarbarianController). GameController delegates to them below.
 
-    // Check if the button already exists (e.g. from a previous game instance or manual HTML)
-    let button = document.getElementById('summon-orbs-button');
 
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'summon-orbs-button';
-      button.textContent = '[1] Summon Orb';
-      // Example: Apply a class for consistent styling if you have one for game buttons
-      // button.classList.add('game-ui-button');
-      this.actionButtonsContainer.appendChild(button);
-    }
 
-    button.style.display = 'none'; // Initially hidden, will be shown by updateSummonOrbsButtonVisibility
-    this.summonOrbsButton = button;
-  }
 
-  createSummonHealingOrbsButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for Summon Healing Orbs button.");
-      return;
-    }
 
-    let button = document.getElementById('summon-healing-orbs-button');
-
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'summon-healing-orbs-button';
-      button.textContent = '[2] Summon Healing Orb';
-      this.actionButtonsContainer.appendChild(button);
-    }
-
-    button.style.display = 'none';
-    this.summonHealingOrbsButton = button;
-  }
-
-  createRadiusBlastButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for Radius Blast button.");
-      return;
-    }
-
-    let button = document.getElementById('radius-blast-button');
-
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'radius-blast-button';
-      button.textContent = '[3] Radius Blast (2 Mana)';
-      this.actionButtonsContainer.appendChild(button);
-    }
-
-    button.style.display = 'none';
-    this.radiusBlastButton = button;
-  }
-
-  createEndWizardTurnButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for End Wizard Turn button.");
-      return;
-    }
-
-    let button = document.getElementById('wizard-end-turn-button');
-
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'wizard-end-turn-button';
-      button.textContent = '[Space] End Turn';
-      this.actionButtonsContainer.appendChild(button);
-    }
-
-    button.style.display = 'none'; // Initially hidden
-    this.endWizardTurnButton = button;
-  }
-
-  createBarbarianEndTurnButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for Barbarian End Turn button.");
-      return;
-    }
-
-    let button = document.getElementById('barbarian-end-turn-button');
-
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'barbarian-end-turn-button';
-      button.textContent = '[Space] End Turn';
-      this.actionButtonsContainer.appendChild(button);
-    }
-
-    button.style.display = 'none'; // Initially hidden
-    this.barbarianEndTurnButton = button;
-  }
-
-  createAnimateDeadButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for Animate Dead button.");
-      return;
-    }
-    let button = document.getElementById('animate-dead-button');
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'animate-dead-button';
-      button.textContent = '[1] Animate Dead (1💀)';
-      this.actionButtonsContainer.appendChild(button);
-    }
-    button.style.display = 'none';
-    this.animateDeadButton = button;
-  }
-
-  createRaiseDeadButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for Raise Dead button.");
-      return;
-    }
-    let button = document.getElementById('raise-dead-button');
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'raise-dead-button';
-      button.textContent = '[2] Raise Dead (2💀)';
-      this.actionButtonsContainer.appendChild(button);
-    }
-    button.style.display = 'none';
-    this.raiseDeadButton = button;
-  }
-
-  createFocusAnimatedButtons() {
-    if (!this.actionButtonsContainer) return;
-
-    let prev = document.getElementById('focus-animated-prev-button');
-    if (!prev) {
-      prev = document.createElement('button');
-      prev.id = 'focus-animated-prev-button';
-      prev.textContent = '<';
-      this.actionButtonsContainer.appendChild(prev);
-    }
-    prev.style.display = 'none';
-    this.focusPrevAnimatedButton = prev;
-
-    let next = document.getElementById('focus-animated-next-button');
-    if (!next) {
-      next = document.createElement('button');
-      next.id = 'focus-animated-next-button';
-      next.textContent = '>';
-      this.actionButtonsContainer.appendChild(next);
-    }
-    next.style.display = 'none';
-    this.focusNextAnimatedButton = next;
-  }
-
-  setupFocusAnimatedButtonListeners() {
-    if (this.focusPrevAnimatedButton) {
-      this.focusPrevAnimatedButton.addEventListener('click', this.focusPrevAnimatedDead.bind(this));
-    }
-    if (this.focusNextAnimatedButton) {
-      this.focusNextAnimatedButton.addEventListener('click', this.focusNextAnimatedDead.bind(this));
-    }
-  }
-
-  updateFocusAnimatedButtonVisibility() {
-    const currentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex)
-      ? this.discs[this.currentTurnIndex] : null;
-    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
-    const shouldShow = currentDisc && currentDisc.kind === 'Necromancer' && !currentDisc.dead && liveMinions.length > 1;
-    const display = shouldShow ? 'inline-block' : 'none';
-    if (this.focusPrevAnimatedButton) {
-      this.focusPrevAnimatedButton.style.display = display;
-      this.focusPrevAnimatedButton.disabled = !shouldShow;
-    }
-    if (this.focusNextAnimatedButton) {
-      this.focusNextAnimatedButton.style.display = display;
-      this.focusNextAnimatedButton.disabled = !shouldShow;
-    }
-  }
-
-  focusPrevAnimatedDead() {
-    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
-    if (!liveMinions.length) return;
-    this._animatedDeadFocusIndex = (this._animatedDeadFocusIndex - 1 + liveMinions.length) % liveMinions.length;
-    if (this.controls) this.controls.target.copy(liveMinions[this._animatedDeadFocusIndex].mesh.position);
-  }
-
-  focusNextAnimatedDead() {
-    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
-    if (!liveMinions.length) return;
-    this._animatedDeadFocusIndex = (this._animatedDeadFocusIndex + 1) % liveMinions.length;
-    if (this.controls) this.controls.target.copy(liveMinions[this._animatedDeadFocusIndex].mesh.position);
-  }
-
-  createEndNecromancerTurnButton() {
-    if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not available for End Necromancer Turn button.");
-      return;
-    }
-    let button = document.getElementById('necromancer-end-turn-button');
-    if (!button) {
-      button = document.createElement('button');
-      button.id = 'necromancer-end-turn-button';
-      button.textContent = '[Space] End Turn';
-      this.actionButtonsContainer.appendChild(button);
-    }
-    button.style.display = 'none';
-    this.endNecromancerTurnButton = button;
-  }
-
-  setupAnimateDeadButtonListener() {
-    if (this.animateDeadButton) {
-      this.animateDeadButton.addEventListener('click', this._handleAnimateDeadButtonClick.bind(this));
-    }
-  }
-
-  setupRaiseDeadButtonListener() {
-    if (this.raiseDeadButton) {
-      this.raiseDeadButton.addEventListener('click', this._handleRaiseDeadButtonClick.bind(this));
-    }
-  }
-
-  setupEndNecromancerTurnButtonListener() {
-    if (this.endNecromancerTurnButton) {
-      this.endNecromancerTurnButton.addEventListener('click', this._handleEndNecromancerTurnButtonClick.bind(this));
-    }
-  }
-
-  _handleAnimateDeadButtonClick() {
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (!discForTurnContext || discForTurnContext.kind !== 'Necromancer' || discForTurnContext.dead) return;
-    if (this.necromancerMana < 1) return;
-
-    const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    if (animatedCount >= 3) return;
-
-    const deadNPCs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
-    if (deadNPCs.length === 0) return;
-
-    // Enter disc-selection mode — player clicks a dead NPC directly in the scene
-    this.necromancerSelectingAnimateDeadTarget = true;
-    deadNPCs.forEach(d => d.updateSpotlightConfig('animateDeadTarget'));
-    this._spawnAnimateDeadBeams(deadNPCs);
-    if (this.uiManager) {
-      this.uiManager.updateThrowInfo('Click a dead enemy to animate it  •  Esc to cancel', true);
-    }
-    this._updateNecromancerActionButtons(); // Hides spell buttons while selecting
-  }
-
-  _cancelNecromancerTargetSelection() {
-    if (!this.necromancerSelectingAnimateDeadTarget) return;
-    this.necromancerSelectingAnimateDeadTarget = false;
-    this._animateDeadHoveredDisc = null;
-    // Restore dead spotlight on any corpses that were highlighted as targets
-    this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead)
-              .forEach(d => d.updateSpotlightConfig('dead'));
-    this._clearAnimateDeadBeams();
-    if (this.uiManager) {
-      this.uiManager.updateThrowInfo('', false);
-    }
-    this._updateNecromancerActionButtons();
-  }
-
-  _spawnAnimateDeadBeams(discs) {
-    this._clearAnimateDeadBeams();
-    if (!discs.length) return;
-    const wallH = this.level ? this.level.wallHeight : 8;
-    const beamH = 200;
-    this._animateDeadBeamGeo = new THREE.CylinderGeometry(1.0, 1.0, beamH, 16, 1, true);
-    this._animateDeadBeamMat = new THREE.MeshBasicMaterial({
-      color: 0x9933ff,
-      transparent: true,
-      opacity: 0.13,
-      side: THREE.BackSide,
-      depthWrite: false,
-    });
-    discs.forEach(d => {
-      const beam = new THREE.Mesh(this._animateDeadBeamGeo, this._animateDeadBeamMat);
-      beam.position.set(d.mesh.position.x, beamH / 2, d.mesh.position.z);
-      this.scene.add(beam);
-      this._animateDeadTargetBeams.push(beam);
-    });
-  }
-
-  _clearAnimateDeadBeams() {
-    this._animateDeadTargetBeams.forEach(b => this.scene.remove(b));
-    this._animateDeadTargetBeams = [];
-    if (this._animateDeadBeamGeo) { this._animateDeadBeamGeo.dispose(); this._animateDeadBeamGeo = null; }
-    if (this._animateDeadBeamMat) { this._animateDeadBeamMat.dispose(); this._animateDeadBeamMat = null; }
-  }
-
-  _handleRaiseDeadButtonClick() {
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (!discForTurnContext || discForTurnContext.kind !== 'Necromancer' || discForTurnContext.dead) return;
-    if (this.necromancerMana < 2) return;
-
-    const deadPCs = this.discs.filter(d =>
-      d.type === 'player' && d.dead &&
-      d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
-    );
-    if (deadPCs.length === 0) return;
-
-    this._showTargetSelectionPopup(
-      deadPCs,
-      (target) => {
-        const success = this.raiseDeadDisc(discForTurnContext, target);
-        if (success) {
-          if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(discForTurnContext);
-          this._updateNecromancerActionButtons();
-          this.updateDiscNames();
-        }
-      },
-      'Choose an ally to raise:'
-    );
-  }
-
-  async _handleEndNecromancerTurnButtonClick() {
-    const discForTurn = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (discForTurn && discForTurn.kind === 'Necromancer' && !discForTurn.dead) {
-      await this._proceedToNextPlayerTurn();
-    }
-  }
-
-  updateAnimateDeadButtonVisibility() {
-    if (!this.animateDeadButton) return;
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    let shouldBeVisible = false;
-
-    if (discForTurnContext &&
-        discForTurnContext.kind === 'Necromancer' &&
-        discForTurnContext.type === 'player' &&
-        !discForTurnContext.dead &&
-        !this.gameOverState.active) {
-      const deadNPCs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
-      const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-      if (this.necromancerMana >= 1 && deadNPCs.length > 0 && animatedCount < 3 && !this.necromancerSelectingAnimateDeadTarget) {
-        shouldBeVisible = true;
-      }
-    }
-
-    if (shouldBeVisible) {
-      this.animateDeadButton.style.display = 'inline-block';
-      this.animateDeadButton.disabled = false;
-    } else {
-      this.animateDeadButton.style.display = 'none';
-      this.animateDeadButton.disabled = true;
-    }
-  }
-
-  updateRaiseDeadButtonVisibility() {
-    if (!this.raiseDeadButton) return;
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    let shouldBeVisible = false;
-
-    if (discForTurnContext &&
-        discForTurnContext.kind === 'Necromancer' &&
-        discForTurnContext.type === 'player' &&
-        !discForTurnContext.dead &&
-        !this.gameOverState.active) {
-      const deadPCs = this.discs.filter(d =>
-        d.type === 'player' && d.dead &&
-        d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-        d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
-      );
-      if (this.necromancerMana >= 2 && deadPCs.length > 0) {
-        shouldBeVisible = true;
-      }
-    }
-
-    if (shouldBeVisible) {
-      this.raiseDeadButton.style.display = 'inline-block';
-      this.raiseDeadButton.disabled = false;
-    } else {
-      this.raiseDeadButton.style.display = 'none';
-      this.raiseDeadButton.disabled = true;
-    }
-  }
-
-  updateEndNecromancerTurnButtonVisibility() {
-    if (this.endNecromancerTurnButton) {
-      const actualCurrentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-      let shouldBeVisible = false;
-
-      if (actualCurrentDisc &&
-          actualCurrentDisc.type === 'player' &&
-          actualCurrentDisc.kind === 'Necromancer' &&
-          !actualCurrentDisc.dead &&
-          !this.gameOverState.active) {
-        shouldBeVisible = true;
-      }
-
-      if (shouldBeVisible) {
-        this.endNecromancerTurnButton.style.display = 'inline-block';
-        this.endNecromancerTurnButton.disabled = false;
-      } else {
-        this.endNecromancerTurnButton.style.display = 'none';
-        this.endNecromancerTurnButton.disabled = true;
-      }
-    }
-  }
-
-  _updateNecromancerActionButtons() {
-    this.updateAnimateDeadButtonVisibility();
-    this.updateRaiseDeadButtonVisibility();
-    this.updateFocusAnimatedButtonVisibility();
-  }
-
-  animateDeadDisc(necromancerDisc, targetDisc) {
-    if (!necromancerDisc || necromancerDisc.dead) return false;
-    if (!targetDisc || !targetDisc.dead) return false;
-    if (this.necromancerMana < 1) return false;
-
-    const activeCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    if (activeCount >= 3) return false;
-
-    // Cost 1 mana
-    this.necromancerMana--;
-
-    // Store original stats for restoration when the animated dead is consumed
-    targetDisc._originalKind = targetDisc.kind;
-    targetDisc._originalType = targetDisc.type;
-    targetDisc._originalAttackDamage = targetDisc.attackDamage;
-    targetDisc._originalMaxHitPoints = targetDisc.maxHitPoints;
-
-    // Reanimate in place — the corpse rises where it fell, not next to the Necromancer
-    targetDisc.revive(1);
-    targetDisc.attackDamage = 1;
-    targetDisc.maxHitPoints = 1;
-    // type = 'player' allows the player to throw it; kind = 'AnimatedDead' identifies it
-    targetDisc.type = 'player';
-    targetDisc.kind = 'AnimatedDead';
-    targetDisc.isAnimatedDead = true;
-
-    // Store the Necromancer's color so the animation loop can apply it every frame
-    targetDisc._animatedDeadColor = necromancerDisc.initialColor;
-
-    // Ensure the disc sits at the correct height
-    targetDisc.mesh.position.y = targetDisc.basePositionY;
-
-    this.animatedDeadDiscs.push(targetDisc);
-    targetDisc.setSpotlightIntensity(false);
-
-    return true;
-  }
-
-  raiseDeadDisc(necromancerDisc, targetDisc) {
-    if (!necromancerDisc || necromancerDisc.dead) return false;
-    if (!targetDisc || !targetDisc.dead) return false;
-    if (this.necromancerMana < 2) return false;
-
-    // Cost 2 mana
-    this.necromancerMana -= 2;
-
-    // Revive at floor(maxHitPoints / 2), minimum 1
-    const reviveHP = Math.max(1, Math.floor(targetDisc.maxHitPoints / 2));
-    targetDisc.revive(reviveHP);
-    // Enforce the correct HP in case revive() returned early (e.g. dead flag out of sync)
-    targetDisc.hitPoints = reviveHP;
-    targetDisc.lastHitPoints = reviveHP;
-
-    this.updateDiscNames();
-    return true;
-  }
-
-  removeAnimatedDead(disc) {
-    if (!disc) return;
-    const idx = this.animatedDeadDiscs.indexOf(disc);
-    if (idx === -1) return; // Already removed — safe to call multiple times
-
-    this.animatedDeadDiscs.splice(idx, 1);
-
-    // Restore original kind/type so it's recognized as a dead NPC again
-    disc.kind = disc._originalKind || 'Skeleton';
-    disc.type = disc._originalType || 'NPC';
-    disc.attackDamage = disc._originalAttackDamage !== undefined ? disc._originalAttackDamage : 1;
-    disc.maxHitPoints = disc._originalMaxHitPoints !== undefined ? disc._originalMaxHitPoints : disc.maxHitPoints;
-    disc.isAnimatedDead = false;
-    delete disc._originalKind;
-    delete disc._originalType;
-    delete disc._originalAttackDamage;
-    delete disc._originalMaxHitPoints;
-    delete disc._animatedDeadColor;
-
-    // Ensure the disc is visually dead (grey)
-    if (!disc.dead) {
-      disc.hitPoints = 0;
-      disc.lastHitPoints = 0;
-      disc.die();
-    }
-
-    this._updateNecromancerActionButtons();
-    this.updateDiscNames();
-  }
-
-  _showTargetSelectionPopup(targets, onSelect, title) {
-    this._hideTargetSelectionPopup();
-
-    const popup = document.createElement('div');
-    popup.id = 'target-selection-popup';
-    popup.style.cssText = 'margin-top:8px;padding:8px;background:rgba(0,0,0,0.75);border:1px solid #8833CC;border-radius:6px;';
-
-    const titleEl = document.createElement('div');
-    titleEl.textContent = title;
-    titleEl.style.cssText = 'color:#CC88FF;font-size:0.8em;margin-bottom:6px;font-weight:bold;';
-    popup.appendChild(titleEl);
-
-    targets.forEach(disc => {
-      const btn = document.createElement('button');
-      btn.textContent = disc.discName;
-      btn.style.cssText = 'display:block;width:100%;margin-bottom:4px;padding:4px 8px;font-size:0.75em;cursor:pointer;';
-      btn.addEventListener('click', () => {
-        this._hideTargetSelectionPopup();
-        onSelect(disc);
-      });
-      popup.appendChild(btn);
-    });
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.style.cssText = 'display:block;width:100%;padding:4px 8px;font-size:0.75em;cursor:pointer;margin-top:4px;opacity:0.7;';
-    cancelBtn.addEventListener('click', () => this._hideTargetSelectionPopup());
-    popup.appendChild(cancelBtn);
-
-    this.actionButtonsContainer.appendChild(popup);
-    this.targetSelectionPopup = popup;
-  }
-
-  _hideTargetSelectionPopup() {
-    if (this.targetSelectionPopup) {
-      this.targetSelectionPopup.remove();
-      this.targetSelectionPopup = null;
-    }
-  }
-
-  setupEndWizardTurnButtonListener() {
-    if (this.endWizardTurnButton) {
-      this.endWizardTurnButton.addEventListener('click', this._handleEndWizardTurnButtonClick.bind(this));
-    } else {
-      console.error("GameController: End Wizard Turn button not found to attach listener.");
-    }
-  }
-
-  async _handleEndWizardTurnButtonClick() {
-    const discForTurn = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (discForTurn && discForTurn.kind === 'Wizard' && !discForTurn.dead) {
-      await this._proceedToNextPlayerTurn();
-    } else if (discForTurn) {
-    } else {
-  }
-}
-
-setupBarbarianEndTurnButtonListener() {
-  if (this.barbarianEndTurnButton) {
-    this.barbarianEndTurnButton.addEventListener('click', this._handleBarbarianEndTurnButtonClick.bind(this));
-  }
-}
-
-async _handleBarbarianEndTurnButtonClick() {
-  if (this.gameOverState.active) return;
-
-  const actualCurrentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-
-  if (actualCurrentDisc &&
-      actualCurrentDisc.type === 'player' &&
-      actualCurrentDisc.kind === 'Barbarian' &&
-      !actualCurrentDisc.dead) {
-    await this._proceedToNextPlayerTurn();
-  } else {
-    console.warn("GameController: Barbarian End Turn button clicked, but it's not Barbarian's turn or Barbarian is not active.");
-  }
-}
-
-updateEndWizardTurnButtonVisibility() {
-    if (this.endWizardTurnButton) {
-      const actualCurrentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-      let shouldBeVisible = false;
-
-      if (actualCurrentDisc &&
-          actualCurrentDisc.type === 'player' &&
-          actualCurrentDisc.kind === 'Wizard' &&
-          !actualCurrentDisc.dead &&
-          !this.gameOverState.active) {
-        shouldBeVisible = true;
-      }
-
-      if (shouldBeVisible) {
-        this.endWizardTurnButton.style.display = 'inline-block';
-        this.endWizardTurnButton.disabled = false;
-      } else {
-        this.endWizardTurnButton.style.display = 'none';
-        this.endWizardTurnButton.disabled = true;
-      }
-    }
-  }
-
-  updateBarbarianEndTurnButtonVisibility() {
-    if (this.barbarianEndTurnButton) {
-      const actualCurrentDisc = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-      let shouldBeVisible = false;
-
-      if (actualCurrentDisc &&
-          actualCurrentDisc.type === 'player' &&
-          actualCurrentDisc.kind === 'Barbarian' &&
-          !actualCurrentDisc.dead &&
-          !this.gameOverState.active) {
-        shouldBeVisible = true;
-      }
-
-      if (shouldBeVisible) {
-        this.barbarianEndTurnButton.style.display = 'inline-block';
-        this.barbarianEndTurnButton.disabled = false;
-      } else {
-        this.barbarianEndTurnButton.style.display = 'none';
-        this.barbarianEndTurnButton.disabled = true;
-      }
-    }
-  }
-
-  setupSummonOrbsButtonListener() {
-    if (this.summonOrbsButton) {
-      this.summonOrbsButton.addEventListener('click', this._handleSummonOrbsButtonClick.bind(this));
-    } else {
-      console.error("GameController: Summon Orbs button not found to attach listener.");
-    }
-  }
-
-  setupSummonHealingOrbsButtonListener() {
-    if (this.summonHealingOrbsButton) {
-      this.summonHealingOrbsButton.addEventListener('click', this._handleSummonHealingOrbsButtonClick.bind(this));
-    } else {
-      console.error("GameController: Summon Healing Orbs button not found to attach listener.");
-    }
-  }
-
-  setupRadiusBlastButtonListener() {
-    if (this.radiusBlastButton) {
-      this.radiusBlastButton.addEventListener('click', this._handleRadiusBlastButtonClick.bind(this));
-    } else {
-      console.error("GameController: Radius Blast button not found to attach listener.");
-    }
-  }
-
-  _handleRadiusBlastButtonClick() {
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (!discForTurnContext || discForTurnContext.kind !== 'Wizard' || discForTurnContext.dead) return;
-
-    if (this.wizardMana >= 2) {
-      this.castRadiusBlast(discForTurnContext);
-    }
-  }
-
-  castRadiusBlast(wizardDisc) {
-    if (!wizardDisc || wizardDisc.dead || this.wizardMana < 2) return;
-
-    this.wizardMana -= 2;
-
-    const BLAST_RADIUS = 8;
-    const BLAST_FORCE = 3.5;
-    const wizardPos = wizardDisc.mesh.position;
-
-    this.discs.forEach(disc => {
-      if (disc === wizardDisc || disc.dead) return;
-
-      const dx = disc.mesh.position.x - wizardPos.x;
-      const dz = disc.mesh.position.z - wizardPos.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-
-      if (dist > 0 && dist <= BLAST_RADIUS) {
-        const falloff = 1 - dist / BLAST_RADIUS;
-        const force = BLAST_FORCE * falloff;
-        disc.velocity.x += (dx / dist) * force;
-        disc.velocity.z += (dz / dist) * force;
-        disc.moving = true;
-        disc.takeHit(1, wizardDisc);
-      }
-    });
-
-    this.updateAllDiscDeadStates();
-    this.checkGameOverConditions();
-
-    // Spawn two expanding shockwave rings — the second lags by 0.15s
-    const ringY = wizardDisc.mesh.position.y + 0.1;
-    const originX = wizardDisc.mesh.position.x;
-    const originZ = wizardDisc.mesh.position.z;
-    const RING_DURATION = 0.45; // seconds for each ring to fully expand and fade
-
-    for (let i = 0; i < 2; i++) {
-      const geometry = new THREE.TorusGeometry(1, 0.03, 8, 64);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0x88CCFF,
-        transparent: true,
-        opacity: 0.85,
-        side: THREE.DoubleSide,
-      });
-      const ring = new THREE.Mesh(geometry, material);
-      ring.rotation.x = Math.PI / 2;
-      ring.position.set(originX, ringY, originZ);
-      this.scene.add(ring);
-
-      this._radiusBlastRings.push({
-        mesh: ring,
-        delay: i * 0.15,
-        elapsed: 0,
-        duration: RING_DURATION,
-        maxRadius: BLAST_RADIUS,
-      });
-    }
-
-    if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(wizardDisc);
-    this._updateWizardActionButtons();
-  }
-
-  _handleSummonOrbsButtonClick() {
-    // Ensure it's the Wizard's actual turn by checking against discForTurnContext
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (!discForTurnContext || discForTurnContext.kind !== 'Wizard' || discForTurnContext.dead) return;
-
-    if (this.wizardMana > 0) {
-      const success = this.summonSingleOrb(discForTurnContext);
-      if (success) {
-        this.wizardMana--;
-        // Explicitly update mana display after decrementing
-        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(discForTurnContext);
-      }
-    }
-
-    this._updateWizardActionButtons();
-  }
-
-  _handleSummonHealingOrbsButtonClick() {
-    // Ensure it's the Wizard's actual turn by checking against discForTurnContext
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-    if (!discForTurnContext || discForTurnContext.kind !== 'Wizard' || discForTurnContext.dead) return;
-
-    if (this.wizardMana > 0) {
-      const success = this.summonHealingOrb(discForTurnContext);
-      if (success) {
-        this.wizardMana--;
-        // Explicitly update mana display after decrementing
-        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(discForTurnContext);
-      }
-    }
-
-    this._updateWizardActionButtons();
-  }
-
-
-
-  summonSingleOrb(wizardDisc) {
-    if (!wizardDisc || wizardDisc.kind !== 'Wizard' || wizardDisc.dead) {
-      return;
-    }
-
-    const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-    if (activeOrbsCount >= 3) {
-      return;
-    }
-
-    const orbRadius = 0.35;
-    const orbHeight = 0.2;
-    const orbColor = 0x00FFFF; // Cyan
-    const orbType = "player";
-    const orbKind = "Orb";
-    const orbHitPoints = 1;
-    const orbMass = 0.5;
-    const orbThrowPowerMultiplier = 0.5;
-    const orbSkillLevel = 0;
-
-    const wizardPos = wizardDisc.mesh.position;
-    const distance = 2.0;
-
-    // Find a valid position for the new orb
-    let summoned = false;
-    // Systematic search: try angles every 5 degrees to find a valid spot
-    for (let offsetDeg = 0; offsetDeg < 360; offsetDeg += 5) {
-      const angle = offsetDeg * (Math.PI / 180);
-      const orbX = wizardPos.x + distance * Math.cos(angle);
-      const orbZ = wizardPos.z + distance * Math.sin(angle);
-
-      if (this.isPositionValid(orbX, orbZ, orbRadius, true, [wizardDisc])) {
-        const discName = `Wizard's Orb`;
-        const orb = new Disc(
-          orbRadius,
-          orbHeight,
-          orbColor,
-          orbX,
-          orbZ,
-          this.scene,
-          discName,
-          orbType,
-          orbKind,
-          orbHitPoints,
-          orbSkillLevel,
-          null,
-          false,
-          orbThrowPowerMultiplier,
-          orbMass,
-          false,
-          false,
-          1,
-          this,
-          this.discDescriptions.Orb
-        );
-        orb.uniqueOrbId = `orb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-        const orbOffset = new THREE.Vector3(orbX, 0, orbZ).sub(new THREE.Vector3(wizardPos.x, 0, wizardPos.z));
-        orb.relativeOffset.copy(orbOffset);
-
-        this.discs.push(orb);
-        this.wizardOrbs.push(orb);
-        orb.setSpotlightIntensity(true);
-        summoned = true;
-        break;
-      }
-    }
-
-    if (summoned) {
-      this.updateDiscNames();
-    }
-    return summoned;
-  }
-
-  summonHealingOrb(wizardDisc) {
-    if (!wizardDisc || wizardDisc.kind !== 'Wizard' || wizardDisc.dead) {
-      return;
-    }
-
-    const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-    if (activeOrbsCount >= 3) {
-      return;
-    }
-
-    const orbRadius = 0.35;
-    const orbHeight = 0.2;
-    const orbColor = 0xFF0000; // Red
-    const orbType = "player";
-    const orbKind = "HealingOrb";
-    const orbHitPoints = 1;
-    const orbMass = 0.5;
-    const orbThrowPowerMultiplier = 0.5;
-    const orbSkillLevel = 0;
-
-    const wizardPos = wizardDisc.mesh.position;
-    const distance = 2.0;
-
-    // Find a valid position for the new orb
-    let summoned = false;
-    // Systematic search: try angles every 5 degrees to find a valid spot
-    for (let offsetDeg = 0; offsetDeg < 360; offsetDeg += 5) {
-      const angle = offsetDeg * (Math.PI / 180);
-      const orbX = wizardPos.x + distance * Math.cos(angle);
-      const orbZ = wizardPos.z + distance * Math.sin(angle);
-
-      if (this.isPositionValid(orbX, orbZ, orbRadius, true, [wizardDisc])) {
-        const discName = `Healing Orb`;
-        const orb = new Disc(
-          orbRadius,
-          orbHeight,
-          orbColor,
-          orbX,
-          orbZ,
-          this.scene,
-          discName,
-          orbType,
-          orbKind,
-          orbHitPoints,
-          orbSkillLevel,
-          null,
-          false,
-          orbThrowPowerMultiplier,
-          orbMass,
-          false,
-          false,
-          0,
-          this,
-          this.discDescriptions.HealingOrb
-        );
-        orb.uniqueOrbId = `orb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-
-        const orbOffset = new THREE.Vector3(orbX, 0, orbZ).sub(new THREE.Vector3(wizardPos.x, 0, wizardPos.z));
-        orb.relativeOffset.copy(orbOffset);
-
-        this.discs.push(orb);
-        this.wizardOrbs.push(orb);
-        orb.setSpotlightIntensity(true);
-        summoned = true;
-        break;
-      }
-    }
-
-    if (summoned) {
-      this.updateDiscNames();
-    }
-    return summoned;
-  }
-
-  removeOrb(orbDisc) {
-    if (!orbDisc) return;
-
-    const orbIndexInWizardOrbs = this.wizardOrbs.indexOf(orbDisc);
-    if (orbIndexInWizardOrbs > -1) {
-      this.wizardOrbs.splice(orbIndexInWizardOrbs, 1);
-    }
-
-    const orbIndexInDiscs = this.discs.indexOf(orbDisc);
-    if (orbIndexInDiscs > -1) {
-      this.discs.splice(orbIndexInDiscs, 1);
-    }
-
-    // Ensure the orb stops moving immediately when removed to trigger turn progression
-    orbDisc.velocity.set(0, 0, 0);
-    orbDisc.moving = false;
-
-    orbDisc.dispose(); // Clean up Three.js resources
-    this.updateSummonOrbsButtonVisibility();
-    this.updateDiscNames();
-  }
-
-  _handleRageButtonClick() {
-    const playerDisc = this.discs.find(disc => disc.type === 'player');
-    if (playerDisc) {
-      if (!playerDisc.dead) { // Only allow rage if player is not dead
-        if (this.currentPlayerRageCharges > 0) {
-          playerDisc.rageIsActiveForNextThrow = true;
-          this.currentPlayerRageCharges--; // Consume a charge
-          playerDisc.setSpotlightIntensity(true); // Update spotlight for rage
-        } else {
-        }
-      } else {
-      }
-      this.updateRageButtonVisibility();
-    } else {
-    }
-  }
-
-  setupRageButtonListener() {
-    // Ensure the handler is bound, GameController still owns the handler logic
-    if (!this.boundHandleRageButtonClick) {
-      this.boundHandleRageButtonClick = this._handleRageButtonClick.bind(this);
-    }
-
-    // Pass the bound handler to UIManager to attach it
-    if (this.uiManager) {
-      this.uiManager.setupRageButtonListener(this.boundHandleRageButtonClick);
-    }
-  }
 
   // Helper method to check if a position is valid (not inside obstacles, lava, and optionally other discs)
   isPositionValid(x, z, discRadius, checkDiscs = false, excludeDiscs = []) {
@@ -1364,7 +334,7 @@ updateEndWizardTurnButtonVisibility() {
 
   initDiscs(playerStats = null) {
     if (!playerStats) {
-      this.currentPlayerRageCharges = 0; // Reset Rage charges for a new game
+      this.barbarianController.rageCharges = 0; // Reset Rage charges for a new game
       this.npcsKilledForRageCharge.clear(); // Reset set of NPCs that granted a charge
     }
     // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
@@ -1681,40 +651,22 @@ updateEndWizardTurnButtonVisibility() {
           break;
         }
       }
-    // this.updateSummonOrbsButtonVisibility(); // This call was inside an else block, moved to the end of method
   }
-  this.updateRageButtonVisibility();
-  this.updateSummonOrbsButtonVisibility();
-  this.updateEndWizardTurnButtonVisibility();
-  this._updateNecromancerActionButtons();
-  this.updateEndNecromancerTurnButtonVisibility();
+  this.barbarianController.updateRageButtonVisibility();
+  this.barbarianController.updateEndTurnButtonVisibility();
+  this.wizardController.updateActionButtons();
+  this.wizardController.updateEndTurnButtonVisibility();
+  this.necromancerController.updateActionButtons();
+  this.necromancerController.updateEndTurnButtonVisibility();
+
+  // Show beam for the first player whose turn it is
+  if (this.currentDisc && this.currentDisc.type === 'player') {
+    this._spawnTurnStartBeam(this.currentDisc);
+  }
 }
 
   handlePointerHover(event) {
-    if (!this.necromancerSelectingAnimateDeadTarget) return;
-
-    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-
-    const eligibleDiscs = this.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
-    let hovered = null;
-    for (const disc of eligibleDiscs) {
-      if (this.raycaster.intersectObject(disc.mesh, true).length > 0) {
-        hovered = disc;
-        break;
-      }
-    }
-
-    if (hovered === this._animateDeadHoveredDisc) return;
-
-    if (this._animateDeadHoveredDisc) {
-      this._animateDeadHoveredDisc.updateSpotlightConfig('animateDeadTarget');
-    }
-    this._animateDeadHoveredDisc = hovered;
-    if (hovered) {
-      hovered.updateSpotlightConfig('animateDeadHovered');
-    }
+    this.necromancerController.handlePointerHover(event);
   }
 
   handlePointerDownInteraction(event, initialPointerDownPos) {
@@ -1744,13 +696,13 @@ updateEndWizardTurnButtonVisibility() {
         // It's a player's turn and the player character is alive
         if (discForTurn.kind === 'Wizard') {
             // Wizard's turn
-            if (this.pointerDisc && (this.pointerDisc.kind === 'Orb' || this.pointerDisc.kind === 'HealingOrb') && this.wizardOrbs.includes(this.pointerDisc) && !this.pointerDisc.dead) {
+            if (this.pointerDisc && (this.pointerDisc.kind === 'Orb' || this.pointerDisc.kind === 'HealingOrb') && this.wizardController.orbs.includes(this.pointerDisc) && !this.pointerDisc.dead) {
                 // Clicked on a valid, owned orb
                 discToControl = this.pointerDisc; // Orb becomes the controlled disc
                 allowAiming = true;
             } else if (this.pointerDisc === discForTurn) { // Clicked on the Wizard
                 discToControl = discForTurn; // Wizard is the controlled disc
-                if (this.wizardHasMovedThisTurn) {
+                if (this.wizardController.hasMovedThisTurn) {
                     allowAiming = false; // Wizard has already moved, cannot aim/throw Wizard again
                 } else {
                     allowAiming = true; // Wizard has not moved yet, allow aiming/throwing Wizard
@@ -1764,15 +716,15 @@ updateEndWizardTurnButtonVisibility() {
         } else if (discForTurn.kind === 'Necromancer') {
             // Necromancer's turn
             if (this.pointerDisc && this.pointerDisc.kind === 'AnimatedDead' &&
-                this.animatedDeadDiscs.includes(this.pointerDisc) && !this.pointerDisc.dead &&
-                !this._animatedDeadMovedThisTurn.has(this.pointerDisc)) {
+                this.necromancerController.animatedDeadDiscs.includes(this.pointerDisc) && !this.pointerDisc.dead &&
+                !this.necromancerController.movedThisTurn.has(this.pointerDisc)) {
                 // Clicked on a valid, owned animated dead disc that hasn't moved yet this turn
                 discToControl = this.pointerDisc;
                 allowAiming = true;
             } else if (this.pointerDisc === discForTurn) {
                 // Clicked on the Necromancer
                 discToControl = discForTurn;
-                if (this.necromancerHasMovedThisTurn) {
+                if (this.necromancerController.hasMovedThisTurn) {
                     allowAiming = false; // Necromancer already moved this turn
                 } else {
                     allowAiming = true;
@@ -1956,18 +908,9 @@ updateEndWizardTurnButtonVisibility() {
 
     if (dragLength <= clickThreshold) { // It's a click/tap
       // Handle Animate Dead disc-selection mode — player clicks a corpse in the scene
-      if (this.necromancerSelectingAnimateDeadTarget) {
-        if (clickedDisc && clickedDisc.type === 'NPC' && clickedDisc.dead && !clickedDisc.isAnimatedDead) {
-          const necromancer = this.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
-          if (necromancer) {
-            const success = this.animateDeadDisc(necromancer, clickedDisc);
-            if (success) {
-              if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(necromancer);
-              this.updateDiscNames();
-            }
-          }
-        }
-        this._cancelNecromancerTargetSelection();
+      if (this.necromancerController.selectingTarget) {
+        this.necromancerController.handleTargetClick(clickedDisc);
+        this.necromancerController.cancelTargetSelection();
         if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
         this.controls.enabled = true;
         this.controlsEnabled = true;
@@ -2115,7 +1058,7 @@ updateEndWizardTurnButtonVisibility() {
             this.currentDisc.canDoReboundDamage = false;
             this.currentDisc.rageWasUsedThisThrow = false; // Orbs don't use this path for rebound reset
           }
-          this.updateRageButtonVisibility();
+          this.barbarianController.updateRageButtonVisibility();
         }
 
         const maxSpeed = 1;
@@ -2126,7 +1069,7 @@ updateEndWizardTurnButtonVisibility() {
         if (speed < minSpeed) speed = minSpeed;
 
         if (this.currentDisc.kind === 'Barbarian') {
-          this.barbarianUniqueNPCHitsThisThrow.clear();
+          this.barbarianController.uniqueNPCHitsThisThrow.clear();
         }
 
         this.currentDisc.velocity.set(
@@ -2154,7 +1097,7 @@ updateEndWizardTurnButtonVisibility() {
     // Called by InputHandler when Escape is pressed during a drag/aim operation.
     // InputHandler itself will set its internal isPointerDown to false.
     // GameController needs to reset its aiming-specific state.
-    this._cancelNecromancerTargetSelection();
+    this.necromancerController.cancelTargetSelection();
     this.pointerDisc = null;
     this.currentDisc = null; // Reset currentDisc so pointerup doesn't trigger a throw
     if (this.controls) {
@@ -2343,15 +1286,15 @@ _updateWallFade(deltaTime) {
         this.roundWon = true;
 
         // Wizard earns 2 mana for clearing a room
-        const wizard = this._getWizardPlayerDisc();
+        const wizard = this.wizardController.getDisc();
         if (wizard && !wizard.dead) {
-            this.wizardMana += 2;
+            this.wizardController.mana += 2;
         }
 
         // Necromancer earns 2 mana for clearing a room
-        const necromancer = this._getNecromancerPlayerDisc();
+        const necromancer = this.necromancerController.getDisc();
         if (necromancer && !necromancer.dead) {
-            this.necromancerMana += 2;
+            this.necromancerController.mana += 2;
             if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
         }
 
@@ -2380,8 +1323,8 @@ _updateWallFade(deltaTime) {
 
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
-    // Level sequence cycles: hexagonal → bullseye → rectangular → circular → repeat.
-    const sequence = ['hexagon', 'bullseye', 'rect', 'circle'];
+    // Level sequence cycles: rectangular → circular → bullseye → donut → repeat.
+    const sequence = ['rect', 'circle', 'bullseye', 'donut'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -2413,6 +1356,7 @@ _updateWallFade(deltaTime) {
       });
     }
     this.lavaPools = [];
+    this._clearTurnStartBeams();
 
     // Unload current level
     if (this.level) {
@@ -2424,8 +1368,9 @@ _updateWallFade(deltaTime) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
-    this.wizardOrbs = [];
-    this.animatedDeadDiscs = []; // Reset animated dead discs for new level
+    this.wizardController.onLevelStart();
+    this.necromancerController.onLevelStart();
+    this.barbarianController.onLevelStart();
 
     // Reload level (generates new room/obstacles)
     if (this.level) {
@@ -2439,10 +1384,8 @@ _updateWallFade(deltaTime) {
     this.initDiscs(playerStats);
 
     // 4. Reset turn-specific state
-    this.wizardManaEarnedThisTurn = 0;
-    this.wizardHasMovedThisTurn = false;
-    this.necromancerManaEarnedThisTurn = 0;
-    this.necromancerHasMovedThisTurn = false;
+    this.wizardController.onTurnEnd();
+    this.necromancerController.onTurnEnd();
     this.waitingForDiscToStop = false;
     this.thrownDisc = null;
     this.playerDamagedNPCsThisThrow.clear();
@@ -2500,14 +1443,14 @@ _updateWallFade(deltaTime) {
       this.uiManager.hideGameOver();
       this.updateDiscNames(); // Refresh UI list
       this.uiManager.updateCurrentTurnDiscName(this.currentDisc); // Refresh current turn display
-      this.updateRageButtonVisibility();
-      this._updateWizardActionButtons();
-      this.updateEndWizardTurnButtonVisibility();
-      this.updateBarbarianEndTurnButtonVisibility();
-      this._updateNecromancerActionButtons();
-      this.updateEndNecromancerTurnButtonVisibility();
-      this._cancelNecromancerTargetSelection();
-      this._hideTargetSelectionPopup();
+      this.barbarianController.updateRageButtonVisibility();
+      this.barbarianController.updateEndTurnButtonVisibility();
+      this.wizardController.updateActionButtons();
+      this.wizardController.updateEndTurnButtonVisibility();
+      this.necromancerController.updateActionButtons();
+      this.necromancerController.updateEndTurnButtonVisibility();
+      this.necromancerController.cancelTargetSelection();
+      this.necromancerController.hideTargetSelectionPopup();
     }
   }
 
@@ -2522,15 +1465,9 @@ _updateWallFade(deltaTime) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
-    if (this.wizardOrbs && this.wizardOrbs.length > 0) {
-      this.wizardOrbs.forEach(orb => {
-        if (orb && typeof orb.dispose === 'function') {
-          orb.dispose();
-        }
-      });
-    }
-    this.wizardOrbs = []; // Reset wizard orbs
-    this.animatedDeadDiscs = []; // Reset animated dead discs
+    this.wizardController.onGameRestart();
+    this.necromancerController.onGameRestart();
+    this.barbarianController.onGameRestart();
 
     // Cleanup existing lava pools
     if (this.lavaPools && this.lavaPools.length > 0) {
@@ -2542,6 +1479,7 @@ _updateWallFade(deltaTime) {
       });
     }
     this.lavaPools = [];
+    this._clearTurnStartBeams();
 
     // 2. Unload the current level
     if (this.level) {
@@ -2568,14 +1506,6 @@ _updateWallFade(deltaTime) {
     this.waitingForDiscToStop = false;
     this.playerDamagedNPCsThisThrow.clear();
     this.npcsKilledForRageCharge.clear();
-    this.barbarianUniqueNPCHitsThisThrow.clear();
-    this.currentPlayerRageCharges = 0; // Reset rage charges to 0 or initial value
-    this.wizardMana = 3; // Reset for new game
-    this.wizardManaEarnedThisTurn = 0; // Reset earned this turn
-    this.necromancerMana = 3; // Reset for new game
-    this.necromancerManaEarnedThisTurn = 0; // Reset earned this turn
-    this.necromancerHasMovedThisTurn = false;
-    this._animatedDeadMovedThisTurn.clear();
     this.gameOverState.active = false; // Reset game over state
     this.roundWon = false;
 
@@ -2605,16 +1535,14 @@ _updateWallFade(deltaTime) {
     // 7. Update UI elements
     this.updateDiscNames();
     this._hideDiscInfoPopup();
-    // Re-setup the rage button listener to bind to the new player disc
-    this.setupRageButtonListener();
-    this.updateRageButtonVisibility(); // Call after setup to reflect current charges
-    this.updateEndWizardTurnButtonVisibility(); // Reset Wizard end turn button
-    this.updateBarbarianEndTurnButtonVisibility(); // Reset Barbarian end turn button
-    this.updateSummonOrbsButtonVisibility();
-    this._updateNecromancerActionButtons(); // Reset Necromancer spell buttons
-    this.updateEndNecromancerTurnButtonVisibility(); // Reset Necromancer end turn button
-    this._cancelNecromancerTargetSelection(); // Cancel any active corpse-selection
-    this._hideTargetSelectionPopup(); // Dismiss any open target selection
+    this.barbarianController.updateRageButtonVisibility();
+    this.barbarianController.updateEndTurnButtonVisibility();
+    this.wizardController.updateActionButtons();
+    this.wizardController.updateEndTurnButtonVisibility();
+    this.necromancerController.updateActionButtons();
+    this.necromancerController.updateEndTurnButtonVisibility();
+    this.necromancerController.cancelTargetSelection();
+    this.necromancerController.hideTargetSelectionPopup();
 
 
     // 8. Reset Camera Position and Zoom, and ensure camera controls are enabled
@@ -2777,40 +1705,11 @@ _updateWallFade(deltaTime) {
       });
     }
 
-    // Real-time Wizard Orb following
-    const wizardDisc = this.discs.find(d => d.kind === 'Wizard' && d.type === 'player' && !d.dead);
-    if (wizardDisc && this.wizardOrbs.length > 0) {
-      const wizardCurrentPos = wizardDisc.mesh.position;
-      [...this.wizardOrbs].forEach(orbRef => {
-        // Ensure we're working with "live" orb objects that are part of the main this.discs array
-        // especially if wizardOrbs might contain stale references after removals/re-summons.
-        const liveOrb = this.discs.find(d => d.uniqueOrbId === orbRef.uniqueOrbId);
+    // Delegate per-frame character updates (orb following, radius blast rings, etc.)
+    this.wizardController.update(deltaTime);
 
-        if (liveOrb && liveOrb.mesh && liveOrb.hitPoints > 0 && !liveOrb.dead) {
-          // Orbs should not follow if they are currently moving (e.g., after being thrown)
-          // Orbs also should not follow if the wizard itself is not moving (optimization, though current logic handles it)
-          if (!liveOrb.moving) { // Only update position if the orb itself isn't independently moving
-            const targetPosition = wizardCurrentPos.clone().add(liveOrb.relativeOffset);
-            targetPosition.y = liveOrb.basePositionY; // Maintain orb's own height
-
-            liveOrb.mesh.position.copy(targetPosition);
-
-            if (liveOrb.spotlight) {
-              liveOrb.spotlight.position.set(targetPosition.x, liveOrb.spotlight.position.y, targetPosition.z);
-            }
-
-            // Optional: Clamp orb position to field boundaries if necessary,
-            // though if the wizard is clamped, orbs should naturally stay within.
-            // This can prevent orbs from being pushed through walls if the wizard gets too close.
-            if (this.level && typeof liveOrb.radius === 'number') {
-                const r = liveOrb.radius;
-                liveOrb.mesh.position.x = Math.max(-this.level.fieldWidth/2 + r, Math.min(this.level.fieldWidth/2 - r, liveOrb.mesh.position.x));
-                liveOrb.mesh.position.z = Math.max(-this.level.fieldDepth/2 + r, Math.min(this.level.fieldDepth/2 - r, liveOrb.mesh.position.z));
-            }
-          }
-        }
-      });
-    }
+    // Animate descending turn-start beams
+    this._updateTurnStartBeams(deltaTime);
 
     // Animated dead discs stay where they are — no Necromancer-follow behaviour
 
@@ -2964,14 +1863,14 @@ _updateWallFade(deltaTime) {
         const d2 = collisionArray[j];
 
         // Skip collision between Wizard and his own orbs while they are orbiting
-        if ((d1.kind === 'Wizard' && this.wizardOrbs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Wizard' && this.wizardOrbs.includes(d1) && !d1.moving)) {
+        if ((d1.kind === 'Wizard' && this.wizardController.orbs.includes(d2) && !d2.moving) ||
+            (d2.kind === 'Wizard' && this.wizardController.orbs.includes(d1) && !d1.moving)) {
             continue; // Skip to the next pair
         }
 
         // Skip collision between Necromancer and its animated dead while they are orbiting
-        if ((d1.kind === 'Necromancer' && this.animatedDeadDiscs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Necromancer' && this.animatedDeadDiscs.includes(d1) && !d1.moving)) {
+        if ((d1.kind === 'Necromancer' && this.necromancerController.animatedDeadDiscs.includes(d2) && !d2.moving) ||
+            (d2.kind === 'Necromancer' && this.necromancerController.animatedDeadDiscs.includes(d1) && !d1.moving)) {
             continue;
         }
 
@@ -3056,9 +1955,9 @@ _updateWallFade(deltaTime) {
                         npc.takeHit(animated.attackDamage, animated);
 
                         if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
-                            this.necromancerManaEarnedThisTurn += 1;
+                            this.necromancerController.manaEarnedThisTurn += 1;
                             this.npcsKilledForRageCharge.add(npc.discName);
-                            this._updateNecromancerActionButtons();
+                            this.necromancerController.updateActionButtons();
                         }
                     } else if (this.currentDisc === npc) {
                         // NPC was directly thrown into the animated dead — deal damage
@@ -3078,10 +1977,10 @@ _updateWallFade(deltaTime) {
                     // Track kills for rewards (Wizard/Orb reward)
                     if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
                         // Killing an NPC with an orb earns 1 mana back
-                        this.wizardManaEarnedThisTurn += 1;
+                        this.wizardController.manaEarnedThisTurn += 1;
                         this.npcsKilledForRageCharge.add(npc.discName);
-                        this.updateRageButtonVisibility();
-                        this._updateWizardActionButtons();
+                        this.barbarianController.updateRageButtonVisibility();
+                        this.wizardController.updateActionButtons();
                     }
 
                     // Orb is consumed upon impact with an NPC
@@ -3100,13 +1999,13 @@ _updateWallFade(deltaTime) {
                             // Barbarian unique NPC hit tracking
                             if (d1.kind === 'Barbarian' && d2.type === 'NPC') { // d1 is Barbarian, d2 is NPC
                                 if (d2.hitPoints > 0 && !d2.dead) { // Ensure NPC is targetable for bonus
-                                    this.barbarianUniqueNPCHitsThisThrow.add(d2.discName);
+                                    this.barbarianController.uniqueNPCHitsThisThrow.add(d2.discName);
                                 }
                             }
 
                             let damageToDeal = d1.attackDamage;
                             if (d1.kind === 'Barbarian') {
-                                const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                                const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
                                 if (d1.rageWasUsedThisThrow) {
                                     damageToDeal = 2 + bonusDamage;
                                 } else {
@@ -3118,8 +2017,8 @@ _updateWallFade(deltaTime) {
                             // Check if NPC d2 was killed by this hit and grant Rage charge
                             if (d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
                                 if (d1.kind === 'Barbarian') { // Check if the killer (d1) is Barbarian
-                                    if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
-                                        this.currentPlayerRageCharges++;
+                                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
+                                        this.barbarianController.rageCharges++;
                                     }
                                     // Life-leech during rage
                                     if (d1.rageWasUsedThisThrow) {
@@ -3129,15 +2028,15 @@ _updateWallFade(deltaTime) {
                                     }
                                 } else if (d1.kind === 'Wizard') {
                                     // Killing an NPC by bumping into them earns 2 mana back
-                                    this.wizardManaEarnedThisTurn += 2;
+                                    this.wizardController.manaEarnedThisTurn += 2;
                                 } else if (d1.kind === 'Orb') {
                                     // Killing an NPC with an orb earns 1 mana back
-                                    this.wizardManaEarnedThisTurn += 1;
+                                    this.wizardController.manaEarnedThisTurn += 1;
                                 } else if (d1.kind === 'Necromancer') {
-                                    this.necromancerManaEarnedThisTurn += 2;
+                                    this.necromancerController.manaEarnedThisTurn += 2;
                                 }
                                 this.npcsKilledForRageCharge.add(d2.discName);
-                                this.updateRageButtonVisibility(); // Update button text/visibility
+                                this.barbarianController.updateRageButtonVisibility(); // Update button text/visibility
                             }
                             // Only add to set if not raging (to allow multiple rage hits on the same NPC).
                             if (!d1.canDoReboundDamage) {
@@ -3150,7 +2049,7 @@ _updateWallFade(deltaTime) {
                             if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
                                 let damageToDeal = d1.attackDamage;
                                 if (d1.kind === 'Barbarian') { // If d1 (acting disc) is a Barbarian
-                                    const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                                    const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
                                     if (d1.rageWasUsedThisThrow) {
                                         damageToDeal = 2 + bonusDamage;
                                     } else {
@@ -3163,14 +2062,14 @@ _updateWallFade(deltaTime) {
                                 // If d2 is a Wizard/Necromancer, their counter-attack might have killed the NPC attacker (d1)
                                 if (d1.type === 'NPC' && d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
                                     if (d2.kind === 'Wizard') {
-                                        this.wizardManaEarnedThisTurn += 1;
+                                        this.wizardController.manaEarnedThisTurn += 1;
                                     } else if (d2.kind === 'Necromancer') {
-                                        this.necromancerManaEarnedThisTurn += 1;
+                                        this.necromancerController.manaEarnedThisTurn += 1;
                                     }
                                     this.npcsKilledForRageCharge.add(d1.discName);
-                                    this.updateRageButtonVisibility();
-                                    this._updateWizardActionButtons();
-                                    this._updateNecromancerActionButtons();
+                                    this.barbarianController.updateRageButtonVisibility();
+                                    this.wizardController.updateActionButtons();
+                                    this.necromancerController.updateActionButtons();
                                 }
                             }
                         }
@@ -3182,13 +2081,13 @@ _updateWallFade(deltaTime) {
                         if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
                             if (d2.kind === 'Barbarian' && d1.type === 'NPC') {
                                 if (d1.hitPoints > 0 && !d1.dead) {
-                                    this.barbarianUniqueNPCHitsThisThrow.add(d1.discName);
+                                    this.barbarianController.uniqueNPCHitsThisThrow.add(d1.discName);
                                 }
                             }
 
                             let damageToDeal = d2.attackDamage;
                             if (d2.kind === 'Barbarian') {
-                                const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                                const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
                                 if (d2.rageWasUsedThisThrow) {
                                     damageToDeal = 2 + bonusDamage;
                                 } else {
@@ -3198,8 +2097,8 @@ _updateWallFade(deltaTime) {
                             d1.takeHit(damageToDeal, d2);
                             if (d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
                                 if (d2.kind === 'Barbarian') {
-                                    if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
-                                        this.currentPlayerRageCharges++;
+                                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
+                                        this.barbarianController.rageCharges++;
                                     }
                                     if (d2.rageWasUsedThisThrow) {
                                         d2.restoreHealth(1);
@@ -3207,14 +2106,14 @@ _updateWallFade(deltaTime) {
                                         if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
                                     }
                                 } else if (d2.kind === 'Wizard') {
-                                    this.wizardManaEarnedThisTurn += 2;
+                                    this.wizardController.manaEarnedThisTurn += 2;
                                 } else if (d2.kind === 'Orb') {
-                                    this.wizardManaEarnedThisTurn += 1;
+                                    this.wizardController.manaEarnedThisTurn += 1;
                                 } else if (d2.kind === 'Necromancer') {
-                                    this.necromancerManaEarnedThisTurn += 2;
+                                    this.necromancerController.manaEarnedThisTurn += 2;
                                 }
                                 this.npcsKilledForRageCharge.add(d1.discName);
-                                this.updateRageButtonVisibility();
+                                this.barbarianController.updateRageButtonVisibility();
                             }
                             if (!d2.canDoReboundDamage) {
                                 this.playerDamagedNPCsThisThrow.add(d1.discName);
@@ -3225,7 +2124,7 @@ _updateWallFade(deltaTime) {
                             if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
                                 let damageToDeal = d2.attackDamage;
                                 if (d2.kind === 'Barbarian') {
-                                    const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                                    const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
                                     if (d2.rageWasUsedThisThrow) {
                                         damageToDeal = 2 + bonusDamage;
                                     } else {
@@ -3237,14 +2136,14 @@ _updateWallFade(deltaTime) {
 
                                 if (d2.type === 'NPC' && d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
                                     if (d1.kind === 'Wizard') {
-                                        this.wizardManaEarnedThisTurn += 1;
+                                        this.wizardController.manaEarnedThisTurn += 1;
                                     } else if (d1.kind === 'Necromancer') {
-                                        this.necromancerManaEarnedThisTurn += 1;
+                                        this.necromancerController.manaEarnedThisTurn += 1;
                                     }
                                     this.npcsKilledForRageCharge.add(d2.discName);
-                                    this.updateRageButtonVisibility();
-                                    this._updateWizardActionButtons();
-                                    this._updateNecromancerActionButtons();
+                                    this.barbarianController.updateRageButtonVisibility();
+                                    this.wizardController.updateActionButtons();
+                                    this.necromancerController.updateActionButtons();
                                 }
                             }
                         }
@@ -3258,10 +2157,10 @@ _updateWallFade(deltaTime) {
                         let damageToDeal = actor.attackDamage;
 
                         if (actor.kind === 'Barbarian') {
-                            this.barbarianUniqueNPCHitsThisThrow.add(d1.discName);
-                            this.barbarianUniqueNPCHitsThisThrow.add(d2.discName);
+                            this.barbarianController.uniqueNPCHitsThisThrow.add(d1.discName);
+                            this.barbarianController.uniqueNPCHitsThisThrow.add(d2.discName);
 
-                            const bonusDamage = this.barbarianUniqueNPCHitsThisThrow.size;
+                            const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
                             damageToDeal = actor.rageWasUsedThisThrow ? (2 + bonusDamage) : (actor.attackDamage + bonusDamage);
                         }
 
@@ -3271,8 +2170,8 @@ _updateWallFade(deltaTime) {
                         [d1, d2].forEach(npc => {
                             if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
                                 if (actor.kind === 'Barbarian') {
-                                    if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
-                                        this.currentPlayerRageCharges++;
+                                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
+                                        this.barbarianController.rageCharges++;
                                     }
                                     if (actor.rageWasUsedThisThrow) {
                                         actor.restoreHealth(1);
@@ -3280,16 +2179,16 @@ _updateWallFade(deltaTime) {
                                         if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
                                     }
                                 } else if (actor.kind === 'Wizard') {
-                                    this.wizardManaEarnedThisTurn += 2;
+                                    this.wizardController.manaEarnedThisTurn += 2;
                                 } else if (actor.kind === 'Orb') {
-                                    this.wizardManaEarnedThisTurn += 1;
+                                    this.wizardController.manaEarnedThisTurn += 1;
                                 } else if (actor.kind === 'Necromancer') {
-                                    this.necromancerManaEarnedThisTurn += 2;
+                                    this.necromancerController.manaEarnedThisTurn += 2;
                                 }
                                 this.npcsKilledForRageCharge.add(npc.discName);
                             }
                         });
-                        this.updateRageButtonVisibility();
+                        this.barbarianController.updateRageButtonVisibility();
 
                         if (!actor.canDoReboundDamage) {
                             this.playerDamagedNPCsThisThrow.add(d1.discName);
@@ -3299,29 +2198,6 @@ _updateWallFade(deltaTime) {
                 }
             }
           }
-        }
-      }
-    }
-
-    // Update radius blast shockwave rings
-    if (this._radiusBlastRings.length > 0) {
-      for (let i = this._radiusBlastRings.length - 1; i >= 0; i--) {
-        const r = this._radiusBlastRings[i];
-        r.elapsed += deltaTime;
-
-        const activeTime = r.elapsed - r.delay;
-        if (activeTime <= 0) continue; // still in delay
-
-        const t = Math.min(activeTime / r.duration, 1); // 0 → 1
-        const currentRadius = r.maxRadius * t;
-        r.mesh.scale.set(currentRadius, currentRadius, 1);
-        r.mesh.material.opacity = 0.85 * (1 - t);
-
-        if (t >= 1) {
-          this.scene.remove(r.mesh);
-          r.mesh.geometry.dispose();
-          r.mesh.material.dispose();
-          this._radiusBlastRings.splice(i, 1);
         }
       }
     }
@@ -3367,14 +2243,14 @@ _updateWallFade(deltaTime) {
                   const actor = this.currentDisc;
                   if (actor && actor.type === 'player') {
                       if (actor.kind === 'Barbarian') {
-                          if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
-                              this.currentPlayerRageCharges++;
+                          if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
+                              this.barbarianController.rageCharges++;
                           }
                       } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
-                          this.wizardManaEarnedThisTurn++;
+                          this.wizardController.manaEarnedThisTurn++;
                       }
                       this.npcsKilledForRageCharge.add(disc.discName);
-                      this.updateRageButtonVisibility();
+                      this.barbarianController.updateRageButtonVisibility();
                   }
               }
 
@@ -3417,107 +2293,12 @@ _updateWallFade(deltaTime) {
         const justMovedDisc = this.thrownDisc;
         this.thrownDisc = null; // Clear tracking
 
-        if (justMovedDisc.kind === 'Wizard') {
-            // Wizard disc itself stopped moving.
-            // Orb repositioning is now handled in real-time in the main animate loop.
-            this.wizardHasMovedThisTurn = true;
-
-            const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-            const canSummonNewOrbs = this.wizardMana > 0 && activeOrbsCount < 3;
-
-            if (activeOrbsCount === 0 && !canSummonNewOrbs) {
-                // No orbs left to use and cannot summon new ones.
-                await this._proceedToNextPlayerTurn();
-            } else {
-                // Wizard's turn continues, can use existing orbs or summon new ones.
-                this.currentDisc = justMovedDisc; // Ensure Wizard is current focus
-                // this.currentTurnIndex should still correctly point to the Wizard.
-                this.logCurrentTurn(); // Log that it's still Wizard's turn
-                this._updateSpotlights(); // Update spotlights for the Wizard
-                this.updateRageButtonVisibility();
-                this._updateWizardActionButtons(); // Update based on whether orbs can be summoned
-                this.updateEndWizardTurnButtonVisibility(); // Ensure "End Turn" button is correctly displayed
-            }
-        } else if (justMovedDisc.kind === 'Necromancer') {
-            // Necromancer disc itself stopped moving.
-            this.necromancerHasMovedThisTurn = true;
-
-            const activeAnimatedCount = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead).length;
-            const canCastSpells = this._necromancerCanCastSpells(justMovedDisc);
-
-            if (activeAnimatedCount === 0 && !canCastSpells) {
-                // No animated dead to use and cannot cast spells — end turn
-                await this._proceedToNextPlayerTurn();
-            } else {
-                // Necromancer's turn continues
-                this.currentDisc = justMovedDisc;
-                this.logCurrentTurn();
-                this._updateSpotlights();
-                this.updateRageButtonVisibility();
-                this._updateNecromancerActionButtons();
-                this.updateEndNecromancerTurnButtonVisibility();
-            }
-        } else if ((justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') && justMovedDisc.hitPoints <= 0) {
-            // Orb was consumed
-            this.removeOrb(justMovedDisc);
-            const wizardDisc = this.discs.find(d => d.kind === 'Wizard' && d.type === 'player' && !d.dead);
-
-            if (wizardDisc) {
-                this.currentDisc = wizardDisc; // Wizard regains focus
-                const wizardIndex = this.discs.indexOf(wizardDisc);
-                if (wizardIndex !== -1) {
-                    this.currentTurnIndex = wizardIndex; // Ensure turn index remains Wizard's
-                }
-                this.logCurrentTurn();
-                this._updateSpotlights();
-                this.updateRageButtonVisibility();
-                this._updateWizardActionButtons();
-                this.updateEndWizardTurnButtonVisibility();
-                this.updateBarbarianEndTurnButtonVisibility();
-
-                // Check if turn should end now
-                const activeOrbsAfterConsumption = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-                const canSummonNewOrbsAfterConsumption = this.wizardMana > 0 && activeOrbsAfterConsumption < 3;
-                if (activeOrbsAfterConsumption === 0 && this.wizardHasMovedThisTurn && !canSummonNewOrbsAfterConsumption) {
-                    await this._proceedToNextPlayerTurn();
-                }
-            } else {
-                // Wizard is dead or gone, proceed to next normal turn
-                await this._proceedToNextPlayerTurn();
-            }
-        } else if (justMovedDisc.kind === 'AnimatedDead') {
-            // AnimatedDead stopped — mark it as having moved this turn
-            this._animatedDeadMovedThisTurn.add(justMovedDisc);
-            if (justMovedDisc.hitPoints <= 0) {
-                this.removeAnimatedDead(justMovedDisc);
-            }
-            const necromancerDisc = this.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
-
-            if (necromancerDisc) {
-                this.currentDisc = necromancerDisc; // Necromancer regains focus
-                const necroIndex = this.discs.indexOf(necromancerDisc);
-                if (necroIndex !== -1) {
-                    this.currentTurnIndex = necroIndex;
-                }
-                this.logCurrentTurn();
-                this._updateSpotlights();
-                this.updateRageButtonVisibility();
-                this._updateNecromancerActionButtons();
-                this.updateEndNecromancerTurnButtonVisibility();
-                this.updateBarbarianEndTurnButtonVisibility();
-
-                // Auto-end if the Necromancer has moved, all live animated dead have moved, and no spells remain
-                const unmovedAnimated = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead && !this._animatedDeadMovedThisTurn.has(d)).length;
-                const canStillCast = this._necromancerCanCastSpells(necromancerDisc);
-                if (unmovedAnimated === 0 && this.necromancerHasMovedThisTurn && !canStillCast) {
-                    await this._proceedToNextPlayerTurn();
-                }
-            } else {
-                // Necromancer is dead or gone, proceed to next normal turn
-                await this._proceedToNextPlayerTurn();
-            }
+        if (justMovedDisc.kind === 'Wizard' || justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') {
+            await this.wizardController.onDiscStopped(justMovedDisc);
+        } else if (justMovedDisc.kind === 'Necromancer' || justMovedDisc.kind === 'AnimatedDead') {
+            await this.necromancerController.onDiscStopped(justMovedDisc);
         } else {
-            // Any other disc stopped (e.g., Barbarian, NPC) or an Orb that wasn't consumed
+            // Barbarian, NPC, or any other disc
             await this._proceedToNextPlayerTurn();
         }
       }
@@ -3530,37 +2311,13 @@ _updateWallFade(deltaTime) {
     }
   }
 
-  updateRageButtonVisibility() {
-    if (!this.uiManager) return;
-
-    let visible = false;
-    let enabled = false;
-    const charges = this.currentPlayerRageCharges;
-    const maxCharges = this.maxRageChargesCap;
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-
-    // Check if the current disc is a player-controlled Barbarian who can use Rage
-    if (discForTurnContext &&
-        discForTurnContext.type === 'player' &&
-        discForTurnContext.kind === 'Barbarian' && // Specific to Barbarian
-        !discForTurnContext.dead &&
-        !discForTurnContext.rageIsActiveForNextThrow && // Rage not already armed
-        charges > 0) { // Must have charges to use
-      visible = true;
-      enabled = true; // Button is usable if visible (it's this Barbarian's turn)
-    }
-
-    this.uiManager.updateRageButtonVisibility(visible, enabled, charges, maxCharges);
-  }
-
   async _proceedToNextPlayerTurn() {
     if (this.checkGameOverConditions()) {
       return;
     }
-    this.wizardHasMovedThisTurn = false; // Reset for the new turn
-    this.necromancerHasMovedThisTurn = false; // Reset for the new turn
-    this._animatedDeadMovedThisTurn.clear(); // Reset per-minion move tracking
-    this._cancelNecromancerTargetSelection(); // Cancel any active corpse-selection
+    this.wizardController.onTurnEnd();
+    this.necromancerController.onTurnEnd(); // also calls cancelTargetSelection internally
+    this.barbarianController.onTurnEnd();
 
     // If it was the Wizard's turn, or any player's turn, we find the next player.
     // If the next turn is the Wizard's, we transfer his pending orbs.
@@ -3619,8 +2376,8 @@ _updateWallFade(deltaTime) {
                 this.currentTurnIndex = -1;
                 this.logCurrentTurn();
                 this._updateSpotlights();
-                this.updateRageButtonVisibility();
-                this.updateSummonOrbsButtonVisibility();
+                this.barbarianController.updateRageButtonVisibility();
+                this.wizardController.updateActionButtons();
                 return; // Exit, game over should have caught this.
             }
         }
@@ -3632,16 +2389,14 @@ _updateWallFade(deltaTime) {
     this.currentTurnIndex = nextIndex;
     this.currentDisc = this.discs[this.currentTurnIndex]; // Correctly assign the disc for the new turn
 
-    // If it's now the Wizard's turn, transfer pending mana earned from previous turns and grant +1 passive mana
+    // If it's now the Wizard's turn, transfer pending mana earned and grant +1 passive mana
     if (this.currentDisc && this.currentDisc.kind === 'Wizard' && !this.currentDisc.dead) {
-        this.wizardMana += this.wizardManaEarnedThisTurn + 1;
-        this.wizardManaEarnedThisTurn = 0;
+        this.wizardController.applyEarnedMana();
     }
 
-    // If it's now the Necromancer's turn, transfer pending mana earned from previous turns
+    // If it's now the Necromancer's turn, transfer pending mana earned
     if (this.currentDisc && this.currentDisc.kind === 'Necromancer' && !this.currentDisc.dead) {
-        this.necromancerMana += this.necromancerManaEarnedThisTurn;
-        this.necromancerManaEarnedThisTurn = 0;
+        this.necromancerController.applyEarnedMana();
     }
 
     // Apply lava damage if the disc starts its turn in lava
@@ -3656,13 +2411,22 @@ _updateWallFade(deltaTime) {
 
     this.logCurrentTurn();
     this._updateSpotlights();
-    this.updateRageButtonVisibility();
-    this._updateWizardActionButtons();
-    this.updateEndWizardTurnButtonVisibility();
-    this.updateBarbarianEndTurnButtonVisibility();
-    this._updateNecromancerActionButtons();
-    this.updateEndNecromancerTurnButtonVisibility();
+    this.barbarianController.updateRageButtonVisibility();
+    this.barbarianController.updateEndTurnButtonVisibility();
+    this.wizardController.updateActionButtons();
+    this.wizardController.updateEndTurnButtonVisibility();
+    this.necromancerController.updateActionButtons();
+    this.necromancerController.updateEndTurnButtonVisibility();
     this._updateSpotlights(); // Ensure spotlights are updated after turn progression
+
+    // Show descending beam for player turns
+    if (this.currentDisc &&
+        this.currentDisc.type === 'player' &&
+        this.currentDisc.kind !== 'Orb' &&
+        this.currentDisc.kind !== 'HealingOrb' &&
+        this.currentDisc.kind !== 'AnimatedDead') {
+      this._spawnTurnStartBeam(this.currentDisc);
+    }
 
     // If the current disc is an NPC and is still alive, let it take its turn.
     // The currentDisc might be null if no actionable disc was found (e.g. game over handled earlier)
@@ -3670,6 +2434,66 @@ _updateWallFade(deltaTime) {
     if (this.currentDisc && this.currentDisc.type === "NPC" && !this.currentDisc.dead) {
       await this.aiThrow(this.currentDisc);
     }
+  }
+
+  _spawnTurnStartBeam(disc) {
+    if (!disc || !disc.mesh || !this.scene) return;
+    const BEAM_H = 200;
+    const geo = new THREE.CylinderGeometry(1.0, 1.0, BEAM_H, 16, 1, true);
+    const mat = new THREE.MeshBasicMaterial({
+      color: disc.initialColor,
+      transparent: true,
+      opacity: 0.18,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    // Start with the bottom of the beam far above the scene; it descends into place.
+    mesh.position.set(disc.mesh.position.x, BEAM_H * 1.5, disc.mesh.position.z);
+    this.scene.add(mesh);
+    this._turnStartBeams.push({ mesh, geo, mat, elapsed: 0 });
+  }
+
+  _updateTurnStartBeams(deltaTime) {
+    const DESCEND_DUR = .25; // .55
+    const FADE_DUR    = .33; // .65
+    const BEAM_H      = 200;
+    const MAX_OPACITY = 0.33;
+    const START_Y     = BEAM_H * 1;  // bottom of beam starts above the scene
+    const END_Y       = BEAM_H / 2;    // bottom of beam rests at y=0
+
+    for (let i = this._turnStartBeams.length - 1; i >= 0; i--) {
+      const b = this._turnStartBeams[i];
+      b.elapsed += deltaTime;
+
+      if (b.elapsed < DESCEND_DUR) {
+        // Descent phase: slide the beam down smoothly
+        const t = b.elapsed / DESCEND_DUR;
+        b.mesh.position.y = START_Y + (END_Y - START_Y) * t;
+        b.mat.opacity = MAX_OPACITY;
+      } else {
+        // Fade phase: beam is settled, opacity drops to 0
+        b.mesh.position.y = END_Y;
+        const t = (b.elapsed - DESCEND_DUR) / FADE_DUR;
+        b.mat.opacity = MAX_OPACITY * Math.max(0, 1 - t);
+      }
+
+      if (b.elapsed >= DESCEND_DUR + FADE_DUR) {
+        this.scene.remove(b.mesh);
+        b.geo.dispose();
+        b.mat.dispose();
+        this._turnStartBeams.splice(i, 1);
+      }
+    }
+  }
+
+  _clearTurnStartBeams() {
+    for (const b of this._turnStartBeams) {
+      this.scene.remove(b.mesh);
+      b.geo.dispose();
+      b.mat.dispose();
+    }
+    this._turnStartBeams = [];
   }
 
   _showDiscInfoPopup(disc) {
@@ -3698,91 +2522,6 @@ _updateWallFade(deltaTime) {
     if (!this.discInfoPopupElement) return;
     this.discInfoPopupElement.classList.add('element-hidden');
     this.discInfoPopupSelectedDisc = null;
-  }
-
-  _updateWizardActionButtons() {
-    this.updateSummonOrbsButtonVisibility();
-    this.updateSummonHealingOrbsButtonVisibility();
-    this.updateRadiusBlastButtonVisibility();
-  }
-
-  updateRadiusBlastButtonVisibility() {
-    if (!this.radiusBlastButton) return;
-
-    let shouldBeVisible = false;
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-
-    if (discForTurnContext &&
-        discForTurnContext.kind === 'Wizard' &&
-        discForTurnContext.type === 'player' &&
-        !discForTurnContext.dead &&
-        !this.gameOverState.active &&
-        this.wizardMana >= 2) {
-      shouldBeVisible = true;
-    }
-
-    if (shouldBeVisible) {
-      this.radiusBlastButton.style.display = 'inline-block';
-      this.radiusBlastButton.disabled = false;
-    } else {
-      this.radiusBlastButton.style.display = 'none';
-      this.radiusBlastButton.disabled = true;
-    }
-  }
-
-  updateSummonOrbsButtonVisibility() {
-    if (!this.summonOrbsButton) return;
-
-    let shouldBeVisible = false;
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-
-    if (discForTurnContext &&
-        discForTurnContext.kind === 'Wizard' &&
-        discForTurnContext.type === 'player' &&
-        !discForTurnContext.dead &&
-        !this.gameOverState.active) {
-
-      const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-
-      if (this.wizardMana > 0 && activeOrbsCount < 3) {
-        shouldBeVisible = true;
-      }
-    }
-
-    if (shouldBeVisible) {
-      this.summonOrbsButton.style.display = 'inline-block';
-      this.summonOrbsButton.disabled = false;
-    } else {
-      this.summonOrbsButton.style.display = 'none';
-      this.summonOrbsButton.disabled = true;
-    }
-  }
-
-  updateSummonHealingOrbsButtonVisibility() {
-    if (!this.summonHealingOrbsButton) return;
-
-    let shouldBeVisible = false;
-    const discForTurnContext = (this.currentTurnIndex !== -1 && this.discs.length > this.currentTurnIndex) ? this.discs[this.currentTurnIndex] : null;
-
-    if (discForTurnContext &&
-        discForTurnContext.kind === 'Wizard' &&
-        discForTurnContext.type === 'player' &&
-        !discForTurnContext.dead &&
-        !this.gameOverState.active) {
-
-      const activeOrbsCount = this.wizardOrbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-      if (this.wizardMana > 0 && activeOrbsCount < 3) {
-        shouldBeVisible = true;
-      }
-    }
-
-    if (shouldBeVisible) {
-      this.summonHealingOrbsButton.style.display = 'inline-block';
-      this.summonHealingOrbsButton.disabled = false;
-    } else {
-      this.summonHealingOrbsButton.style.display = 'none';
-      this.summonHealingOrbsButton.disabled = true;
-    }
   }
 
   _updateSpotlights() {
@@ -3851,7 +2590,7 @@ _updateWallFade(deltaTime) {
 
     // Clear Barbarian-specific unique NPC hit tracking before calculating throw trajectory
     if (disc.kind === 'Barbarian') {
-      this.barbarianUniqueNPCHitsThisThrow.clear();
+      this.barbarianController.uniqueNPCHitsThisThrow.clear();
     }
 
     let bestDir = idealDir;
@@ -3917,14 +2656,14 @@ _updateWallFade(deltaTime) {
             const actor = this.currentDisc;
             if (actor && actor.type === 'player') {
                 if (actor.kind === 'Barbarian') {
-                    if (this.currentPlayerRageCharges < this.maxRageChargesCap) {
-                        this.currentPlayerRageCharges++;
+                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
+                        this.barbarianController.rageCharges++;
                     }
                 } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
-                    this.wizardManaEarnedThisTurn++;
+                    this.wizardController.manaEarnedThisTurn++;
                 }
                 this.npcsKilledForRageCharge.add(disc.discName);
-                this.updateRageButtonVisibility();
+                this.barbarianController.updateRageButtonVisibility();
             }
         }
 
@@ -4004,6 +2743,54 @@ _updateWallFade(deltaTime) {
             this.scene.add(pool.getMesh());
             this.lavaPools.push(pool);
           }
+          placed = true;
+        }
+      }
+      return;
+    }
+
+    // Donut level: fill the central void with lava and scatter pools on the ring.
+    if (this.level.donutInnerRadius) {
+      const INNER_R = this.level.donutInnerRadius;
+      const OUTER_R = this.level.circleRadius;
+
+      // Central void fill — large lava pool covering the hole.
+      const centerPool = new LavaPool({
+        centerX: 0, centerZ: 0,
+        baseRadius:   INNER_R - 0.5,
+        numVertices:  16,
+        irregularity: 0.08,
+        yPosition:    0.05,
+      });
+      if (centerPool.getMesh()) {
+        this.scene.add(centerPool.getMesh());
+        this.lavaPools.push(centerPool);
+      }
+
+      // A few small pools scattered on the ring.
+      const numPools = 2 + Math.floor(Math.random() * 3);
+      for (let i = 0; i < numPools; i++) {
+        let placed = false;
+        for (let attempt = 0; attempt < 80 && !placed; attempt++) {
+          const angle  = Math.random() * Math.PI * 2;
+          const r      = (INNER_R + 2.5) + Math.random() * (OUTER_R - INNER_R - 5);
+          const x      = Math.sin(angle) * r;
+          const z      = Math.cos(angle) * r;
+          const radius = 1.5 + Math.random() * 1.5;
+          let tooClose = false;
+          for (const p of this.lavaPools) {
+            const dx = x - p.centerX;
+            const dz = z - p.centerZ;
+            if (Math.sqrt(dx * dx + dz * dz) < radius + p.baseRadius + 3) { tooClose = true; break; }
+          }
+          if (tooClose) continue;
+          const pool = new LavaPool({
+            centerX: x, centerZ: z, baseRadius: radius,
+            numVertices:  8 + Math.floor(Math.random() * 4),
+            irregularity: 0.2 + Math.random() * 0.2,
+            yPosition:    0.05,
+          });
+          if (pool.getMesh()) { this.scene.add(pool.getMesh()); this.lavaPools.push(pool); }
           placed = true;
         }
       }
