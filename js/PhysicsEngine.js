@@ -45,15 +45,21 @@ export class PhysicsEngine {
           }
         }
 
-        disc.handleWallCollision(
+        const hitBoundary = disc.handleWallCollision(
           gc.level.fieldWidth,
           gc.level.fieldDepth,
           0.8,
         );
+        if (hitBoundary && gc.soundManager && disc.velocity.length() > 0.05) {
+          gc.soundManager.playBounce(disc.mesh.position.clone());
+        }
 
         const walls = gc.level.getAllWalls();
         walls.forEach((wall) => {
-          disc.handleCollisionWithBox(wall, 0.8);
+          const hitWall = disc.handleCollisionWithBox(wall, 0.8);
+          if (hitWall && gc.soundManager && disc.velocity.length() > 0.05) {
+            gc.soundManager.playBounce(disc.mesh.position.clone());
+          }
         });
 
         // Circular obstacle collision for pillars and triangular columns.
@@ -75,6 +81,9 @@ export class PhysicsEngine {
             if (vDotN < 0) {
               disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
               disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+              if (gc.soundManager && disc.velocity.length() > 0.05) {
+                gc.soundManager.playBounce(disc.mesh.position.clone());
+              }
             }
           }
         }
@@ -96,6 +105,9 @@ export class PhysicsEngine {
             if (vDotN > 0) {
               disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
               disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+              if (gc.soundManager && disc.velocity.length() > 0.05) {
+                gc.soundManager.playBounce(disc.mesh.position.clone());
+              }
             }
           }
         }
@@ -235,6 +247,11 @@ export class PhysicsEngine {
 
             d1.moving = true;
             d2.moving = true;
+
+            if (gc.soundManager && velocityAlongNormal < -0.05) {
+              const midPoint = d1.mesh.position.clone().add(d2.mesh.position).multiplyScalar(0.5);
+              gc.soundManager.playDiscHit(midPoint);
+            }
 
             // Push overlapping discs apart to ensure momentum is felt cleanly
             const totalMass        = d1.mass + d2.mass;

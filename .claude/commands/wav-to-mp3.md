@@ -1,0 +1,1 @@
+Find all WAV files under `public/sounds/`, convert each one to MP3 using ffmpeg (`-q:a 4` for good quality/size balance), then delete the original WAV files. After converting, update any source files that reference the old `.wav` filenames to use `.mp3` instead.

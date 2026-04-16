@@ -9,6 +9,7 @@ import { CameraController } from './CameraController.js';
 import { PhysicsEngine }     from './PhysicsEngine.js';
 import { DiscSpawner }       from './DiscSpawner.js';
 import { LavaManager }       from './LavaManager.js';
+import { SoundManager }      from './SoundManager.js';
 
 let instance = null;
 
@@ -34,6 +35,9 @@ export default class GameController {
 
     // Turn-start beam animations (descending column of light)
     this._turnStartBeams = [];
+
+    // Turn-start ring ripple animations (expanding shockwave rings)
+    this._turnStartRings = [];
 
     // Input and interaction state
     this.raycaster = null;
@@ -79,6 +83,7 @@ export default class GameController {
     this.physics          = new PhysicsEngine(this);
     this.discSpawner      = new DiscSpawner(this);
     this.lavaManager      = new LavaManager(this);
+    this.soundManager     = new SoundManager(this);
 
     // Disc Info Popup
     this.discInfoPopupElement = null;
@@ -148,6 +153,8 @@ export default class GameController {
     this.camera   = this.cameraController.camera;
     this.renderer = this.cameraController.renderer;
     this.controls = this.cameraController.controls;
+
+    this.soundManager.init();
 
     // Level progression — 1-based counter; shape sequence cycles: rect → circle → hexagon.
     this.currentLevelNumber = 1;
@@ -307,14 +314,34 @@ export default class GameController {
   this.necromancerController.updateActionButtons();
   this.necromancerController.updateEndTurnButtonVisibility();
 
-  // Show beam for the first player whose turn it is
+  // Show beam for the first player whose turn it is (delayed 2s to let the scene settle)
   if (this.currentDisc && this.currentDisc.type === 'player') {
-    this._spawnTurnStartBeam(this.currentDisc);
+    const discAtStart = this.currentDisc;
+    setTimeout(() => {
+      if (this.currentDisc === discAtStart) {
+        this._spawnTurnStartBeam(discAtStart);
+        this._spawnTurnStartRings(discAtStart);
+        if (this.soundManager) this.soundManager.playBuzz(discAtStart.mesh.position.clone());
+      }
+    }, 1000);
   }
 }
 
   handlePointerHover(event) {
     this.necromancerController.handlePointerHover(event);
+
+    // Highlight the door frame when the round is won and the door is open
+    if (this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+      this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
+      const isHovered = hits.length > 0;
+      this.level.setDoorHovered(isHovered);
+      this.renderer.domElement.style.cursor = isHovered ? 'pointer' : '';
+    } else if (this.level) {
+      this.level.setDoorHovered(false);
+    }
   }
 
   handlePointerDownInteraction(event, initialPointerDownPos) {
@@ -324,6 +351,15 @@ export default class GameController {
     this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
+
+    // If the round is won and the door is open, clicking anywhere on the doorway loads the next room
+    if (this.roundWon && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+      const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
+      if (hits.length > 0) {
+        this.startNextLevel(this.currentDisc);
+        return;
+      }
+    }
 
     this.pointerDisc = null;
 
@@ -910,6 +946,7 @@ clamp(value, min, max) {
     }
     this.lavaPools = [];
     this._clearTurnStartBeams();
+    this._clearTurnStartRings();
 
     // Unload current level
     if (this.level) {
@@ -1033,6 +1070,7 @@ clamp(value, min, max) {
     }
     this.lavaPools = [];
     this._clearTurnStartBeams();
+    this._clearTurnStartRings();
 
     // 2. Unload the current level
     if (this.level) {
@@ -1195,8 +1233,9 @@ clamp(value, min, max) {
     // Delegate per-frame character updates (orb following, radius blast rings, etc.)
     this.wizardController.update(deltaTime);
 
-    // Animate descending turn-start beams
+    // Animate descending turn-start beams and ring ripples
     this._updateTurnStartBeams(deltaTime);
+    this._updateTurnStartRings(deltaTime);
 
     // Animated dead discs stay where they are — no Necromancer-follow behaviour
 
@@ -1422,13 +1461,15 @@ clamp(value, min, max) {
     this.necromancerController.updateEndTurnButtonVisibility();
     this._updateSpotlights(); // Ensure spotlights are updated after turn progression
 
-    // Show descending beam for player turns
+    // Show descending beam + ring ripples for player turns
     if (this.currentDisc &&
         this.currentDisc.type === 'player' &&
         this.currentDisc.kind !== 'Orb' &&
         this.currentDisc.kind !== 'HealingOrb' &&
         this.currentDisc.kind !== 'AnimatedDead') {
       this._spawnTurnStartBeam(this.currentDisc);
+      this._spawnTurnStartRings(this.currentDisc);
+      if (this.soundManager) this.soundManager.playBuzz(this.currentDisc.mesh.position.clone());
     }
 
     // If the current disc is an NPC and is still alive, let it take its turn.
@@ -1497,6 +1538,65 @@ clamp(value, min, max) {
       b.mat.dispose();
     }
     this._turnStartBeams = [];
+  }
+
+  _spawnTurnStartRings(disc) {
+    if (!disc || !disc.mesh || !this.scene) return;
+    const RING_COUNT = 3;
+    const STAGGER = 0.12; // seconds between each ring
+    for (let i = 0; i < RING_COUNT; i++) {
+      const geo = new THREE.RingGeometry(disc.radius * 1.1, disc.radius * 1.6, 48);
+      const mat = new THREE.MeshBasicMaterial({
+        color: disc.initialColor,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2; // lay flat on the arena floor
+      mesh.position.set(disc.mesh.position.x, disc.mesh.position.y + 0.5, disc.mesh.position.z);
+      this.scene.add(mesh);
+      this._turnStartRings.push({ mesh, geo, mat, elapsed: 0, delay: i * STAGGER });
+    }
+  }
+
+  _updateTurnStartRings(deltaTime) {
+    const DURATION = 0.55;
+    const INNER_START = 0; // relative to disc.radius — handled via scale
+    const MAX_SCALE = 2.8;
+    const MAX_OPACITY = 0.22;
+
+    for (let i = this._turnStartRings.length - 1; i >= 0; i--) {
+      const r = this._turnStartRings[i];
+      r.elapsed += deltaTime;
+
+      const t = Math.max(0, (r.elapsed - r.delay) / DURATION);
+      if (t <= 0) continue; // still in pre-delay
+
+      if (t >= 1) {
+        this.scene.remove(r.mesh);
+        r.geo.dispose();
+        r.mat.dispose();
+        this._turnStartRings.splice(i, 1);
+        continue;
+      }
+
+      // Ease out: fast expansion early, slows near the end
+      const eased = 1 - Math.pow(1 - t, 2);
+      r.mesh.scale.setScalar(1 + eased * (MAX_SCALE - 1));
+      // Fade in fast, then fade out
+      r.mat.opacity = MAX_OPACITY * Math.sin(t * Math.PI);
+    }
+  }
+
+  _clearTurnStartRings() {
+    for (const r of this._turnStartRings) {
+      this.scene.remove(r.mesh);
+      r.geo.dispose();
+      r.mat.dispose();
+    }
+    this._turnStartRings = [];
   }
 
   _showDiscInfoPopup(disc) {

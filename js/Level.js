@@ -24,6 +24,8 @@ export default class Level {
     this._frameMat = null;      // Cloned wall material for frame (slightly darker)
     this._slabMat = null;       // Cloned wall material for slab, same color as frame
     this._voidMesh = null;      // The black plane behind the slab; pulses purple when open
+    this._doorHovered = false;  // True while the mouse is over the open door frame
+    this._doorOutlineTime = 0;  // Accumulated time for hover-pulse animation
     this._doorLight = null;     // PointLight that glows when door is open
     this._doorLightTime = 0;    // Accumulated time for light pulse
     this.doorIsOpen = false;
@@ -424,6 +426,7 @@ export default class Level {
     this.doorFrameMeshes.push(voidMesh);
     this._voidMesh = voidMesh;
 
+
     const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
     this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
     this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
@@ -709,6 +712,7 @@ export default class Level {
     this.doorFrameMeshes.push(voidMesh);
     this._voidMesh = voidMesh;
 
+
     // Stone slab (blocks opening until door opens).
     const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
     this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
@@ -976,6 +980,7 @@ export default class Level {
     this.doorFrameMeshes.push(voidMesh);
     this._voidMesh = voidMesh;
 
+
     const slabGeo = new THREE.BoxGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
     this.applyWallUVs(slabGeo, this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
     this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
@@ -1144,6 +1149,7 @@ export default class Level {
     this.scene.add(voidMesh);
     this.doorFrameMeshes.push(voidMesh);
     this._voidMesh = voidMesh;
+
 
     const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
     this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
@@ -1379,6 +1385,7 @@ export default class Level {
       this.scene.add(voidMesh);
       this.doorFrameMeshes.push(voidMesh);
       this._voidMesh = voidMesh;
+  
 
       // ── Stone slab (blocks the opening until door opens) ───────────────────
       const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
@@ -1427,6 +1434,7 @@ export default class Level {
       this.scene.add(voidMesh);
       this.doorFrameMeshes.push(voidMesh);
       this._voidMesh = voidMesh;
+  
 
       // ── Stone slab ─────────────────────────────────────────────────────────
       const slabGeo = new THREE.BoxGeometry(wallThick, DOOR_HEIGHT, DOOR_WIDTH);
@@ -1643,6 +1651,14 @@ export default class Level {
         );
       }
     }
+
+    // Pulse the frame emissive when hovered
+    if (this._doorHovered && this._frameMat) {
+      this._doorOutlineTime = (this._doorOutlineTime || 0) + deltaTime;
+      this._frameMat.emissive.setHex(0x00ffee);
+      this._frameMat.emissiveIntensity =
+        0.6 + 0.4 * Math.sin(this._doorOutlineTime * 5.0);
+    }
   }
 
   /**
@@ -1823,6 +1839,19 @@ export default class Level {
     return true;
   }
 
+  /** Show or hide the door-frame hover highlight (call from GameController on hover). */
+  setDoorHovered(hovered) {
+    this._doorHovered = hovered && this.doorIsOpen;
+    if (!this._doorHovered) {
+      this._doorOutlineTime = 0;
+      // Restore the normal door-open emissive state driven by the glow pulse
+      if (this._frameMat) {
+        this._frameMat.emissive.setHex(0x000000);
+        this._frameMat.emissiveIntensity = 0;
+      }
+    }
+  }
+
   /**
    * Returns true when the disc (x, z, radius) has entered the door opening
    * after the door is open. Used by GameController to trigger level transition.
@@ -1901,6 +1930,9 @@ export default class Level {
     }
 
     this._voidMesh = null;
+
+    this._doorHovered = false;
+    this._doorOutlineTime = 0;
 
     // Remove the door glow light
     if (this._doorLight) {

@@ -234,21 +234,27 @@ export default class Disc {
   }
 
   handleWallCollision(fieldWidth, fieldDepth, bounceDamping) {
+    let hit = false;
     if (this.mesh.position.x + this.radius > fieldWidth / 2) {
       this.mesh.position.x = fieldWidth / 2 - this.radius;
       this.velocity.x = -this.velocity.x * bounceDamping;
+      hit = true;
     } else if (this.mesh.position.x - this.radius < -fieldWidth / 2) {
       this.mesh.position.x = -fieldWidth / 2 + this.radius;
       this.velocity.x = -this.velocity.x * bounceDamping;
+      hit = true;
     }
 
     if (this.mesh.position.z + this.radius > fieldDepth / 2) {
       this.mesh.position.z = fieldDepth / 2 - this.radius;
       this.velocity.z = -this.velocity.z * bounceDamping;
+      hit = true;
     } else if (this.mesh.position.z - this.radius < -fieldDepth / 2) {
       this.mesh.position.z = -fieldDepth / 2 + this.radius;
       this.velocity.z = -this.velocity.z * bounceDamping;
+      hit = true;
     }
+    return hit;
   }
 
   // Handle collision between this disc and a box mesh (wall)
@@ -292,7 +298,9 @@ export default class Disc {
 
       // Mark disc as moving
       this.moving = true;
+      return true;
     }
+    return false;
   }
 
   applyFriction(friction) {
