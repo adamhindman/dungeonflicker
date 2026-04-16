@@ -18,7 +18,15 @@ The entry point is `main.js`, which just does `new GameController()`. Everything
 
 ### Core Classes
 
-- **`js/GameController.js`** (~137KB) — The central singleton. Owns the Three.js scene, animation loop, turn management, collision detection, physics, NPC AI, and all game logic. Nearly all gameplay code lives here. It is a singleton (enforced via `let instance`).
+- **`js/GameController.js`** — The central singleton. Owns the Three.js scene, animation loop, turn management, NPC AI, and high-level game logic. Delegates camera, physics, disc spawning, and lava generation to subsystem classes. It is a singleton (enforced via `let instance`).
+
+- **`js/CameraController.js`** — Owns the Three.js camera, renderer, OrbitControls, wall-fade effect, panning, and rotation. Initialized via `init()`; `gc.camera`, `gc.renderer`, and `gc.controls` are aliased to these after init so all existing code continues to work.
+
+- **`js/PhysicsEngine.js`** — Per-frame disc movement, wall/obstacle/boundary collision, and all disc-to-disc collision + damage resolution. `async update(deltaTime)` returns `true` when a portal triggers a level transition (so `animate()` can early-exit).
+
+- **`js/DiscSpawner.js`** — Constructs and positions all player and NPC disc instances for a level. `spawn(playerStats)` returns `[barbarian, wizard, necromancer, ...npcDiscs]`.
+
+- **`js/LavaManager.js`** — Generates lava pools for every level type (rect, circle, hex, donut, bullseye). `generate()` clears `gc.lavaPools`, creates new `LavaPool` instances, and adds meshes to `gc.scene`.
 
 - **`js/Disc.js`** — Base class for all disc entities. Manages mesh creation (cylinder base + optional texture plane as a `THREE.Group`), spotlight state machine (`active`/`inactive`/`dead`/`raging`/`animatedDead`), physics properties (`velocity`, `mass`, `moving`), and `takeHit()`. When a disc has an `imagePath`, its mesh is a `THREE.Group` with `baseMesh` (cylinder) and `topMesh` (PlaneGeometry with texture). When no `imagePath`, it's a plain `THREE.Mesh`.
 
@@ -30,11 +38,13 @@ The entry point is `main.js`, which just does `new GameController()`. Everything
 
 - **`js/LavaPool.js`** — Irregular polygon lava pool mesh with animated scrolling texture. Damage is applied in `GameController`'s animation loop by checking disc position against pool vertices.
 
+- **`js/BarbarianController.js`**, **`js/WizardController.js`**, **`js/NecromancerController.js`** — Character-specific logic for each player class. Own action buttons, special abilities (rage, mana/orbs, animate dead), and per-turn state. Instantiated by `GameController` and initialized with the action buttons container in `init()`.
+
 - **`js/UIManager.js`** — All DOM manipulation: HP lists, powers area, action buttons, game-over screen, disc info popup, FPS counter.
 
 - **`js/InputHandler.js`** — Pointer and keyboard event handling (drag-to-throw, Escape cancel, WASD/arrow camera pan).
 
-- **`Pathfinder.js`** (root level) — A\* pathfinding on a grid, used for NPC AI targeting.
+- **`js/Pathfinder.js`** — A\* pathfinding on a grid. Currently unused — available for future NPC AI work.
 
 ### Key Patterns
 
@@ -60,3 +70,4 @@ Static assets live in `public/` and are served at the root. Disc images are in `
 ### Forbidden Actions
 
 - Never attempt to write or run tests. All tests will be administered by the user.
+- Never write Python, Ruby, or Bash scripts to manipulate files. Use the dedicated Edit, Write, Read, Glob, and Grep tools instead.

@@ -1,39 +1,14 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import Level from "./Level.js";
-import Disc from "./Disc.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
-import Skeleton from './Skeleton.js';
-import Warden from './Warden.js';
 import { BarbarianController } from './BarbarianController.js';
 import { WizardController } from './WizardController.js';
 import { NecromancerController } from './NecromancerController.js';
-
-// Pre-converted hex color values for NPCs
-import { LavaPool } from './LavaPool.js';
-
-const NPC_HEX_COLORS = [
-  0xE6194B, // (230, 25, 75)
-  0x3CB44B, // (60, 180, 75)
-  0xFFE119, // (255, 225, 25)
-  0x0082C8, // (0, 130, 200)
-  0xF58230, // (245, 130, 48)
-  0x911EB4, // (145, 30, 180)
-  0xF032E6, // (240, 50, 230)
-  0xD2F53C, // (210, 245, 60)
-  0xFABECE, // (250, 190, 212)
-  0x008080, // (0, 128, 128)
-  0xDCBEFF, // (220, 190, 255)
-  0xAA6E28, // (170, 110, 40)
-  0xFFFAC8, // (255, 250, 200)
-  0x800000, // (128, 0, 0)
-  0xAAFFC3, // (170, 255, 195)
-  0x808000, // (128, 128, 0)
-  0xFFD7B4, // (255, 215, 180)
-  0x000080, // (0, 0, 128)
-  0x808080  // (128, 128, 128)
-];
+import { CameraController } from './CameraController.js';
+import { PhysicsEngine }     from './PhysicsEngine.js';
+import { DiscSpawner }       from './DiscSpawner.js';
+import { LavaManager }       from './LavaManager.js';
 
 let instance = null;
 
@@ -98,23 +73,19 @@ export default class GameController {
     this.wizardController = new WizardController(this);
     this.necromancerController = new NecromancerController(this);
 
+    // Subsystem controllers (camera/renderer/controls live in CameraController;
+    // physics, spawning, and lava generation each have their own class)
+    this.cameraController = new CameraController();
+    this.physics          = new PhysicsEngine(this);
+    this.discSpawner      = new DiscSpawner(this);
+    this.lavaManager      = new LavaManager(this);
+
     // Disc Info Popup
     this.discInfoPopupElement = null;
     this.discInfoNameElement = null;
     this.discInfoHpElement = null;
     this.discInfoDescriptionElement = null;
     this.discInfoPopupSelectedDisc = null;
-
-    // Panning controls state
-    this.panningKeys = {
-      up: false,
-      down: false,
-      left: false,
-      right: false
-    };
-    this.panSpeed = 0.5;
-    this.cameraRotationDirection = 0; // -1 for left, 1 for right, 0 for stop
-    this.cameraRotationSpeed = Math.PI / 135; // Radians per frame. Adjust for desired speed.
 
     this.discDescriptions = {
         Barbarian: "Deals 2 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
@@ -158,67 +129,26 @@ export default class GameController {
   }
 
   recenterCamera() {
-    if (this.camera && this.controls) {
-      this.camera.position.copy(this.initialCameraPosition);
-      this.camera.zoom = this.initialCameraZoom;
-      this.controls.target.copy(this.initialControlsTarget);
-      this.camera.updateProjectionMatrix();
-      this.controls.update();
-    }
+    this.cameraController.recenterCamera();
   }
 
   focusCameraOnDisc(discName) {
     const disc = this.discs.find(d => d.discName === discName);
-    if (disc && this.controls) {
-      this.controls.target.copy(disc.mesh.position);
-    }
+    if (disc) this.cameraController.focusCameraOnDisc(disc);
   }
 
   init() {
     // Initialize scene and rendering
     this.scene = new THREE.Scene();
 
-    // Setup camera with 60 degree FOV, aspect ratio, near & far planes
-    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    this.camera = new THREE.PerspectiveCamera(
-      60,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000,
-    );
+    // Camera, renderer, and OrbitControls are owned by CameraController.
+    // After init(), gc.camera / gc.renderer / gc.controls point at those same objects
+    // so all existing code that references this.camera etc. continues to work.
+    this.cameraController.init();
+    this.camera   = this.cameraController.camera;
+    this.renderer = this.cameraController.renderer;
+    this.controls = this.cameraController.controls;
 
-    // Position camera to get approx 60 degree downward tilt to encompass field
-    const distance = 40; // DO NOT CHANGE THE DISTANCE GOD DAMNIT
-    const angleRadians = Math.PI / 3; // 60 degrees
-    const y = distance * Math.sin(angleRadians);
-    const z = distance * Math.cos(angleRadians);
-    this.camera.position.set(0, y, z);
-    this.camera.lookAt(0, 0, 0);
-
-    // Store initial camera settings for reset
-    this.initialCameraPosition = this.camera.position.clone();
-    this.initialCameraZoom = this.camera.zoom;
-    this.initialControlsTarget = new THREE.Vector3(0, 0, 0);
-
-    // Setup renderer and add canvas to DOM
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
-    this.renderer.localClippingEnabled = true; // Required for per-material clip planes (door slab)
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-
-    // Camera-occlusion wall fading (reused each frame to avoid allocation)
-    this._wallFadeRaycaster = new THREE.Raycaster();
-    this._wallFadeDir = new THREE.Vector3();
-    document.body.appendChild(this.renderer.domElement);
-
-    // Setup orbit controls for camera interaction
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.target.set(0, 0, 0);
-    this.controls.update();
-    // Set min and max zoom distances
-    this.controls.minDistance = 6;
-    this.controls.maxDistance = 45;
-    // Prevent camera from going below ~15 degrees from horizontal
-    this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
     // Level progression — 1-based counter; shape sequence cycles: rect → circle → hexagon.
     this.currentLevelNumber = 1;
 
@@ -275,7 +205,7 @@ export default class GameController {
     // Event listeners (pointerdown, pointermove, pointerup, keydown, keyup) are now managed by InputHandler
 
     // Generate lava pools first so disc spawning can avoid them
-    this._generateLavaPools();
+    this.lavaManager.generate();
 
     // Initialize discs for gameplay
     this.initDiscs();
@@ -286,7 +216,7 @@ export default class GameController {
     this.necromancerController.init(this.actionButtonsContainer);
 
     // Generate lava pools
-    this._generateLavaPools();
+    this.lavaManager.generate();
 
     // Setup input handling
     this.updateDiscNames(); // Explicitly update the disc list after all initialization
@@ -337,292 +267,10 @@ export default class GameController {
       this.barbarianController.rageCharges = 0; // Reset Rage charges for a new game
       this.npcsKilledForRageCharge.clear(); // Reset set of NPCs that granted a charge
     }
-    // *** DO NOT REMOVE THESE PARAMETER COMMENTS ***
-    // Create discs with explicit parameters:
-    // (radius, height, color, startX, startZ, scene, discName, type, kind, hitPoints, skillLevel, imagePath, canDoReboundDamage, throwPowerMultiplier, mass, rageIsActiveForNextThrow)
 
-    const isHexLevel      = !!(this.level && this.level.hexRings);
-    const isBullseyeLevel = !!(this.level && this.level.bullseyeRings);
-
-    // Helper function to generate random positions for NPC discs
-    const generateRandomPosition = (discRadius, existingPositions, minDistance = 4) => {
-      const maxAttempts = 100;
-      let attempts = 0;
-
-      while (attempts < maxAttempts) {
-        // Generate random position within field bounds, accounting for disc radius
-        const x = (Math.random() - 0.5) * (this.level.fieldWidth - discRadius * 4);
-        const z = (Math.random() - 0.5) * (this.level.fieldDepth - discRadius * 4);
-
-        // Check if position conflicts with obstacles
-        if (this.isPositionValid(x, z, discRadius)) {
-          // Check distance from existing discs
-          let validDistance = true;
-          for (const pos of existingPositions) {
-            const distance = Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2);
-            if (distance < minDistance) {
-              validDistance = false;
-              break;
-            }
-          }
-
-          if (validDistance) {
-            return { x, z };
-          }
-        }
-
-        attempts++;
-      }
-
-      // Fallback to original positions if random generation fails
-      return null;
-    };
-
-    // For the hexagonal level, place NPCs on the elevated outer ring instead of
-    // anywhere in the field.
-    const generateOuterRingPosition = (discRadius, existingPositions, minDistance = 4) => {
-      const { RC_in, RA_in } = this.level.hexRings;
-      const innerR = RC_in + 1.5;   // clear of the inner ramp edge
-      const outerR = RA_in - 2.5;   // clear of the outer walls
-      const MAX_ATTEMPTS = 100;
-      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
-        const r = innerR + Math.random() * (outerR - innerR);
-        const x = Math.sin(angle) * r;
-        const z = Math.cos(angle) * r;
-        if (!this.isPositionValid(x, z, discRadius)) continue;
-        let tooClose = false;
-        for (const pos of existingPositions) {
-          if (Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2) < minDistance) {
-            tooClose = true;
-            break;
-          }
-        }
-        if (!tooClose) return { x, z };
-      }
-      return null;
-    };
-
-    // Bullseye level: place NPCs on a specific concentric ring.
-    // innerR / outerR are the ring boundaries; a small margin keeps them clear of
-    // ring edges and column obstacles.
-    const generateBullseyeRingPos = (innerR, outerR, discRadius, existingPositions, minDistance = 4) => {
-      for (let attempt = 0; attempt < 100; attempt++) {
-        const angle = Math.random() * Math.PI * 2;
-        const r     = innerR + 1.5 + Math.random() * (outerR - innerR - 3);
-        const x     = Math.sin(angle) * r;
-        const z     = Math.cos(angle) * r;
-        if (!this.isPositionValid(x, z, discRadius)) continue;
-        let tooClose = false;
-        for (const pos of existingPositions) {
-          if (Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2) < minDistance) {
-            tooClose = true;
-            break;
-          }
-        }
-        if (!tooClose) return { x, z };
-      }
-      return null;
-    };
-
-    // PC start positions.
-    // Bullseye: near the inner-ring edge (r ≈ 6.5), 120° apart.
-    // Hex: random positions anywhere on the upper ring (same pool as NPCs).
-    const BULLSEYE_PC_R = 6.5;
-    const hexPCPositions = [];
-    const _hexPCPos = (radius) => {
-      const pos = isHexLevel
-        ? generateOuterRingPosition(radius, hexPCPositions, 5)
-        : null;
-      if (pos) hexPCPositions.push(pos);
-      return pos;
-    };
-
-    const _barbPos  = isHexLevel ? _hexPCPos(1.25) : null;
-    const _wizPos   = isHexLevel ? _hexPCPos(0.9)  : null;
-    const _necroPos = isHexLevel ? _hexPCPos(1.0)  : null;
-
-    const barbStartX  = isBullseyeLevel ? Math.sin(0)                * BULLSEYE_PC_R
-                      : isHexLevel && _barbPos  ? _barbPos.x  : 0;
-    const barbStartZ  = isBullseyeLevel ? Math.cos(0)                * BULLSEYE_PC_R
-                      : isHexLevel && _barbPos  ? _barbPos.z  : 0;
-    const wizStartX   = isBullseyeLevel ? Math.sin( 2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _wizPos   ? _wizPos.x   : 0;
-    const wizStartZ   = isBullseyeLevel ? Math.cos( 2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _wizPos   ? _wizPos.z   : -3;
-    const necroStartX = isBullseyeLevel ? Math.sin(-2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _necroPos ? _necroPos.x : -3;
-    const necroStartZ = isBullseyeLevel ? Math.cos(-2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _necroPos ? _necroPos.z : -3;
-
-    // Create player discs
-    // Barbarian (Player 1)
-    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    // Player Discs are defined before NPCs to ensure they are earlier in the discs array for turn order.
-    const barbarian = new Disc(
-      /* radius: */ 1.25, // don't change this
-      /* height: */ 0.4,
-      /* color: */ 0x0088ff, // Barbarian color
-      /* startX: */ barbStartX,
-      /* startZ: */ barbStartZ,
-      /* scene: */ this.scene,
-      /* discName: */ "Barbarian", // Updated name
-      /* type: */ "player",
-      /* kind: */ "Barbarian",
-      /* hitPoints: */ 5,
-      /* skillLevel: */ 100,
-      /* imagePath: */ "images/barbarian-nobg.png",
-      /* canDoReboundDamage: */ false,
-      /* throwPowerMultiplier: */ 1.3,
-      /* mass: */ 1.5,
-      /* rageIsActiveForNextThrow: */ false,
-      /* rageWasUsedThisThrow: */ false,
-      /* attackDamage: */ 1,
-      /* gameController: */ this,
-      /* description: */ this.discDescriptions.Barbarian
-    );
-
-    const barbStats = playerStats?.find(s => s.kind === "Barbarian");
-    if (barbStats) {
-      barbarian.hitPoints = barbStats.hitPoints;
-      barbarian.maxHitPoints = barbStats.maxHitPoints;
-    }
-
-    // Wizard
-    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    const wizard = new Disc(
-      /* radius: */ .9,
-      /* height: */ 0.4,
-      /* color: */ 0x00C0C0, // Muted cyan color for Wizard
-      /* startX: */ wizStartX,
-      /* startZ: */ wizStartZ,
-      /* scene: */ this.scene,
-      /* discName: */ "Wizard",
-      /* type: */ "player",
-      /* kind: */ "Wizard",
-      /* hitPoints: */ 3,
-      /* skillLevel: */ 100,
-      /* imagePath: */ "images/wizard-nobg.png", // Image for Wizard disc
-      /* canDoReboundDamage: */ false,
-      /* throwPowerMultiplier: */ 0.7,
-      /* mass: */ .8,
-      /* rageIsActiveForNextThrow: */ false,
-      /* rageWasUsedThisThrow: */ false,
-      /* attackDamage: */ 1,
-      /* gameController: */ this,
-      /* description: */ this.discDescriptions.Wizard
-    );
-
-    const wizStats = playerStats?.find(s => s.kind === "Wizard");
-    if (wizStats) {
-      wizard.hitPoints = wizStats.hitPoints;
-      wizard.maxHitPoints = wizStats.maxHitPoints;
-    }
-
-    // Necromancer
-    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    const necromancer = new Disc(
-      /* radius: */ .9,
-      /* height: */ 0.4,
-      /* color: */ 0x6600CC, // Dark purple for Necromancer
-      /* startX: */ necroStartX,
-      /* startZ: */ necroStartZ,
-      /* scene: */ this.scene,
-      /* discName: */ "Necromancer",
-      /* type: */ "player",
-      /* kind: */ "Necromancer",
-      /* hitPoints: */ 3,
-      /* skillLevel: */ 100,
-      /* imagePath: */ "images/necromancer-nobg.png",
-      /* canDoReboundDamage: */ false,
-      /* throwPowerMultiplier: */ 0.7,
-      /* mass: */ .8,
-      /* rageIsActiveForNextThrow: */ false,
-      /* rageWasUsedThisThrow: */ false,
-      /* attackDamage: */ 1,
-      /* gameController: */ this,
-      /* description: */ this.discDescriptions.Necromancer
-    );
-
-    const necroStats = playerStats?.find(s => s.kind === "Necromancer");
-    if (necroStats) {
-      necromancer.hitPoints = necroStats.hitPoints;
-      necromancer.maxHitPoints = necroStats.maxHitPoints;
-    }
-
-    const existingPositions = [
-        { x: barbarian.mesh.position.x, z: barbarian.mesh.position.z },
-        { x: wizard.mesh.position.x, z: wizard.mesh.position.z },
-        { x: necromancer.mesh.position.x, z: necromancer.mesh.position.z }
-    ];
-
-    // Generate random positions for NPC discs
-    // Base definitions for NPCs (name, skillLevel, kind)
-    const baseNpcDefinitions = [
-      { name: "Skeleton 1", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 2", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 3", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 4", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 5", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 6", skillLevel: 80, kind: "Skeleton" },
-      // Wardens
-      { name: "Warden 1", skillLevel: 85, kind: "Warden" },
-      { name: "Warden 2", skillLevel: 85, kind: "Warden" }
-    ];
-
-    // Assign colors from NPC_HEX_COLORS to each NPC definition
-    const npcData = baseNpcDefinitions.map((def, index) => ({
-      ...def,
-      color: NPC_HEX_COLORS[index % NPC_HEX_COLORS.length] // Cycle through colors
-    }));
-
-    const npcDiscs = [];
-    // Skeletons (NPCs)
-    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    let npcIdx = 0;
-    for (const npc of npcData) {
-      let position;
-      if (isBullseyeLevel) {
-        // First 4 NPCs on the middle ring (r 8–16), remaining on the outer ring (r 16–22).
-        position = npcIdx < 4
-          ? generateBullseyeRingPos(8, 16, 1.5, existingPositions)
-          : generateBullseyeRingPos(16, 22, 1.5, existingPositions);
-      } else if (isHexLevel) {
-        position = generateOuterRingPosition(1.5, existingPositions);
-      } else {
-        position = generateRandomPosition(1.5, existingPositions);
-      }
-      npcIdx++;
-      const finalX = position ? position.x : (Math.random() - 0.5) * this.level.fieldWidth * 0.7;
-      const finalZ = position ? position.z : (Math.random() - 0.5) * this.level.fieldDepth * 0.7;
-
-      let disc;
-      // Common arguments for NPC constructors:
-      // scene, startX, startZ, discName, skillLevel, gameController, color
-      const commonArgs = [
-        this.scene,
-        finalX,
-        finalZ,
-        npc.name,
-        npc.skillLevel,
-        this, // gameController reference
-        npc.color
-      ];
-
-      if (npc.kind === "Skeleton") {
-        disc = new Skeleton(...commonArgs, this.discDescriptions.Skeleton);
-      } else if (npc.kind === "Warden") {
-        disc = new Warden(...commonArgs, this.discDescriptions.Warden);
-      }
-      // Future: Add else if for other NPC kinds here
-
-      if (disc) { // Check if disc was successfully created
-        npcDiscs.push(disc);
-      }
-      existingPositions.push({ x: finalX, z: finalZ });
-    }
-
-    this.discs.push(barbarian, wizard, necromancer, ...npcDiscs); // Add all player discs
+    // Disc creation and placement is handled by DiscSpawner
+    const spawned = this.discSpawner.spawn(playerStats);
+    this.discs.push(...spawned);
 
     // Immediately mark any player discs that carried over as dead (hitPoints=0 from playerStats)
     // so they appear in the Raise Dead target list without waiting for the animation loop.
@@ -1088,9 +736,7 @@ export default class GameController {
   }
 
   setPanningState(key, isPressed) {
-    if (this.panningKeys.hasOwnProperty(key)) {
-      this.panningKeys[key] = isPressed;
-    }
+    this.cameraController.setPanningState(key, isPressed);
   }
 
   cancelAiming() {
@@ -1114,119 +760,26 @@ export default class GameController {
   }
 
   onWindowResize() {
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.camera.aspect = window.innerWidth / window.innerHeight;
-    this.camera.updateProjectionMatrix();
+    this.cameraController.onWindowResize();
 
     if (this.level) {
-      // this.level.rotation.x = -Math.PI / 2; // Problematic: Level instance doesn't have rotation
+      this.discs.forEach((disc) => {
+        disc.mesh.position.x = this.clamp(
+          disc.mesh.position.x,
+          -this.level.fieldWidth / 2 + disc.radius,
+          this.level.fieldWidth / 2 - disc.radius,
+        );
+        disc.mesh.position.z = this.clamp(
+          disc.mesh.position.z,
+          -this.level.fieldDepth / 2 + disc.radius,
+          this.level.fieldDepth / 2 - disc.radius,
+        );
+      });
     }
-    // this.createWalls(); // Problematic: Level class does not have createWalls method, and walls shouldn't be recreated on resize
-
-    this.discs.forEach((disc) => {
-      disc.mesh.position.x = this.clamp(
-        disc.mesh.position.x,
-        -this.level.fieldWidth / 2 + disc.radius,
-        this.level.fieldWidth / 2 - disc.radius,
-      );
-      disc.mesh.position.z = this.clamp(
-        disc.mesh.position.z,
-        -this.level.fieldDepth / 2 + disc.radius,
-        this.level.fieldDepth / 2 - disc.radius,
-      );
-    });
-  this.renderer.setSize(window.innerWidth, window.innerHeight);
-}
+  }
 
 clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
-}
-
-/**
- * Each frame: fade wall meshes that are between the camera and the play area.
- *
- * Two techniques are combined:
- *
- * 1. OUTER WALLS — boundary proximity.
- *    A single center-ray can't detect outer walls: the camera at y≈35 looking
- *    at y=0 passes ~31 units above an 8-unit wall by the time it crosses the
- *    field boundary. Instead, for each mesh near a field boundary we compute
- *    how far the camera has moved toward (or past) that boundary on the XZ
- *    plane, and derive a fade fraction directly from that distance.
- *    FADE_START units before the wall the fade begins; it reaches full fade
- *    FADE_END units past the wall.
- *
- * 2. INTERNAL OBSTACLES — ray intersection.
- *    The center-ray from camera to orbit-target DOES pass through interior
- *    obstacles (they're low enough relative to camera height), so a standard
- *    Raycaster hit-test handles those.
- */
-_updateWallFade(deltaTime) {
-  if (!this.level || !this.camera || !this.controls) return;
-
-  const visualWalls = this.level.getVisualWalls();
-  if (!visualWalls.length) return;
-
-  // ── Raycaster for internal obstacles ──────────────────────────────────────
-  this._wallFadeDir
-    .subVectors(this.controls.target, this.camera.position)
-    .normalize();
-  this._wallFadeRaycaster.set(this.camera.position, this._wallFadeDir);
-  this._wallFadeRaycaster.far =
-    this.camera.position.distanceTo(this.controls.target);
-  const hits = new Set(
-    this._wallFadeRaycaster.intersectObjects(visualWalls).map(h => h.object)
-  );
-
-  // ── Boundary-proximity fade for outer walls ────────────────────────────────
-  const cam  = this.camera.position;
-  const fw   = this.level.fieldWidth  / 2;  // 24 — east/west boundary
-  const fd   = this.level.fieldDepth  / 2;  // 18 — north/south boundary
-  // Fade begins FADE_START units before the wall (inside the field) and
-  // reaches full opacity-reduction FADE_END units past the wall.
-  const FADE_START    = 8;
-  const FADE_END      = 3;
-  const BOUNDARY_TOL  = 1.5; // mesh must be within this many units of a boundary
-  const FADED  = 0.6;
-  const OPAQUE = 1.0;
-  const SPEED  = 80;
-
-  for (const mesh of visualWalls) {
-    const wx = mesh.position.x;
-    const wz = mesh.position.z;
-
-    // Start from raycaster result (handles internal obstacles)
-    let fadeAmount = hits.has(mesh) ? 1.0 : 0.0;
-
-    // South boundary  (wz ≈ +fd)
-    if (Math.abs(wz - fd) < BOUNDARY_TOL) {
-      const d = cam.z - fd; // positive = camera is past the wall
-      fadeAmount = Math.max(fadeAmount,
-        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
-    }
-    // North boundary  (wz ≈ -fd)
-    if (Math.abs(wz + fd) < BOUNDARY_TOL) {
-      const d = -cam.z - fd;
-      fadeAmount = Math.max(fadeAmount,
-        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
-    }
-    // East boundary  (wx ≈ +fw)
-    if (Math.abs(wx - fw) < BOUNDARY_TOL) {
-      const d = cam.x - fw;
-      fadeAmount = Math.max(fadeAmount,
-        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
-    }
-    // West boundary  (wx ≈ -fw)
-    if (Math.abs(wx + fw) < BOUNDARY_TOL) {
-      const d = -cam.x - fw;
-      fadeAmount = Math.max(fadeAmount,
-        Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END))));
-    }
-
-    const targetOpacity = OPAQUE - fadeAmount * (OPAQUE - FADED);
-    mesh.material.opacity +=
-      (targetOpacity - mesh.material.opacity) * Math.min(deltaTime * SPEED, 1);
-  }
 }
 
 // --- Game Over UI is now handled by UIManager ---
@@ -1380,7 +933,7 @@ _updateWallFade(deltaTime) {
     }
 
     // 3. Re-initialize world (lava first so disc spawning can avoid pools)
-    this._generateLavaPools();
+    this.lavaManager.generate();
     this.initDiscs(playerStats);
 
     // 4. Reset turn-specific state
@@ -1497,7 +1050,7 @@ _updateWallFade(deltaTime) {
     }
 
     // 4. Re-initialize world (lava first so disc spawning can avoid pools)
-    this._generateLavaPools();
+    this.lavaManager.generate();
     this.initDiscs(); // This will populate this.discs with new instances
 
     // 5. Reset core game state variables
@@ -1569,85 +1122,19 @@ _updateWallFade(deltaTime) {
     const deltaTime = (now - this.fpsLastTime) / 1000;
     this.fpsLastTime = now;
 
-    // Fade walls that sit between the camera and the scene centre
-    this._updateWallFade(deltaTime);
     const elapsedSinceLastUpdate = now - this.fpsLastUpdateTime;
 
     if (elapsedSinceLastUpdate >= this.fpsUpdateInterval) {
       const fps = Math.round((this.fpsFrameCount * 1000) / elapsedSinceLastUpdate);
       if (this.uiManager) {
-        this.uiManager.updateFPS(fps); // UIManager now handles the text formatting
+        this.uiManager.updateFPS(fps);
       }
       this.fpsFrameCount = 0;
       this.fpsLastUpdateTime = now;
     }
 
-    if (this.controls) {
-      this.controls.update();
-    }
-
-    // Smooth camera rotation based on cameraRotationDirection
-    if (this.cameraRotationDirection !== 0 && this.controls && this.controls.enabled) {
-        const offset = new THREE.Vector3().subVectors(this.controls.object.position, this.controls.target);
-        const spherical = new THREE.Spherical().setFromVector3(offset);
-
-        spherical.theta += this.cameraRotationDirection * this.cameraRotationSpeed;
-        spherical.makeSafe(); // Clamps phi to valid range and ensures radius is positive
-
-        offset.setFromSpherical(spherical);
-        this.controls.object.position.copy(this.controls.target).add(offset);
-        this.controls.update(); // Crucial to apply the change to OrbitControls
-    }
-
-    // Handle camera panning with WASD and arrow keys
-    if (this.panningKeys.up || this.panningKeys.down || this.panningKeys.left || this.panningKeys.right) {
-      // Get the camera's forward and right vectors
-      const forward = new THREE.Vector3();
-      const right = new THREE.Vector3();
-
-      this.camera.getWorldDirection(forward);
-      forward.y = 0; // Keep panning horizontal
-      forward.normalize();
-
-      right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
-      right.normalize();
-
-      // Calculate panning movement
-      const panVector = new THREE.Vector3();
-
-      if (this.panningKeys.up) {
-        panVector.add(forward.clone().multiplyScalar(this.panSpeed));
-      }
-      if (this.panningKeys.down) {
-        panVector.add(forward.clone().multiplyScalar(-this.panSpeed));
-      }
-      if (this.panningKeys.left) {
-        panVector.add(right.clone().multiplyScalar(-this.panSpeed));
-      }
-      if (this.panningKeys.right) {
-        panVector.add(right.clone().multiplyScalar(this.panSpeed));
-      }
-
-      // Apply panning to both camera and controls target
-      this.camera.position.add(panVector);
-      this.controls.target.add(panVector);
-      this.controls.update();
-    }
-
-    // Clamp camera target to field bounds + margin
-    if (this.level && this.controls) {
-      const target = this.controls.target;
-      const halfFieldWidth = this.level.fieldWidth / 2;
-      const halfFieldDepth = this.level.fieldDepth / 2;
-      const panMargin = 0; // The allowed panning margin
-
-      // Clamp the target's x coordinate
-      target.x = THREE.MathUtils.clamp(target.x, -halfFieldWidth - panMargin, halfFieldWidth + panMargin);
-      // Clamp the target's z coordinate
-      target.z = THREE.MathUtils.clamp(target.z, -halfFieldDepth - panMargin, halfFieldDepth + panMargin);
-      // The OrbitControls.update() at the beginning of the next animate() call
-      // will use this clamped target to reposition the camera.
-    }
+    // Camera panning, rotation, target clamping, and wall-fade
+    this.cameraController.update(deltaTime, this.level);
 
     if (this.currentDisc) {
       // Reset current disc scale and position.y
@@ -1713,494 +1200,10 @@ _updateWallFade(deltaTime) {
 
     // Animated dead discs stay where they are — no Necromancer-follow behaviour
 
-    // Update and move discs
-    for (const disc of [...this.discs]) {
-      if (disc.moving) {
-        disc.updatePosition();
+    // Per-disc movement, wall/obstacle collision, disc-to-disc collision + damage
+    const physicsExited = await this.physics.update(deltaTime);
+    if (physicsExited) return;
 
-        // Hexagonal level: apply gravity component along ramp slope to velocity.
-        // Discs on ramps are accelerated toward the pit; flat zones have no effect.
-        if (this.level && this.level.hexRings) {
-          const slope = this.level.getTerrainSlopeForce(disc.mesh.position.x, disc.mesh.position.z);
-          disc.velocity.x += slope.fx;
-          disc.velocity.z += slope.fz;
-        }
-
-        // Check door entry BEFORE the boundary-bounce so a disc heading into
-        // the open doorway isn't pushed back before the transition fires.
-        if (this.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
-          if (this.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
-            await this.startNextLevel(disc);
-            return;
-          }
-        }
-
-        disc.handleWallCollision(
-          this.level.fieldWidth,
-          this.level.fieldDepth,
-          0.8,
-        );
-
-        const walls = this.level.getAllWalls();
-        walls.forEach((wall) => {
-          disc.handleCollisionWithBox(wall, 0.8);
-        });
-
-        // Circular obstacle collision for pillars and triangular columns.
-        // Box3.setFromObject on a 3-segment prism produces an asymmetric AABB
-        // that misses from certain approach angles; a 2D circle push is exact.
-        for (const obs of (this.level.obstacles || [])) {
-          if (obs.type !== 'pillar' && obs.type !== 'triangle') continue;
-          const obsRadius = obs.width / 2;
-          const dx = disc.mesh.position.x - obs.x;
-          const dz = disc.mesh.position.z - obs.z;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          const minDist = disc.radius + obsRadius;
-          if (dist < minDist && dist > 0.001) {
-            const nx = dx / dist;
-            const nz = dz / dist;
-            // Push disc out of overlap
-            disc.mesh.position.x = obs.x + nx * minDist;
-            disc.mesh.position.z = obs.z + nz * minDist;
-            // Reflect velocity component along normal
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-            if (vDotN < 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
-            }
-          }
-        }
-
-        // Hexagonal level: enforce circular outer boundary (replaces AABB collision
-        // on the large rotated wall panels, which inflate badly).
-        if (this.level && this.level.hexRings) {
-          const { RA_in } = this.level.hexRings;
-          const dx = disc.mesh.position.x;
-          const dz = disc.mesh.position.z;
-          const r  = Math.sqrt(dx * dx + dz * dz);
-          const maxR = RA_in - disc.radius;
-          if (r > maxR && r > 0.001) {
-            const nx = dx / r;
-            const nz = dz / r;
-            disc.mesh.position.x = nx * maxR;
-            disc.mesh.position.z = nz * maxR;
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-            if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
-            }
-          }
-        }
-
-        // Apply friction (Wizards and Necromancers have more drag and slow down faster)
-        const currentFriction = (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
-        disc.applyFriction(currentFriction);
-      }
-    }
-
-    // Bullseye level: rotate every disc's world position with the ring it is standing on.
-    // This makes the rings act as a conveyor — discs are carried regardless of their own velocity.
-    if (this.level && this.level.bullseyeRings) {
-      const { inner, middle, outer } = this.level.bullseyeRings;
-      for (const disc of this.discs) {
-        const dx = disc.mesh.position.x;
-        const dz = disc.mesh.position.z;
-        const r  = Math.sqrt(dx * dx + dz * dz);
-        let omega = 0;
-        if (r < 8)       omega = inner.rotDir  * inner.speed;   // inner ring
-        else if (r < 16) omega = middle.rotDir * middle.speed;  // middle ring
-        else if (r < 22) omega = outer.rotDir  * outer.speed;   // outer ring
-        if (omega === 0) continue;
-        const dTheta = omega * deltaTime;
-        const cos = Math.cos(dTheta);
-        const sin = Math.sin(dTheta);
-        // Use Three.js Y-rotation convention: x' = x·cos + z·sin, z' = −x·sin + z·cos
-        disc.mesh.position.x =  dx * cos + dz * sin;
-        disc.mesh.position.z = -dx * sin + dz * cos;
-        // Keep animated-dead ring and spotlight in sync when disc isn't self-moving
-        if (disc.animatedDeadRing) {
-          disc.animatedDeadRing.position.x = disc.mesh.position.x;
-          disc.animatedDeadRing.position.z = disc.mesh.position.z;
-        }
-        if (disc.spotlight) {
-          disc.spotlight.position.x = disc.mesh.position.x;
-          disc.spotlight.position.z = disc.mesh.position.z;
-        }
-        // Keep the throw-direction line anchored to the disc while the ring carries it.
-        if (disc === this.currentDisc && this.throwDirectionLine && this.throwDirectionLine.visible) {
-          const rotateVec = (v) => {
-            const vx = v.x, vz = v.z;
-            v.x =  vx * cos + vz * sin;
-            v.z = -vx * sin + vz * cos;
-          };
-          if (this._prevLineStart) rotateVec(this._prevLineStart);
-          if (this._prevLineEnd)   rotateVec(this._prevLineEnd);
-          const pos = this.throwDirectionLine.geometry.attributes.position;
-          if (pos) {
-            pos.setXYZ(0, this._prevLineStart.x, this._prevLineStart.y, this._prevLineStart.z);
-            pos.setXYZ(1, this._prevLineEnd.x,   this._prevLineEnd.y,   this._prevLineEnd.z);
-            pos.needsUpdate = true;
-          }
-        }
-      }
-    }
-
-    // Hexagonal level: snap every disc's Y to the terrain height directly below it.
-    // This keeps all discs riding the surface regardless of whether they're moving.
-    if (this.level && this.level.hexRings) {
-      for (const disc of this.discs) {
-        const h = this.level.getTerrainHeightAt(disc.mesh.position.x, disc.mesh.position.z);
-        disc.mesh.position.y = h + disc.basePositionY;
-      }
-    }
-
-    // Disc-to-disc collisions
-    let colliding = false;
-    const collisionArray = [...this.discs];
-    for (let i = 0; i < collisionArray.length; i++) {
-      const d1 = collisionArray[i];
-      for (let j = i + 1; j < collisionArray.length; j++) {
-        const d2 = collisionArray[j];
-
-        // Skip collision between Wizard and his own orbs while they are orbiting
-        if ((d1.kind === 'Wizard' && this.wizardController.orbs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Wizard' && this.wizardController.orbs.includes(d1) && !d1.moving)) {
-            continue; // Skip to the next pair
-        }
-
-        // Skip collision between Necromancer and its animated dead while they are orbiting
-        if ((d1.kind === 'Necromancer' && this.necromancerController.animatedDeadDiscs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Necromancer' && this.necromancerController.animatedDeadDiscs.includes(d1) && !d1.moving)) {
-            continue;
-        }
-
-        // Skip collision if one is a regular Orb and the other is dead, OR if two Orbs are colliding
-        // Note: Healing Orbs DO NOT skip dead discs (they bounce off them)
-        const isRegularOrb1 = d1.kind === 'Orb';
-        const isRegularOrb2 = d2.kind === 'Orb';
-        const isAnyOrb1 = isRegularOrb1 || d1.kind === 'HealingOrb';
-        const isAnyOrb2 = isRegularOrb2 || d2.kind === 'HealingOrb';
-        if ((isRegularOrb1 && d2.dead) || (isRegularOrb2 && d1.dead) || (isAnyOrb1 && isAnyOrb2)) {
-            continue;
-        }
-
-        // Regular Orbs (cyan) should pass through all player discs (Wizard, Barbarian, etc.) without interaction
-        if ((d1.kind === 'Orb' && d2.type === 'player') || (d2.kind === 'Orb' && d1.type === 'player')) {
-            continue;
-        }
-
-        const diff = d1.mesh.position.clone().sub(d2.mesh.position.clone());
-        const dist = diff.length();
-
-        const minDist = d1.radius + d2.radius;
-
-        if (dist < minDist && dist > 0) {
-          // Special Case: Wizard Healing Orb hitting anything (Heal and pass through)
-          if ((d1.kind === 'HealingOrb' || d2.kind === 'HealingOrb') && !d1.dead && !d2.dead) {
-              const healingOrb = d1.kind === 'HealingOrb' ? d1 : d2;
-              const target = d1.kind === 'HealingOrb' ? d2 : d1;
-
-              // Heal the target if not already healed this throw
-              if (!healingOrb.healedDiscs.has(target)) {
-                  target.restoreHealth(1);
-                  healingOrb.healedDiscs.add(target);
-                  this.updateDiscNames();
-                  if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
-
-                  // Mark actor as having caused damage/action if it was one of the colliding discs
-                  if (this.currentDisc && (d1 === this.currentDisc || d2 === this.currentDisc)) {
-                      this.currentDisc.hasCausedDamage = true;
-                  }
-              }
-              continue; // Skip physics for Healing Orb (pass through)
-          }
-
-          colliding = true;
-          const normal = diff.clone().divideScalar(dist);
-          normal.y = 0;
-          normal.normalize();
-
-          const relativeVelocity = d1.velocity.clone().sub(d2.velocity);
-          const velocityAlongNormal = relativeVelocity.dot(normal);
-
-          if (velocityAlongNormal <= 0) {
-            const restitution = 1; // Coefficient of restitution
-            // Calculate impulse magnitude considering individual masses
-            const impulseMagnitude = (-(1 + restitution) * velocityAlongNormal) / (1 / d1.mass + 1 / d2.mass);
-
-            // Apply impulse to each disc according to its mass
-            // The 'normal' vector points from d2 towards d1
-            d1.velocity.add(normal.clone().multiplyScalar(impulseMagnitude / d1.mass));
-            d2.velocity.sub(normal.clone().multiplyScalar(impulseMagnitude / d2.mass));
-
-            d1.moving = true;
-            d2.moving = true;
-
-            // Push overlapping discs apart to ensure momentum is felt cleanly
-            const totalMass = d1.mass + d2.mass;
-            const separationOverlap = minDist - dist;
-            d1.mesh.position.add(normal.clone().multiplyScalar(separationOverlap * (d2.mass / totalMass)));
-            d2.mesh.position.sub(normal.clone().multiplyScalar(separationOverlap * (totalMass === 0 ? 0 : d1.mass / totalMass)));
-
-            // Apply damage rules
-            if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead) { // Ensure both discs are alive and not dead
-                // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed)
-                if ((d1.kind === 'AnimatedDead' && !d1.dead && d2.type === 'NPC' && !d2.dead) ||
-                    (d2.kind === 'AnimatedDead' && !d2.dead && d1.type === 'NPC' && !d1.dead)) {
-                    const animated = d1.kind === 'AnimatedDead' ? d1 : d2;
-                    const npc = d1.kind === 'AnimatedDead' ? d2 : d1;
-
-                    if (this.currentDisc === animated) {
-                        // Animated dead was thrown by the Necromancer — deal damage to NPC
-                        npc.takeHit(animated.attackDamage, animated);
-
-                        if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
-                            this.necromancerController.manaEarnedThisTurn += 1;
-                            this.npcsKilledForRageCharge.add(npc.discName);
-                            this.necromancerController.updateActionButtons();
-                        }
-                    } else if (this.currentDisc === npc) {
-                        // NPC was directly thrown into the animated dead — deal damage
-                        animated.takeHit(npc.attackDamage, npc);
-                    }
-                    // Anything else (residual motion, indirect hit) — no damage
-                }
-                // Special Case: Wizard Orb hitting an NPC (Volatile Collision)
-                else if (this.thrownDisc !== null && ((d1.kind === 'Orb' && d2.type === 'NPC') || (d2.kind === 'Orb' && d1.type === 'NPC'))) {
-                    const orb = d1.kind === 'Orb' ? d1 : d2;
-                    const npc = d1.kind === 'Orb' ? d2 : d1;
-                    const actor = this.currentDisc;
-
-                    // Orb deals damage to NPC
-                    npc.takeHit(orb.attackDamage, orb);
-
-                    // Track kills for rewards (Wizard/Orb reward)
-                    if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
-                        // Killing an NPC with an orb earns 1 mana back
-                        this.wizardController.manaEarnedThisTurn += 1;
-                        this.npcsKilledForRageCharge.add(npc.discName);
-                        this.barbarianController.updateRageButtonVisibility();
-                        this.wizardController.updateActionButtons();
-                    }
-
-                    // Orb is consumed upon impact with an NPC
-                    orb.takeHit(999, npc);
-
-                    // Mark actor as having caused damage if it was one of the colliding discs
-                    if (actor && (d1 === actor || d2 === actor)) {
-                        actor.hasCausedDamage = true;
-                    }
-                }
-                // Case 1: d1 is the current acting disc
-                else if (this.thrownDisc !== null && d1 === this.currentDisc) {
-                    if (d1.type === "player" && d2.type === "NPC") {
-                        // Player (d1) hits NPC (d2) - Rage allows multiple hits on the same NPC
-                        if (d1.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
-                            // Barbarian unique NPC hit tracking
-                            if (d1.kind === 'Barbarian' && d2.type === 'NPC') { // d1 is Barbarian, d2 is NPC
-                                if (d2.hitPoints > 0 && !d2.dead) { // Ensure NPC is targetable for bonus
-                                    this.barbarianController.uniqueNPCHitsThisThrow.add(d2.discName);
-                                }
-                            }
-
-                            let damageToDeal = d1.attackDamage;
-                            if (d1.kind === 'Barbarian') {
-                                const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
-                                if (d1.rageWasUsedThisThrow) {
-                                    damageToDeal = 2 + bonusDamage;
-                                } else {
-                                    damageToDeal = d1.attackDamage + bonusDamage;
-                                }
-                            }
-                            // If d1 is not Barbarian but is raging, current game logic handles it via attackDamage or specific class abilities.
-                            d2.takeHit(damageToDeal, d1);
-                            // Check if NPC d2 was killed by this hit and grant Rage charge
-                            if (d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
-                                if (d1.kind === 'Barbarian') { // Check if the killer (d1) is Barbarian
-                                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
-                                        this.barbarianController.rageCharges++;
-                                    }
-                                    // Life-leech during rage
-                                    if (d1.rageWasUsedThisThrow) {
-                                        d1.restoreHealth(1);
-                                        this.updateDiscNames();
-                                        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
-                                    }
-                                } else if (d1.kind === 'Wizard') {
-                                    // Killing an NPC by bumping into them earns 2 mana back
-                                    this.wizardController.manaEarnedThisTurn += 2;
-                                } else if (d1.kind === 'Orb') {
-                                    // Killing an NPC with an orb earns 1 mana back
-                                    this.wizardController.manaEarnedThisTurn += 1;
-                                } else if (d1.kind === 'Necromancer') {
-                                    this.necromancerController.manaEarnedThisTurn += 2;
-                                }
-                                this.npcsKilledForRageCharge.add(d2.discName);
-                                this.barbarianController.updateRageButtonVisibility(); // Update button text/visibility
-                            }
-                            // Only add to set if not raging (to allow multiple rage hits on the same NPC).
-                            if (!d1.canDoReboundDamage) {
-                                this.playerDamagedNPCsThisThrow.add(d2.discName);
-                            }
-                        }
-                    } else if (!(d1.type === "NPC" && d2.type === "NPC")) {
-                        // Player-Player, or NPC-Player (where d1 is the actor)
-                        if (!(d1.type === "player" && d2.type === "player")) {
-                            if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
-                                let damageToDeal = d1.attackDamage;
-                                if (d1.kind === 'Barbarian') { // If d1 (acting disc) is a Barbarian
-                                    const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
-                                    if (d1.rageWasUsedThisThrow) {
-                                        damageToDeal = 2 + bonusDamage;
-                                    } else {
-                                        damageToDeal = d1.attackDamage + bonusDamage;
-                                    }
-                                }
-                                d2.takeHit(damageToDeal, d1);
-                                d1.hasCausedDamage = true;
-
-                                // If d2 is a Wizard/Necromancer, their counter-attack might have killed the NPC attacker (d1)
-                                if (d1.type === 'NPC' && d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
-                                    if (d2.kind === 'Wizard') {
-                                        this.wizardController.manaEarnedThisTurn += 1;
-                                    } else if (d2.kind === 'Necromancer') {
-                                        this.necromancerController.manaEarnedThisTurn += 1;
-                                    }
-                                    this.npcsKilledForRageCharge.add(d1.discName);
-                                    this.barbarianController.updateRageButtonVisibility();
-                                    this.wizardController.updateActionButtons();
-                                    this.necromancerController.updateActionButtons();
-                                }
-                            }
-                        }
-                    }
-                }
-                // Case 2: d2 is the current acting disc
-                else if (this.thrownDisc !== null && d2 === this.currentDisc) {
-                    if (d2.type === "player" && d1.type === "NPC") {
-                        if (d2.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName)) {
-                            if (d2.kind === 'Barbarian' && d1.type === 'NPC') {
-                                if (d1.hitPoints > 0 && !d1.dead) {
-                                    this.barbarianController.uniqueNPCHitsThisThrow.add(d1.discName);
-                                }
-                            }
-
-                            let damageToDeal = d2.attackDamage;
-                            if (d2.kind === 'Barbarian') {
-                                const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
-                                if (d2.rageWasUsedThisThrow) {
-                                    damageToDeal = 2 + bonusDamage;
-                                } else {
-                                    damageToDeal = d2.attackDamage + bonusDamage;
-                                }
-                            }
-                            d1.takeHit(damageToDeal, d2);
-                            if (d1.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d1.discName)) {
-                                if (d2.kind === 'Barbarian') {
-                                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
-                                        this.barbarianController.rageCharges++;
-                                    }
-                                    if (d2.rageWasUsedThisThrow) {
-                                        d2.restoreHealth(1);
-                                        this.updateDiscNames();
-                                        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
-                                    }
-                                } else if (d2.kind === 'Wizard') {
-                                    this.wizardController.manaEarnedThisTurn += 2;
-                                } else if (d2.kind === 'Orb') {
-                                    this.wizardController.manaEarnedThisTurn += 1;
-                                } else if (d2.kind === 'Necromancer') {
-                                    this.necromancerController.manaEarnedThisTurn += 2;
-                                }
-                                this.npcsKilledForRageCharge.add(d1.discName);
-                                this.barbarianController.updateRageButtonVisibility();
-                            }
-                            if (!d2.canDoReboundDamage) {
-                                this.playerDamagedNPCsThisThrow.add(d1.discName);
-                            }
-                        }
-                    } else if (!(d2.type === "NPC" && d1.type === "NPC")) {
-                        if (!(d2.type === "player" && d1.type === "player")) {
-                            if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
-                                let damageToDeal = d2.attackDamage;
-                                if (d2.kind === 'Barbarian') {
-                                    const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
-                                    if (d2.rageWasUsedThisThrow) {
-                                        damageToDeal = 2 + bonusDamage;
-                                    } else {
-                                        damageToDeal = d2.attackDamage + bonusDamage;
-                                    }
-                                }
-                                d1.takeHit(damageToDeal, d2);
-                                d2.hasCausedDamage = true;
-
-                                if (d2.type === 'NPC' && d2.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(d2.discName)) {
-                                    if (d1.kind === 'Wizard') {
-                                        this.wizardController.manaEarnedThisTurn += 1;
-                                    } else if (d1.kind === 'Necromancer') {
-                                        this.necromancerController.manaEarnedThisTurn += 1;
-                                    }
-                                    this.npcsKilledForRageCharge.add(d2.discName);
-                                    this.barbarianController.updateRageButtonVisibility();
-                                    this.wizardController.updateActionButtons();
-                                    this.necromancerController.updateActionButtons();
-                                }
-                            }
-                        }
-                    }
-                }
-                // Case 3: NPC-NPC collision (Chain Reaction) when player is the actor
-                else if (this.thrownDisc !== null && d1.type === "NPC" && d2.type === "NPC" && this.currentDisc && this.currentDisc.type === 'player') {
-                    const actor = this.currentDisc;
-                    if (actor.canDoReboundDamage || !this.playerDamagedNPCsThisThrow.has(d1.discName) || !this.playerDamagedNPCsThisThrow.has(d2.discName)) {
-
-                        let damageToDeal = actor.attackDamage;
-
-                        if (actor.kind === 'Barbarian') {
-                            this.barbarianController.uniqueNPCHitsThisThrow.add(d1.discName);
-                            this.barbarianController.uniqueNPCHitsThisThrow.add(d2.discName);
-
-                            const bonusDamage = this.barbarianController.uniqueNPCHitsThisThrow.size;
-                            damageToDeal = actor.rageWasUsedThisThrow ? (2 + bonusDamage) : (actor.attackDamage + bonusDamage);
-                        }
-
-                        d1.takeHit(damageToDeal, actor);
-                        d2.takeHit(damageToDeal, actor);
-
-                        [d1, d2].forEach(npc => {
-                            if (npc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(npc.discName)) {
-                                if (actor.kind === 'Barbarian') {
-                                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
-                                        this.barbarianController.rageCharges++;
-                                    }
-                                    if (actor.rageWasUsedThisThrow) {
-                                        actor.restoreHealth(1);
-                                        this.updateDiscNames();
-                                        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
-                                    }
-                                } else if (actor.kind === 'Wizard') {
-                                    this.wizardController.manaEarnedThisTurn += 2;
-                                } else if (actor.kind === 'Orb') {
-                                    this.wizardController.manaEarnedThisTurn += 1;
-                                } else if (actor.kind === 'Necromancer') {
-                                    this.necromancerController.manaEarnedThisTurn += 2;
-                                }
-                                this.npcsKilledForRageCharge.add(npc.discName);
-                            }
-                        });
-                        this.barbarianController.updateRageButtonVisibility();
-
-                        if (!actor.canDoReboundDamage) {
-                            this.playerDamagedNPCsThisThrow.add(d1.discName);
-                            this.playerDamagedNPCsThisThrow.add(d2.discName);
-                        }
-                    }
-                }
-            }
-          }
-        }
-      }
-    }
 
     // Update door animation (slab lift)
     if (this.level) this.level.update(deltaTime);
@@ -2638,7 +1641,7 @@ _updateWallFade(deltaTime) {
   }
 
   setCameraRotation(direction) {
-    this.cameraRotationDirection = direction;
+    this.cameraController.setCameraRotation(direction);
   }
 
   _applyStartOfTurnLavaDamage(disc) {
@@ -2677,237 +1680,6 @@ _updateWallFade(deltaTime) {
     }
   }
 
-  _generateLavaPools() {
-    if (!this.level || !this.scene) {
-        console.error("Level or scene not initialized. Cannot generate lava pools.");
-        return;
-    }
-    // Remove any existing lava pool meshes and clear the list before regenerating.
-    for (const pool of this.lavaPools) {
-      if (pool.getMesh()) this.scene.remove(pool.getMesh());
-    }
-    this.lavaPools = [];
-    // Hexagonal level: center pit pool + random pools on the flat outer ring.
-    if (this.level.hexRings) {
-      const { LOW_Y, MED_Y, RC_in, RA_in } = this.level.hexRings;
-
-      // Center pit — fills the floor.
-      const centerPool = new LavaPool({
-        centerX:      0,
-        centerZ:      0,
-        baseRadius:   3.8,
-        numVertices:  10,
-        irregularity: 0.15,
-        yPosition:    LOW_Y + 0.05,
-      });
-      if (centerPool.getMesh()) {
-        this.scene.add(centerPool.getMesh());
-        this.lavaPools.push(centerPool);
-      }
-
-      // Random pools on the flat ring (RC_in..RA_in).
-      const POOL_INNER_R = RC_in + 3.0;
-      const POOL_OUTER_R = RA_in - 4.0;
-      const numPools = 2 + Math.floor(Math.random() * 3); // 2–4 pools
-      const poolY    = MED_Y + 0.05;
-      for (let i = 0; i < numPools; i++) {
-        let placed = false;
-        for (let attempt = 0; attempt < 80 && !placed; attempt++) {
-          const angle = Math.random() * Math.PI * 2;
-          const r     = POOL_INNER_R + Math.random() * (POOL_OUTER_R - POOL_INNER_R);
-          const x     = Math.sin(angle) * r;
-          const z     = Math.cos(angle) * r;
-          const radius = 1.5 + Math.random() * 1.5;
-
-          // Check separation from existing pools.
-          let tooClose = false;
-          for (const p of this.lavaPools) {
-            const dx = x - p.centerX;
-            const dz = z - p.centerZ;
-            if (Math.sqrt(dx * dx + dz * dz) < radius + p.baseRadius + 3) {
-              tooClose = true;
-              break;
-            }
-          }
-          if (tooClose) continue;
-
-          const pool = new LavaPool({
-            centerX:      x,
-            centerZ:      z,
-            baseRadius:   radius,
-            numVertices:  8 + Math.floor(Math.random() * 4),
-            irregularity: 0.2 + Math.random() * 0.2,
-            yPosition:    poolY,
-          });
-          if (pool.getMesh()) {
-            this.scene.add(pool.getMesh());
-            this.lavaPools.push(pool);
-          }
-          placed = true;
-        }
-      }
-      return;
-    }
-
-    // Donut level: fill the central void with lava and scatter pools on the ring.
-    if (this.level.donutInnerRadius) {
-      const INNER_R = this.level.donutInnerRadius;
-      const OUTER_R = this.level.circleRadius;
-
-      // Central void fill — large lava pool covering the hole.
-      const centerPool = new LavaPool({
-        centerX: 0, centerZ: 0,
-        baseRadius:   INNER_R - 0.5,
-        numVertices:  16,
-        irregularity: 0.08,
-        yPosition:    0.05,
-      });
-      if (centerPool.getMesh()) {
-        this.scene.add(centerPool.getMesh());
-        this.lavaPools.push(centerPool);
-      }
-
-      // A few small pools scattered on the ring.
-      const numPools = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < numPools; i++) {
-        let placed = false;
-        for (let attempt = 0; attempt < 80 && !placed; attempt++) {
-          const angle  = Math.random() * Math.PI * 2;
-          const r      = (INNER_R + 2.5) + Math.random() * (OUTER_R - INNER_R - 5);
-          const x      = Math.sin(angle) * r;
-          const z      = Math.cos(angle) * r;
-          const radius = 1.5 + Math.random() * 1.5;
-          let tooClose = false;
-          for (const p of this.lavaPools) {
-            const dx = x - p.centerX;
-            const dz = z - p.centerZ;
-            if (Math.sqrt(dx * dx + dz * dz) < radius + p.baseRadius + 3) { tooClose = true; break; }
-          }
-          if (tooClose) continue;
-          const pool = new LavaPool({
-            centerX: x, centerZ: z, baseRadius: radius,
-            numVertices:  8 + Math.floor(Math.random() * 4),
-            irregularity: 0.2 + Math.random() * 0.2,
-            yPosition:    0.05,
-          });
-          if (pool.getMesh()) { this.scene.add(pool.getMesh()); this.lavaPools.push(pool); }
-          placed = true;
-        }
-      }
-      return;
-    }
-
-    // Bullseye level: place a single fixed lava pool at the centre of the inner ring.
-    if (this.level.bullseyeRings) {
-      const lavaPool = new LavaPool({
-        centerX:     0,
-        centerZ:     0,
-        baseRadius:  3.5,
-        numVertices: 12,
-        irregularity: 0.15,
-        yPosition:   0.05,
-      });
-      if (lavaPool.getMesh()) {
-        this.scene.add(lavaPool.getMesh());
-        this.lavaPools.push(lavaPool);
-      }
-      return;
-    }
-
-    // Determine the number of lava pools for this level (randomly 1 or 2 for now)
-    const numLavaPoolsToGenerate = Math.floor(Math.random() * 2) + 1; // Results in 1 or 2
-    const MIN_RADIUS = 2;
-    const MAX_RADIUS = 4;
-    const Y_POSITION = 0.05; // Slightly above ground to prevent z-fighting
-
-    for (let i = 0; i < numLavaPoolsToGenerate; i++) {
-        const placement = this._findValidLavaPoolPlacement(MIN_RADIUS, MAX_RADIUS);
-        if (placement) {
-            const lavaPool = new LavaPool({
-                centerX: placement.x,
-                centerZ: placement.z,
-                baseRadius: placement.radius,
-                numVertices: 12 + Math.floor(Math.random() * 5), // Fewer vertices (12-16) for less complexity
-                irregularity: 0.1 + Math.random() * 0.2, // Lower irregularity (0.1-0.3) for more roundness
-                yPosition: Y_POSITION,
-                // color: 0xff4500 // Default color in LavaPool, or specify here
-            });
-            if (lavaPool.getMesh()) {
-                this.scene.add(lavaPool.getMesh());
-                this.lavaPools.push(lavaPool);
-            }
-        } else {
-            console.warn(`Could not find a valid placement for lava pool ${i + 1} after several attempts.`);
-        }
-    }
-  }
-
-  _findValidLavaPoolPlacement(minRadius, maxRadius) {
-    const MAX_ATTEMPTS = 50;
-    for (let i = 0; i < MAX_ATTEMPTS; i++) {
-        const radius = minRadius + Math.random() * (maxRadius - minRadius);
-        // Ensure pools are not too close to the absolute edges
-        const edgeBuffer = radius + 1; // Pool radius + some extra space
-        const x = (Math.random() - 0.5) * (this.level.fieldWidth - edgeBuffer * 2);
-        const z = (Math.random() - 0.5) * (this.level.fieldDepth - edgeBuffer * 2);
-
-        if (this._isLavaPoolPositionValid(x, z, radius)) {
-            return { x, z, radius };
-        }
-    }
-    return null; // Failed to find a spot
-  }
-
-  _isLavaPoolPositionValid(centerX, centerZ, baseRadius) {
-    // 1. Check points around the pool's circumference and center against fixed obstacles/walls
-    // using a very small radius for the point check itself.
-    const pointsToCheck = [
-        { x: centerX, z: centerZ },
-        { x: centerX + baseRadius, z: centerZ },
-        { x: centerX - baseRadius, z: centerZ },
-        { x: centerX, z: centerZ + baseRadius },
-        { x: centerX, z: centerZ - baseRadius },
-        // Add corner points for better coverage if needed
-        { x: centerX + baseRadius * 0.707, z: centerZ + baseRadius * 0.707 },
-        { x: centerX - baseRadius * 0.707, z: centerZ + baseRadius * 0.707 },
-        { x: centerX + baseRadius * 0.707, z: centerZ - baseRadius * 0.707 },
-        { x: centerX - baseRadius * 0.707, z: centerZ - baseRadius * 0.707 },
-    ];
-
-    for (const point of pointsToCheck) {
-        // Use a tiny radius (0.1) for isPositionValid, as we're checking a point, not a disc of baseRadius.
-        if (!this.isPositionValid(point.x, point.z, 0.1)) {
-            // console.log(`Lava pool point invalid: ${point.x}, ${point.z}`);
-            return false; // Point is inside a wall or obstacle
-        }
-    }
-
-    // 2. Check against existing discs
-    // Discs are initialized before lava pools, so this.discs is populated.
-    for (const disc of this.discs) {
-        if (disc.dead) continue; // Ignore dead discs for placement
-        const distSq = (disc.mesh.position.x - centerX) ** 2 + (disc.mesh.position.z - centerZ) ** 2;
-        // Check if the disc's bounding circle overlaps with the lava pool's bounding circle
-        const minSeparationDist = baseRadius + disc.radius + 0.5; // Added small buffer
-        if (distSq < minSeparationDist ** 2) {
-            // console.log(`Lava pool too close to disc: ${disc.discName}`);
-            return false; // Too close to a disc
-        }
-    }
-
-    // 3. Check against other already placed lava pools
-    for (const existingPool of this.lavaPools) {
-        const distSq = (existingPool.centerX - centerX) ** 2 + (existingPool.centerZ - centerZ) ** 2;
-        // Check if this pool's bounding circle overlaps with an existing pool's bounding circle
-        const minSeparationDist = baseRadius + existingPool.baseRadius + 1.0; // Added buffer
-        if (distSq < minSeparationDist ** 2) {
-            // console.log(`Lava pool too close to another lava pool`);
-            return false; // Too close to another lava pool
-        }
-    }
-
-    return true; // Position is valid
-  }
 }
 
 window.gameController = window.gameController || new GameController();
