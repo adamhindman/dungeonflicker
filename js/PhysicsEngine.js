@@ -28,9 +28,8 @@ export class PhysicsEngine {
       if (disc.moving) {
         disc.updatePosition();
 
-        // Hexagonal level: apply gravity component along ramp slope to velocity.
-        // Discs on ramps are accelerated toward the pit; flat zones have no effect.
-        if (gc.level && gc.level.hexRings) {
+        // Apply gravity along ramp slope (hex and donut levels).
+        if (gc.level && (gc.level.hexRings || gc.level.donutRings)) {
           const slope = gc.level.getTerrainSlopeForce(disc.mesh.position.x, disc.mesh.position.z);
           disc.velocity.x += slope.fx;
           disc.velocity.z += slope.fz;
@@ -79,6 +78,32 @@ export class PhysicsEngine {
             disc.mesh.position.z = obs.z + nz * minDist;
             const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
             if (vDotN < 0) {
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+              if (gc.soundManager && disc.velocity.length() > 0.05) {
+                gc.soundManager.playBounce(disc.mesh.position.clone());
+              }
+            }
+          }
+        }
+
+        // Circular/bullseye/donut level: enforce circular outer boundary.
+        // The polygon wall segments use rotated BoxGeometry; Box3.setFromObject
+        // inflates them into larger AABBs, leaving gaps a fast disc can slip through.
+        // A radial clamp is exact and replaces the per-segment AABB check.
+        if (gc.level && gc.level.circleRadius && !gc.level.hexRings) {
+          const R = gc.level.circleRadius;
+          const dx = disc.mesh.position.x;
+          const dz = disc.mesh.position.z;
+          const r  = Math.sqrt(dx * dx + dz * dz);
+          const maxR = R - disc.radius;
+          if (r > maxR && r > 0.001) {
+            const nx = dx / r;
+            const nz = dz / r;
+            disc.mesh.position.x = nx * maxR;
+            disc.mesh.position.z = nz * maxR;
+            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+            if (vDotN > 0) {
               disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
               disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
               if (gc.soundManager && disc.velocity.length() > 0.05) {
@@ -165,9 +190,8 @@ export class PhysicsEngine {
       }
     }
 
-    // ── Hexagonal level: snap every disc's Y to terrain height ──────────────
-    // Keeps all discs riding the surface regardless of whether they're moving.
-    if (gc.level && gc.level.hexRings) {
+    // ── Snap every disc's Y to terrain height (hex and donut levels) ──────────
+    if (gc.level && (gc.level.hexRings || gc.level.donutRings)) {
       for (const disc of gc.discs) {
         const h = gc.level.getTerrainHeightAt(disc.mesh.position.x, disc.mesh.position.z);
         disc.mesh.position.y = h + disc.basePositionY;

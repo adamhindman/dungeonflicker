@@ -155,6 +155,7 @@ export default class GameController {
     this.controls = this.cameraController.controls;
 
     this.soundManager.init();
+    this.soundManager.whenReady(() => { this.soundManager.startMusic(); });
 
     // Level progression — 1-based counter; shape sequence cycles: rect → circle → hexagon.
     this.currentLevelNumber = 1;
@@ -186,12 +187,14 @@ export default class GameController {
     const material = new THREE.LineBasicMaterial({
       color: 0xffffff,
       linewidth: 2,
+      depthTest: false,
     });
     const vertices = new Float32Array(6); // 2 vertices * 3 coords each
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
     geometry.setDrawRange(0, 2);
     this.throwDirectionLine = new THREE.Line(geometry, material);
+    this.throwDirectionLine.renderOrder = 999;
     this.throwDirectionLine.visible = false;
     this.scene.add(this.throwDirectionLine);
 
@@ -314,16 +317,35 @@ export default class GameController {
   this.necromancerController.updateActionButtons();
   this.necromancerController.updateEndTurnButtonVisibility();
 
-  // Show beam for the first player whose turn it is (delayed 2s to let the scene settle)
   if (this.currentDisc && this.currentDisc.type === 'player') {
     const discAtStart = this.currentDisc;
-    setTimeout(() => {
-      if (this.currentDisc === discAtStart) {
-        this._spawnTurnStartBeam(discAtStart);
-        this._spawnTurnStartRings(discAtStart);
-        if (this.soundManager) this.soundManager.playBuzz(discAtStart.mesh.position.clone());
-      }
-    }, 1000);
+    if (!playerStats) {
+      // Play tension immediately (best-effort; may be muted if browser autoplay is blocked)
+      this.soundManager.whenReady(() => {
+        this.soundManager.playTension(discAtStart.mesh.position.clone());
+      });
+      // After 4s: start 3s fade-out of the overlay
+      setTimeout(() => {
+        if (this.uiManager) this.uiManager.dissolveBlackOverlay();
+      }, 4000);
+      // After 7s: overlay gone, beam + buzz signal level start
+      setTimeout(() => {
+        if (this.currentDisc === discAtStart) {
+          this._spawnTurnStartBeam(discAtStart);
+          this._spawnTurnStartRings(discAtStart);
+          if (this.soundManager) this.soundManager.playBuzz(discAtStart.mesh.position.clone());
+        }
+      }, 7000);
+    } else {
+      // Subsequent levels: short delay then beam + buzz
+      setTimeout(() => {
+        if (this.currentDisc === discAtStart) {
+          this._spawnTurnStartBeam(discAtStart);
+          this._spawnTurnStartRings(discAtStart);
+          if (this.soundManager) this.soundManager.playBuzz(discAtStart.mesh.position.clone());
+        }
+      }, 1000);
+    }
   }
 }
 
@@ -348,6 +370,7 @@ export default class GameController {
     if (this.gameOverState.active) {
       return;
     }
+    if (this.soundManager) this.soundManager.notifyUserInteraction();
     this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
@@ -598,7 +621,6 @@ export default class GameController {
         if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
         this.controls.enabled = true;
         this.controlsEnabled = true;
-        this.currentDisc = null;
         return;
       }
 
@@ -614,12 +636,7 @@ export default class GameController {
         if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
         this.controls.enabled = true; // Ensure OrbitControls are re-enabled
         this.controlsEnabled = true; // Reset our custom state flag (camera controls active)
-
-        // If an aiming process was started for this.currentDisc (which might be clickedDisc or another disc like Wizard aiming an Orb)
-        // we should nullify currentDisc to prevent throw, as this click overrides the throw.
-        this.currentDisc = null;
-        // this.pointerDisc is the disc that was clicked. We've handled it.
-        // It will be reset on the next pointer down.
+        // We return immediately, so no throw can happen — no need to null currentDisc.
         return; // Click handled, do not proceed to throw logic
       } else {
         // Clicked on empty space (not on a disc)
@@ -829,6 +846,15 @@ clamp(value, min, max) {
     this.discs.forEach(disc => {
       if (disc.hitPoints <= 0 && !disc.dead) {
         disc.die();
+        // When the Necromancer dies, kill all its animated dead minions
+        if (disc.kind === 'Necromancer' && this.necromancerController) {
+          [...this.necromancerController.animatedDeadDiscs].forEach(minion => {
+            if (!minion.dead) {
+              minion.hitPoints = 0;
+              minion.die();
+            }
+          });
+        }
       }
     });
   }
@@ -912,8 +938,8 @@ clamp(value, min, max) {
 
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
-    // Level sequence cycles: rectangular → circular → bullseye → donut → repeat.
-    const sequence = ['rect', 'circle', 'bullseye', 'donut'];
+    // Level sequence cycles: donut → rectangular → circular → bullseye → repeat.
+    const sequence = ['donut', 'rect', 'circle', 'bullseye'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1042,6 +1068,8 @@ clamp(value, min, max) {
       this.necromancerController.cancelTargetSelection();
       this.necromancerController.hideTargetSelectionPopup();
     }
+
+    if (this.soundManager) this.soundManager.playTension(this.currentDisc.mesh.position.clone());
   }
 
   async restartGame() {
@@ -1434,11 +1462,13 @@ clamp(value, min, max) {
     // If it's now the Wizard's turn, transfer pending mana earned and grant +1 passive mana
     if (this.currentDisc && this.currentDisc.kind === 'Wizard' && !this.currentDisc.dead) {
         this.wizardController.applyEarnedMana();
+        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     }
 
     // If it's now the Necromancer's turn, transfer pending mana earned
     if (this.currentDisc && this.currentDisc.kind === 'Necromancer' && !this.currentDisc.dead) {
         this.necromancerController.applyEarnedMana();
+        if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     }
 
     // Apply lava damage if the disc starts its turn in lava

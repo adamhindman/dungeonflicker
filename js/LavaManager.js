@@ -90,41 +90,38 @@ export class LavaManager {
     }
 
     // ── Donut level ──────────────────────────────────────────────────────────
-    // Fill the central void with lava and scatter pools on the ring.
-    if (gc.level.donutInnerRadius) {
-      const INNER_R = gc.level.donutInnerRadius;
-      const OUTER_R = gc.level.circleRadius;
+    // Center pit pool + 2–3 random pools scattered on the flat ring.
+    if (gc.level.donutRings) {
+      const { PIT_R, PIT_Y, RING_INNER_R, OUTER_R } = gc.level.donutRings;
 
+      // Central pit — fill the pit floor with lava.
       const centerPool = new LavaPool({
         centerX:      0,
         centerZ:      0,
-        baseRadius:   INNER_R - 0.5,
-        numVertices:  16,
+        baseRadius:   PIT_R - 0.3,
+        numVertices:  12,
         irregularity: 0.08,
-        yPosition:    0.05,
+        yPosition:    PIT_Y + 0.05,
       });
       if (centerPool.getMesh()) {
         gc.scene.add(centerPool.getMesh());
         gc.lavaPools.push(centerPool);
       }
 
-      const numPools = 2 + Math.floor(Math.random() * 3);
-      for (let i = 0; i < numPools; i++) {
+      // Ring pools — placed on the flat ring, clear of walls, pillars, and each other.
+      const numRingPools  = 2 + Math.floor(Math.random() * 2); // 2 or 3
+      const RING_POOL_MIN = RING_INNER_R + 3.5;
+      const RING_POOL_MAX = OUTER_R - 5.5;
+      for (let i = 0; i < numRingPools; i++) {
         let placed = false;
         for (let attempt = 0; attempt < 80 && !placed; attempt++) {
           const angle  = Math.random() * Math.PI * 2;
-          const r      = (INNER_R + 2.5) + Math.random() * (OUTER_R - INNER_R - 5);
+          const r      = RING_POOL_MIN + Math.random() * (RING_POOL_MAX - RING_POOL_MIN);
           const x      = Math.sin(angle) * r;
           const z      = Math.cos(angle) * r;
-          const radius = 1.5 + Math.random() * 1.5;
+          const radius = 1.5 + Math.random() * 1.2;
 
-          let tooClose = false;
-          for (const p of gc.lavaPools) {
-            const dx = x - p.centerX;
-            const dz = z - p.centerZ;
-            if (Math.sqrt(dx * dx + dz * dz) < radius + p.baseRadius + 3) { tooClose = true; break; }
-          }
-          if (tooClose) continue;
+          if (!this._isPositionValid(x, z, radius)) continue;
 
           const pool = new LavaPool({
             centerX:      x,
@@ -134,7 +131,10 @@ export class LavaManager {
             irregularity: 0.2 + Math.random() * 0.2,
             yPosition:    0.05,
           });
-          if (pool.getMesh()) { gc.scene.add(pool.getMesh()); gc.lavaPools.push(pool); }
+          if (pool.getMesh()) {
+            gc.scene.add(pool.getMesh());
+            gc.lavaPools.push(pool);
+          }
           placed = true;
         }
       }

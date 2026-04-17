@@ -55,6 +55,16 @@ export default class UIManager {
         this.activeFloatingTexts = [];
     }
 
+    dissolveBlackOverlay(onComplete) {
+        const overlay = document.getElementById('black-overlay');
+        if (!overlay) { if (onComplete) onComplete(); return; }
+        overlay.style.opacity = '0';
+        overlay.addEventListener('transitionend', () => {
+            overlay.style.display = 'none';
+            if (onComplete) onComplete();
+        }, { once: true });
+    }
+
     showFloatingText(disc, amount, isHealing) {
         const textElement = document.createElement("div");
         const displayAmount = Math.abs(amount);

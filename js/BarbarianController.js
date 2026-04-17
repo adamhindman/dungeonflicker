@@ -69,6 +69,9 @@ export class BarbarianController {
       playerDisc.rageIsActiveForNextThrow = true;
       this.rageCharges--;
       playerDisc.setSpotlightIntensity(true);
+      if (this.gc.soundManager) {
+        this.gc.soundManager.playRage(playerDisc.mesh.position.clone());
+      }
     }
     this.updateRageButtonVisibility();
   }

@@ -51,6 +51,7 @@ export class DiscSpawner {
 
     const isHexLevel      = !!(gc.level && gc.level.hexRings);
     const isBullseyeLevel = !!(gc.level && gc.level.bullseyeRings);
+    const isDonutLevel    = !!(gc.level && gc.level.donutRings);
 
     // ── Position-generation helpers ─────────────────────────────────────────
 
@@ -99,6 +100,29 @@ export class DiscSpawner {
       return null;
     };
 
+    // Donut level: place discs on the flat ring (r RING_INNER_R → OUTER_R with margin).
+    const generateDonutRingPosition = (discRadius, existingPositions, minDistance = 4) => {
+      const { RING_INNER_R, OUTER_R } = gc.level.donutRings;
+      const innerR = RING_INNER_R + 1.5;
+      const outerR = OUTER_R - 2.5;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r     = innerR + Math.random() * (outerR - innerR);
+        const x     = Math.sin(angle) * r;
+        const z     = Math.cos(angle) * r;
+        if (!gc.isPositionValid(x, z, discRadius)) continue;
+        let tooClose = false;
+        for (const pos of existingPositions) {
+          if (Math.sqrt((x - pos.x) ** 2 + (z - pos.z) ** 2) < minDistance) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (!tooClose) return { x, z };
+      }
+      return null;
+    };
+
     // Bullseye level: place NPCs on a specific concentric ring.
     // innerR / outerR are the ring boundaries; a small margin keeps them clear of
     // ring edges and column obstacles.
@@ -123,33 +147,33 @@ export class DiscSpawner {
 
     // ── PC start positions ───────────────────────────────────────────────────
     // Bullseye: near the inner-ring edge (r ≈ 6.5), 120° apart.
-    // Hex: random positions anywhere on the upper ring (same pool as NPCs).
+    // Hex / Donut: random positions on the outer ring (same pool as NPCs).
     const BULLSEYE_PC_R = 6.5;
-    const hexPCPositions = [];
-    const _hexPCPos = (radius) => {
-      const pos = isHexLevel
-        ? generateOuterRingPosition(radius, hexPCPositions, 5)
-        : null;
-      if (pos) hexPCPositions.push(pos);
+    const ringPCPositions = [];
+    const _ringPCPos = (radius) => {
+      const pos = isHexLevel   ? generateOuterRingPosition(radius, ringPCPositions, 5)
+                : isDonutLevel ? generateDonutRingPosition(radius, ringPCPositions, 5)
+                : null;
+      if (pos) ringPCPositions.push(pos);
       return pos;
     };
 
-    const _barbPos  = isHexLevel ? _hexPCPos(1.25) : null;
-    const _wizPos   = isHexLevel ? _hexPCPos(0.9)  : null;
-    const _necroPos = isHexLevel ? _hexPCPos(1.0)  : null;
+    const _barbPos  = _ringPCPos(1.25);
+    const _wizPos   = _ringPCPos(0.9);
+    const _necroPos = _ringPCPos(1.0);
 
     const barbStartX  = isBullseyeLevel ? Math.sin(0)                * BULLSEYE_PC_R
-                      : isHexLevel && _barbPos  ? _barbPos.x  : 0;
+                      : _barbPos  ? _barbPos.x  : 0;
     const barbStartZ  = isBullseyeLevel ? Math.cos(0)                * BULLSEYE_PC_R
-                      : isHexLevel && _barbPos  ? _barbPos.z  : 0;
+                      : _barbPos  ? _barbPos.z  : 0;
     const wizStartX   = isBullseyeLevel ? Math.sin( 2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _wizPos   ? _wizPos.x   : 0;
+                      : _wizPos   ? _wizPos.x   : 0;
     const wizStartZ   = isBullseyeLevel ? Math.cos( 2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _wizPos   ? _wizPos.z   : -3;
+                      : _wizPos   ? _wizPos.z   : -3;
     const necroStartX = isBullseyeLevel ? Math.sin(-2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _necroPos ? _necroPos.x : -3;
+                      : _necroPos ? _necroPos.x : -3;
     const necroStartZ = isBullseyeLevel ? Math.cos(-2 * Math.PI / 3) * BULLSEYE_PC_R
-                      : isHexLevel && _necroPos ? _necroPos.z : -3;
+                      : _necroPos ? _necroPos.z : -3;
 
     // ── Player discs ─────────────────────────────────────────────────────────
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
@@ -276,6 +300,8 @@ export class DiscSpawner {
           : generateBullseyeRingPos(16, 22, 1.5, existingPositions);
       } else if (isHexLevel) {
         position = generateOuterRingPosition(1.5, existingPositions);
+      } else if (isDonutLevel) {
+        position = generateDonutRingPosition(1.5, existingPositions);
       } else {
         position = generateRandomPosition(1.5, existingPositions);
       }

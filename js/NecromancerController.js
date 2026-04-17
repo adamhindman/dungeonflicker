@@ -434,6 +434,11 @@ export class NecromancerController {
 
     this.animatedDeadDiscs.push(targetDisc);
     targetDisc.setSpotlightIntensity(false);
+
+    if (this.gc.soundManager) {
+      this.gc.soundManager.playBreath(targetDisc.mesh.position.clone());
+    }
+
     return true;
   }
 
