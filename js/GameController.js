@@ -10,6 +10,7 @@ import { PhysicsEngine }     from './PhysicsEngine.js';
 import { DiscSpawner }       from './DiscSpawner.js';
 import { LavaManager }       from './LavaManager.js';
 import { SoundManager }      from './SoundManager.js';
+import { CharacterSelectScreen } from './CharacterSelectScreen.js';
 
 let instance = null;
 
@@ -28,6 +29,10 @@ export default class GameController {
     this.level = null;
     this.discs = [];
     this.lavaPools = []; // For storing LavaPool instances
+
+    // Which player kinds were selected on the character selection screen.
+    // null means all three (legacy / first-run default before selection).
+    this.selectedPlayerKinds = null;
 
     // Turn-based game state
     this.currentTurnIndex = 0;
@@ -146,7 +151,7 @@ export default class GameController {
     if (disc) this.cameraController.focusCameraOnDisc(disc);
   }
 
-  init() {
+  async init() {
     // Initialize scene and rendering
     this.scene = new THREE.Scene();
 
@@ -216,6 +221,13 @@ export default class GameController {
     } else {
         console.error("Disc info popup element not found in DOM.");
     }
+
+    // ── Character selection ────────────────────────────────────────────────
+    // Show the selection screen while the black overlay is covering the scene.
+    // The screen resolves after the player picks two characters and clicks
+    // "Start Game" (which also triggers audio-context unlock for music).
+    const charSelect = new CharacterSelectScreen();
+    this.selectedPlayerKinds = await charSelect.show();
 
     // UI elements (throwInfoDiv, fpsDisplayElement, GameOverUI) are now managed by UIManager
     // Event listeners (pointerdown, pointermove, pointerup, keydown, keyup) are now managed by InputHandler
@@ -1095,6 +1107,23 @@ clamp(value, min, max) {
     if (this.inputHandler) {
       this.inputHandler.reset();
     }
+
+    // Restore the black overlay so the character selection screen has a dark
+    // backdrop and the dissolve effect works again when the new game starts.
+    const overlay = document.getElementById('black-overlay');
+    if (overlay) {
+      overlay.style.transition = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.display = '';
+      // Force a reflow so the instant-opacity change applies before we re-enable
+      // the CSS transition (prevents the overlay from immediately fading in).
+      void overlay.offsetHeight;
+      overlay.style.transition = '';
+    }
+
+    // Show character selection again; resolves once the player confirms.
+    const charSelect = new CharacterSelectScreen();
+    this.selectedPlayerKinds = await charSelect.show();
 
     // 1. Dispose of old discs
     if (this.discs && this.discs.length > 0) {

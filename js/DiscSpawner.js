@@ -179,7 +179,11 @@ export class DiscSpawner {
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
     // Player Discs are defined before NPCs to ensure they are earlier in the discs array for turn order.
 
-    const barbarian = new Disc(
+    const selectedKinds = new Set(gc.selectedPlayerKinds || ['Barbarian', 'Wizard', 'Necromancer']);
+
+    let barbarian = null;
+    if (selectedKinds.has('Barbarian'))
+    barbarian = new Disc(
       /* radius: */ 1.25, // don't change this
       /* height: */ 0.4,
       /* color: */ 0x0088ff,
@@ -202,13 +206,15 @@ export class DiscSpawner {
       /* description: */ gc.discDescriptions.Barbarian
     );
     const barbStats = playerStats?.find(s => s.kind === "Barbarian");
-    if (barbStats) {
+    if (barbarian && barbStats) {
       barbarian.hitPoints    = barbStats.hitPoints;
       barbarian.maxHitPoints = barbStats.maxHitPoints;
     }
 
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    const wizard = new Disc(
+    let wizard = null;
+    if (selectedKinds.has('Wizard'))
+    wizard = new Disc(
       /* radius: */ .9,
       /* height: */ 0.4,
       /* color: */ 0x00C0C0,
@@ -231,13 +237,15 @@ export class DiscSpawner {
       /* description: */ gc.discDescriptions.Wizard
     );
     const wizStats = playerStats?.find(s => s.kind === "Wizard");
-    if (wizStats) {
+    if (wizard && wizStats) {
       wizard.hitPoints    = wizStats.hitPoints;
       wizard.maxHitPoints = wizStats.maxHitPoints;
     }
 
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    const necromancer = new Disc(
+    let necromancer = null;
+    if (selectedKinds.has('Necromancer'))
+    necromancer = new Disc(
       /* radius: */ .9,
       /* height: */ 0.4,
       /* color: */ 0x6600CC,
@@ -260,16 +268,14 @@ export class DiscSpawner {
       /* description: */ gc.discDescriptions.Necromancer
     );
     const necroStats = playerStats?.find(s => s.kind === "Necromancer");
-    if (necroStats) {
+    if (necromancer && necroStats) {
       necromancer.hitPoints    = necroStats.hitPoints;
       necromancer.maxHitPoints = necroStats.maxHitPoints;
     }
 
-    const existingPositions = [
-      { x: barbarian.mesh.position.x,   z: barbarian.mesh.position.z   },
-      { x: wizard.mesh.position.x,      z: wizard.mesh.position.z      },
-      { x: necromancer.mesh.position.x, z: necromancer.mesh.position.z },
-    ];
+    const existingPositions = [barbarian, wizard, necromancer]
+      .filter(Boolean)
+      .map(d => ({ x: d.mesh.position.x, z: d.mesh.position.z }));
 
     // ── NPC discs ────────────────────────────────────────────────────────────
     const baseNpcDefinitions = [
@@ -328,6 +334,6 @@ export class DiscSpawner {
       existingPositions.push({ x: finalX, z: finalZ });
     }
 
-    return [barbarian, wizard, necromancer, ...npcDiscs];
+    return [barbarian, wizard, necromancer].filter(Boolean).concat(npcDiscs);
   }
 }
