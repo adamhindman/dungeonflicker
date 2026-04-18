@@ -41,6 +41,10 @@ export class SoundManager {
     this.buzzBuffer = null;
     this.rageBuffer = null;
     this.tensionBuffer = null;
+    this.doorUnlockBuffer = null;
+    this.stoneSlideBuffer = null;
+    this.wizardRadiusBlastBuffer = null;
+    this.menuOpenBuffer = null;
     this.musicBuffer = null;
     this._musicAudio = null;
     this._musicPending = false;
@@ -67,19 +71,27 @@ export class SoundManager {
     const woodPromises   = WOOD_HIT_FILES.map(f => load(`/sounds/wood/hits/${f}`));
     const bouncePromises = BOUNCE_FILES.map(f => load(`/sounds/bounce/${f}`));
     const breathPromises = BREATH_FILES.map(f => load(`/sounds/breath/${f}`));
-    const buzzPromise    = load('/sounds/buzz/character-highlight.mp3');
-    const ragePromise    = load('/sounds/energy/barbarian rage.mp3');
-    const tensionPromise = load('/sounds/tension/opening sound.mp3');
+    const buzzPromise        = load('/sounds/buzz/character-highlight.mp3');
+    const ragePromise        = load('/sounds/energy/barbarian rage.mp3');
+    const tensionPromise     = load('/sounds/tension/opening sound.mp3');
+    const doorUnlockPromise  = load('/sounds/doors/door-unlocking.mp3');
+    const stoneSlidePromise        = load('/sounds/stone/stone-slide-1.mp3');
+    const wizardRadiusBlastPromise = load('/sounds/energy/wizard radius blast.mp3');
+    const menuOpenPromise          = load('/sounds/menu/menu open.mp3');
 
     // Gameplay sounds load together; music loads independently so a large file
     // doesn't block sfx from becoming ready.
-    Promise.all([Promise.all(woodPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise]).then(([wood, bounce, breath, buzz, rage, tension]) => {
-      this.woodHitBuffers = wood.filter(Boolean);
-      this.bounceBuffers  = bounce.filter(Boolean);
-      this.breathBuffers  = breath.filter(Boolean);
-      this.buzzBuffer     = buzz || null;
-      this.rageBuffer     = rage || null;
-      this.tensionBuffer  = tension || null;
+    Promise.all([Promise.all(woodPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise]).then(([wood, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen]) => {
+      this.woodHitBuffers    = wood.filter(Boolean);
+      this.bounceBuffers     = bounce.filter(Boolean);
+      this.breathBuffers     = breath.filter(Boolean);
+      this.buzzBuffer        = buzz || null;
+      this.rageBuffer        = rage || null;
+      this.tensionBuffer     = tension || null;
+      this.doorUnlockBuffer  = doorUnlock || null;
+      this.stoneSlideBuffer          = stoneSlide || null;
+      this.wizardRadiusBlastBuffer   = wizardRadiusBlast || null;
+      this.menuOpenBuffer            = menuOpen || null;
       this._loaded = true;
       this._onReadyCallbacks.forEach(fn => fn());
       this._onReadyCallbacks = [];
@@ -172,6 +184,73 @@ export class SoundManager {
 
     const sound = new THREE.PositionalAudio(this.listener);
     sound.setBuffer(this.buzzBuffer);
+    sound.setRefDistance(20);
+    sound.setVolume(1.0);
+    obj.add(sound);
+
+    sound.play();
+    sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playDoorUnlock(position) {
+    if (!this._loaded || !this.doorUnlockBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const obj = new THREE.Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+
+    const sound = new THREE.PositionalAudio(this.listener);
+    sound.setBuffer(this.doorUnlockBuffer);
+    sound.setRefDistance(20);
+    sound.setVolume(1.0);
+    obj.add(sound);
+
+    sound.play();
+    sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playStoneSlide(position) {
+    if (!this._loaded || !this.stoneSlideBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const obj = new THREE.Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+
+    const sound = new THREE.PositionalAudio(this.listener);
+    sound.setBuffer(this.stoneSlideBuffer);
+    sound.setRefDistance(20);
+    sound.setVolume(1.0);
+    obj.add(sound);
+
+    sound.play();
+    sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playMenuOpen() {
+    if (!this._loaded || !this.menuOpenBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+    const sound = new THREE.Audio(this.listener);
+    sound.setBuffer(this.menuOpenBuffer);
+    sound.setVolume(1.0);
+    sound.play();
+  }
+
+  playWizardRadiusBlast(position) {
+    if (!this._loaded || !this.wizardRadiusBlastBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const obj = new THREE.Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+
+    const sound = new THREE.PositionalAudio(this.listener);
+    sound.setBuffer(this.wizardRadiusBlastBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
     obj.add(sound);

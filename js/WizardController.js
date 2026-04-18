@@ -44,7 +44,7 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'summon-orbs-button';
-      button.textContent = '[1] Summon Orb';
+      button.innerHTML = '<kbd>1</kbd> Summon Orb';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -57,7 +57,7 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'summon-healing-orbs-button';
-      button.textContent = '[2] Summon Healing Orb';
+      button.innerHTML = '<kbd>2</kbd> Summon Healing Orb';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -70,7 +70,7 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'radius-blast-button';
-      button.textContent = '[3] Radius Blast (2 Mana)';
+      button.innerHTML = '<kbd>3</kbd> Radius Blast (2 Mana)';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -83,7 +83,7 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'wizard-end-turn-button';
-      button.textContent = '[Space] End Turn';
+      button.innerHTML = '<kbd>Space</kbd> End Turn';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -316,6 +316,7 @@ export class WizardController {
   castRadiusBlast(wizardDisc) {
     if (!wizardDisc || wizardDisc.dead || this.mana < 2) return;
     this.mana -= 2;
+    this.gc.soundManager.playWizardRadiusBlast(wizardDisc.mesh.position);
 
     const BLAST_RADIUS = 8;
     const BLAST_FORCE = 3.5;

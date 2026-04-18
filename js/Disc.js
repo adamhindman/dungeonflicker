@@ -229,6 +229,7 @@ export default class Disc {
     // Update animated dead ring position to follow disc
     if (this.animatedDeadRing) {
       this.animatedDeadRing.position.x = this.mesh.position.x;
+      this.animatedDeadRing.position.y = this.mesh.position.y + 0.06;
       this.animatedDeadRing.position.z = this.mesh.position.z;
     }
   }
@@ -377,9 +378,9 @@ export default class Disc {
 
   // Reduce hit points by the specified damage amount
   takeHit(damageAmount = 1, attacker = null) {
-    // Orb defense logic for Wizard
-    if (this.kind === 'Wizard' && this.gameController) {
-      const absorbingOrb = this.gameController.wizardOrbs.find(orb => orb && orb.hitPoints > 0 && !orb.dead);
+    // Orb defense logic for Wizard (only absorbs physical hits from an attacker disc, not environmental damage)
+    if (this.kind === 'Wizard' && this.gameController && attacker !== null) {
+      const absorbingOrb = this.gameController.wizardController.orbs.find(orb => orb && orb.hitPoints > 0 && !orb.dead);
       if (absorbingOrb) {
         // If an NPC hit the Wizard, the orb deals its damage back to the NPC
         if (attacker && attacker.type === 'NPC') {
@@ -500,7 +501,7 @@ export default class Disc {
     });
     this.animatedDeadRing = new THREE.Mesh(geometry, material);
     this.animatedDeadRing.rotation.x = Math.PI / 2;
-    this.animatedDeadRing.position.set(this.mesh.position.x, 0.06, this.mesh.position.z);
+    this.animatedDeadRing.position.set(this.mesh.position.x, this.mesh.position.y + 0.06, this.mesh.position.z);
     this.scene.add(this.animatedDeadRing);
   }
 

@@ -131,6 +131,11 @@ export default class InputHandler {
                     this.gameController.recenterCamera();
                 }
                 break;
+            case 'c':
+                if (this.gameController.uiManager) {
+                    this.gameController.uiManager.toggleCameraControlsMenu();
+                }
+                break;
             case ',':
             case '<':
                 if (this.gameController.focusPrevAnimatedDead) {

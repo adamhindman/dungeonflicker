@@ -30,7 +30,7 @@ export class BarbarianController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'barbarian-end-turn-button';
-      button.textContent = '[Space] End Turn';
+      button.innerHTML = '<kbd>Space</kbd> End Turn';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';

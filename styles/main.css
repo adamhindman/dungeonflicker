@@ -130,6 +130,19 @@ body {
         border-radius: 5px;
         color: white;
     }
+    button kbd {
+        display: inline-block;
+        padding: 1px 6px;
+        font-family: inherit;
+        font-size: 0.85em;
+        font-weight: bold;
+        color: #1a2e3b;
+        background-color: #e0e0e0;
+        border: 1px solid #aaa;
+        border-bottom: 2px solid #888;
+        border-radius: 4px;
+        margin-right: 4px;
+    }
     #action-buttons-container{
         display: flex;
         flex-direction: row;
@@ -139,6 +152,20 @@ body {
         margin-left: 10px;
         background-color: red !important;
     }
+}
+
+button kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 0.85em;
+    font-weight: bold;
+    color: #1a2e3b;
+    background-color: #e0e0e0;
+    border: 1px solid #aaa;
+    border-bottom: 2px solid #888;
+    border-radius: 4px;
+    margin-right: 4px;
 }
 
 .element-hidden {

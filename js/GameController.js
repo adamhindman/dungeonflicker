@@ -61,6 +61,10 @@ export default class GameController {
     this._prevLineStart = null;
     this._prevLineEnd = null;
 
+    // Ring-step animation state: tracks each disc's starting position so animate()
+    // can orbit them explicitly instead of using Three.js parent-child attachment.
+    this._ringStepDiscData = null;
+
     // Game state flags
     this.waitingForDiscToStop = false;
     this.playerDamagedNPCsThisThrow = new Set();
@@ -178,6 +182,7 @@ export default class GameController {
 
     // Instantiate UIManager
     this.uiManager = new UIManager(this.restartGame.bind(this), this.recenterCamera.bind(this), this.focusCameraOnDisc.bind(this));
+    this.uiManager._menuSoundCallback = () => this.soundManager.playMenuOpen();
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
       console.error("GameController: Action buttons container not found from UIManager.");
@@ -195,6 +200,7 @@ export default class GameController {
     geometry.setDrawRange(0, 2);
     this.throwDirectionLine = new THREE.Line(geometry, material);
     this.throwDirectionLine.renderOrder = 999;
+    this.throwDirectionLine.frustumCulled = false;
     this.throwDirectionLine.visible = false;
     this.scene.add(this.throwDirectionLine);
 
@@ -692,6 +698,10 @@ export default class GameController {
       return;
     }
 
+    if (this.level && this.level.ringsAnimating) {
+      return;
+    }
+
     // Perform throw action if a currentDisc is set and aiming was presumably active
     // this.currentDisc is set by handlePointerDownInteraction based on game rules
     if (this.currentDisc) {
@@ -914,7 +924,14 @@ clamp(value, min, max) {
         }
 
         if (this.level) {
-          this.level.openDoor();
+          setTimeout(() => {
+            if (this.soundManager) {
+              const dc = this.level._doorOpeningCenter;
+              const pos = dc ? new THREE.Vector3(dc.x, 0, dc.z) : new THREE.Vector3();
+              this.soundManager.playDoorUnlock(pos);
+            }
+            this.level.openDoor();
+          }, 1500);
         }
       }
     }
@@ -938,8 +955,8 @@ clamp(value, min, max) {
 
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
-    // Level sequence cycles: donut → rectangular → circular → bullseye → repeat.
-    const sequence = ['donut', 'rect', 'circle', 'bullseye'];
+    // Level sequence cycles: bullseye → donut → rectangular → circular → repeat.
+    const sequence = ['bullseye', 'donut', 'rect', 'circle'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -973,6 +990,7 @@ clamp(value, min, max) {
     this.lavaPools = [];
     this._clearTurnStartBeams();
     this._clearTurnStartRings();
+    this._ringStepDiscData = null;
 
     // Unload current level
     if (this.level) {
@@ -1099,6 +1117,7 @@ clamp(value, min, max) {
     this.lavaPools = [];
     this._clearTurnStartBeams();
     this._clearTurnStartRings();
+    this._ringStepDiscData = null;
 
     // 2. Unload the current level
     if (this.level) {
@@ -1272,8 +1291,64 @@ clamp(value, min, max) {
     if (physicsExited) return;
 
 
-    // Update door animation (slab lift)
+    // Update door animation (slab lift) and bullseye ring step animation
     if (this.level) this.level.update(deltaTime);
+
+    // Orbit discs with their rings during the ring-step animation.
+    // Positions are computed from the ring group's actual rotation delta each frame
+    // so the disc tracks the floor exactly without any Three.js reparenting.
+    if (this._ringStepDiscData) {
+      for (let i = this._ringStepDiscData.length - 1; i >= 0; i--) {
+        const entry = this._ringStepDiscData[i];
+        const { disc, startX, startZ, startRotY, ring } = entry;
+        if (!disc.mesh) continue;
+        const delta = ring.group.rotation.y - startRotY;
+        const cos = Math.cos(delta);
+        const sin = Math.sin(delta);
+        disc.mesh.position.x = startX * cos - startZ * sin;
+        disc.mesh.position.z = startX * sin + startZ * cos;
+        if (disc.spotlight) {
+          disc.spotlight.position.x = disc.mesh.position.x;
+          disc.spotlight.position.z = disc.mesh.position.z;
+        }
+        if (disc.animatedDeadRing) {
+          disc.animatedDeadRing.position.x = disc.mesh.position.x;
+          disc.animatedDeadRing.position.z = disc.mesh.position.z;
+        }
+
+        // Check pillar collisions — columns move with the rings so their obsRef
+        // positions are already updated by Level.update() this frame.
+        if (this.level) {
+          for (const obs of (this.level.obstacles || [])) {
+            if (obs.type !== 'pillar') continue;
+            const ox = disc.mesh.position.x - obs.x;
+            const oz = disc.mesh.position.z - obs.z;
+            const dist = Math.sqrt(ox * ox + oz * oz);
+            const minDist = disc.radius + obs.width / 2;
+            if (dist < minDist && dist > 0.001) {
+              // Push disc to the surface of the column
+              const nx = ox / dist;
+              const nz = oz / dist;
+              disc.mesh.position.x = obs.x + nx * minDist;
+              disc.mesh.position.z = obs.z + nz * minDist;
+              if (disc.spotlight) {
+                disc.spotlight.position.x = disc.mesh.position.x;
+                disc.spotlight.position.z = disc.mesh.position.z;
+              }
+              if (disc.animatedDeadRing) {
+                disc.animatedDeadRing.position.x = disc.mesh.position.x;
+                disc.animatedDeadRing.position.z = disc.mesh.position.z;
+              }
+              // Knock the disc free of the ring orbit so physics takes over
+              disc.velocity.set(nx * 0.25, 0, nz * 0.25);
+              disc.moving = true;
+              this._ringStepDiscData.splice(i, 1);
+              break;
+            }
+          }
+        }
+      }
+    }
 
     // Update and animate lava pools
     if (this.lavaPools && this.lavaPools.length > 0) {
@@ -1385,6 +1460,7 @@ clamp(value, min, max) {
     if (this.checkGameOverConditions()) {
       return;
     }
+    const previousTurnIndex = this.currentTurnIndex;
     this.wizardController.onTurnEnd();
     this.necromancerController.onTurnEnd(); // also calls cancelTargetSelection internally
     this.barbarianController.onTurnEnd();
@@ -1451,6 +1527,45 @@ clamp(value, min, max) {
                 return; // Exit, game over should have caught this.
             }
         }
+    }
+
+    // Step rings once per full round: when the turn order is about to wrap back
+    // to the first alive disc, every disc has had a turn this round.
+    const firstAliveIndex = this.discs.findIndex(d =>
+      !d.dead && (d.type === 'player' || d.type === 'NPC') &&
+      d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead'
+    );
+    if (this.level && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
+      const ringData = this.level.stepRings();
+      if (ringData) {
+        this.soundManager.playStoneSlide(new THREE.Vector3(0, 0, 0));
+        const { RING_R1, RING_R2 } = ringData;
+        const { inner, middle, outer } = this.level.bullseyeRings;
+
+        // Record each disc's world-space starting position and its ring group.
+        // animate() will rotate positions explicitly each frame — no reparenting needed.
+        this._ringStepDiscData = this.discs
+          .filter(d => d.mesh)
+          .map(disc => {
+            const x = disc.mesh.position.x;
+            const z = disc.mesh.position.z;
+            const r = Math.sqrt(x * x + z * z);
+            const ring = r < RING_R1 ? inner : r < RING_R2 ? middle : outer;
+            return { disc, startX: x, startZ: z, startRotY: ring.group.rotation.y, ring };
+          });
+
+        // Wait for the animation to finish before the next round starts.
+        await new Promise(resolve => {
+          const poll = setInterval(() => {
+            if (!this.level.ringsAnimating) {
+              clearInterval(poll);
+              resolve();
+            }
+          }, 50);
+        });
+
+        this._ringStepDiscData = null;
+      }
     }
 
     // Reset hasThrown for new currentDisc so it can be thrown

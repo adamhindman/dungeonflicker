@@ -109,8 +109,13 @@ export default class Level {
   }
 
   getAllWalls() {
-    // Return all wall meshes including internal walls
-    const walls = Object.values(this.walls).filter((wall) => wall !== undefined);
+    // Return all wall meshes including internal walls.
+    // For the bullseye level, skip polygon outer walls (poly_*) — their rotated
+    // BoxGeometry produces inflated AABBs that create phantom collisions.  The
+    // circular radial clamp in PhysicsEngine is the authoritative outer boundary.
+    const walls = Object.entries(this.walls)
+      .filter(([key, wall]) => wall !== undefined && !(this.bullseyeRings && key.startsWith('poly_')))
+      .map(([, wall]) => wall);
     // Include the door slab for collision while the door is closed
     if (this.doorSlab && !this.doorIsOpen) {
       walls.push(this.doorSlab);
@@ -852,9 +857,22 @@ export default class Level {
     innerFloor.receiveShadow = true;
     innerGroup.add(innerFloor);
 
+    const makeMidFloorMat = (outerR) => {
+      const tex = this.textureLoader.load("images/tile-stone-red-1.png");
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set((outerR * 2) / 6, (outerR * 2) / 6);
+      return new THREE.MeshStandardMaterial({
+        map:       tex,
+        roughness: 0.6,
+        metalness: 0.2,
+        side:      THREE.DoubleSide,
+      });
+    };
+
     const midFloor = new THREE.Mesh(
       new THREE.RingGeometry(RING_R1, RING_R2, 64),
-      makeFloorMat(RING_R2)     // bounding box = 2*RING_R2
+      makeMidFloorMat(RING_R2)
     );
     midFloor.rotation.x = -Math.PI / 2;
     midFloor.receiveShadow = true;
@@ -899,7 +917,6 @@ export default class Level {
     buildColumns(middleGroup, N_COL_MID, COL_R_MID, middleColData);
 
     const outerColData = [];
-    buildColumns(outerGroup, N_COL_OUT, COL_R_OUT, outerColData);
 
     // ── Outer polygon wall with door on the north face ───────────────────────
     const sideLen   = 2 * OUTER_R * Math.tan(Math.PI / N_WALL);
@@ -1009,6 +1026,8 @@ export default class Level {
 
     // ── Store ring data for update() ─────────────────────────────────────────
     this.bullseyeRings = {
+      RING_R1,
+      RING_R2,
       inner:  { group: innerGroup,  rotDir: -1, speed: ROT_SPEED_INNER,  cols: [] },
       middle: { group: middleGroup, rotDir: +1, speed: ROT_SPEED_MIDDLE, cols: middleColData },
       outer:  { group: outerGroup,  rotDir: -1, speed: ROT_SPEED_OUTER,  cols: outerColData },
@@ -1676,6 +1695,42 @@ export default class Level {
    * Triggers the slab-lift animation and activates doorway glow effects.
    * Call this when the room is cleared.
    */
+  /**
+   * Advance each bullseye ring by a fixed angle step (called once per turn).
+   * Each ring rotates ~30° per turn; inner/outer go CW, middle goes CCW.
+   */
+  /** True while the per-round ring step animation is playing. */
+  get ringsAnimating() {
+    return !!(this._ringAnim && !this._ringAnim.done);
+  }
+
+  /**
+   * Begin a smooth 30° step of each bullseye ring (called once per full round).
+   * Rings animate over RING_ANIM_DURATION seconds; discs should be attached to
+   * their ring groups by the caller so they orbit naturally.
+   * Returns ring boundary radii so the caller can determine which group each disc belongs to.
+   */
+  stepRings() {
+    if (!this.bullseyeRings) return null;
+    const STEP = Math.PI / 6; // 30 degrees per round
+    const RING_ANIM_DURATION = 2.23; // seconds — matches stone-slide-1.mp3 duration
+    const { inner, middle, outer, RING_R1, RING_R2 } = this.bullseyeRings;
+
+    this._ringAnim = {
+      innerStart:  inner.group.rotation.y,
+      middleStart: middle.group.rotation.y,
+      outerStart:  outer.group.rotation.y,
+      innerStep:   inner.rotDir  * STEP,
+      middleStep:  middle.rotDir * STEP,
+      outerStep:   outer.rotDir  * STEP,
+      duration:    RING_ANIM_DURATION,
+      elapsed:     0,
+      done:        false,
+    };
+
+    return { RING_R1, RING_R2 };
+  }
+
   openDoor() {
     if (this.doorIsOpen || this._doorAnimating || !this.doorSlab) return;
     this._doorAnimating = true;
@@ -1709,23 +1764,33 @@ export default class Level {
    * Called each frame by GameController.
    */
   update(deltaTime) {
-    // ── Bullseye ring rotation ────────────────────────────────────────────────
-    if (this.bullseyeRings) {
-      const { inner, middle, outer } = this.bullseyeRings;
-      inner.group.rotation.y  += inner.rotDir  * inner.speed  * deltaTime;
-      middle.group.rotation.y += middle.rotDir * middle.speed * deltaTime;
-      outer.group.rotation.y  += outer.rotDir  * outer.speed  * deltaTime;
+    // ── Bullseye ring step animation ─────────────────────────────────────────
+    if (this.bullseyeRings && this._ringAnim && !this._ringAnim.done) {
+      const anim = this._ringAnim;
+      anim.elapsed += deltaTime;
+      const raw = Math.min(anim.elapsed / anim.duration, 1.0);
+      // Ease in-out (quadratic)
+      const ease = raw < 0.5 ? 2 * raw * raw : -1 + (4 - 2 * raw) * raw;
 
-      // Sync obstacle world positions so isPositionValid() and disc collision stay accurate.
+      const { inner, middle, outer } = this.bullseyeRings;
+      inner.group.rotation.y  = anim.innerStart  + anim.innerStep  * ease;
+      middle.group.rotation.y = anim.middleStart + anim.middleStep * ease;
+      outer.group.rotation.y  = anim.outerStart  + anim.outerStep  * ease;
+
+      // Sync column obstacle world positions every animation frame.
       for (const col of middle.cols) {
-        const angle    = col.baseAngle + middle.group.rotation.y;
-        col.obsRef.x   = Math.sin(angle) * col.r;
-        col.obsRef.z   = Math.cos(angle) * col.r;
+        const angle  = col.baseAngle + middle.group.rotation.y;
+        col.obsRef.x = Math.sin(angle) * col.r;
+        col.obsRef.z = Math.cos(angle) * col.r;
       }
       for (const col of outer.cols) {
-        const angle    = col.baseAngle + outer.group.rotation.y;
-        col.obsRef.x   = Math.sin(angle) * col.r;
-        col.obsRef.z   = Math.cos(angle) * col.r;
+        const angle  = col.baseAngle + outer.group.rotation.y;
+        col.obsRef.x = Math.sin(angle) * col.r;
+        col.obsRef.z = Math.cos(angle) * col.r;
+      }
+
+      if (raw >= 1.0) {
+        anim.done = true;
       }
     }
 

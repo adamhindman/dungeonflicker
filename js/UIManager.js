@@ -34,10 +34,11 @@ export default class UIManager {
         this.gameOverMessageContainer = null;
         this.gameOverMessageTextElement = null;
         this.playAgainButton = null; // Store the button reference
-        this.recenterButton = null;
+        this.cameraControlsButton = null;
+        this.cameraControlsMenu = null;
 
         this._createGameOverUI(restartGameCallback);
-        this._createRecenterButton(recenterCameraCallback);
+        this._createCameraControlsButton(recenterCameraCallback);
 
         this.floatingTextContainer = document.createElement("div");
         this.floatingTextContainer.id = "floating-text-container";
@@ -216,34 +217,50 @@ export default class UIManager {
         document.body.appendChild(this.gameOverMessageContainer);
     }
 
-    _createRecenterButton(recenterCameraCallback) {
-        let button = document.getElementById('recenter-button');
-        if (!button) {
-            button = document.createElement('button');
-            button.id = 'recenter-button';
-            button.textContent = '[R] Recenter';
-            Object.assign(button.style, {
-                position: 'fixed',
-                bottom: '20px',
-                right: '20px',
-                zIndex: '1001',
-                pointerEvents: 'auto',
-                padding: '10px 20px',
-                fontSize: '16px',
-                backgroundColor: 'rgba(32, 64, 122, 0.9)',
-                border: 'none',
-                borderRadius: '5px',
-                color: 'white',
-                cursor: 'pointer'
-            });
-            document.body.appendChild(button);
-        }
+    _createCameraControlsButton(recenterCameraCallback) {
+        const wrapper = document.createElement('div');
+        wrapper.id = 'camera-controls-wrapper';
 
-        if (recenterCameraCallback) {
-            button.addEventListener('click', recenterCameraCallback);
-        }
+        const menu = document.createElement('div');
+        menu.id = 'camera-controls-menu';
+        menu.innerHTML = `<ul>
+            <li><kbd>R</kbd> Recenter</li>
+            <li><kbd>Q</kbd>/<kbd>E</kbd> Rotate</li>
+            <li><kbd>A</kbd>/<kbd>D</kbd> Pan</li>
+            <li><kbd>W</kbd>/<kbd>S</kbd> Pan Up/Down</li>
+            <li><kbd>Scroll</kbd> Zoom</li>
+        </ul>`;
 
-        this.recenterButton = button;
+        const button = document.createElement('button');
+        button.id = 'camera-controls-button';
+        button.innerHTML = '<kbd>C</kbd> Camera Controls';
+
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.toggleCameraControlsMenu();
+        });
+
+        document.addEventListener('click', () => {
+            this.closeCameraControlsMenu();
+        });
+
+        wrapper.appendChild(menu);
+        wrapper.appendChild(button);
+        document.body.appendChild(wrapper);
+
+        this.cameraControlsButton = button;
+        this.cameraControlsMenu = menu;
+    }
+
+    toggleCameraControlsMenu() {
+        const open = this.cameraControlsMenu.classList.toggle('open');
+        this.cameraControlsButton.classList.toggle('open', open);
+        if (this._menuSoundCallback) this._menuSoundCallback();
+    }
+
+    closeCameraControlsMenu() {
+        this.cameraControlsMenu.classList.remove('open');
+        this.cameraControlsButton.classList.remove('open');
     }
 
     showGameOver(playerWon) {
@@ -441,7 +458,7 @@ export default class UIManager {
             // Ensure charges and maxCharges are numbers before calling toFixed or similar
             const currentCharges = typeof charges === 'number' ? charges : 0;
             const maximumCharges = typeof maxCharges === 'number' ? maxCharges : 0;
-            this.rageButtonElement.textContent = `[1] Rage (${currentCharges}/${maximumCharges})`;
+            this.rageButtonElement.innerHTML = `<kbd>1</kbd> Rage (${currentCharges}/${maximumCharges})`;
         }
     }
 

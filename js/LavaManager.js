@@ -142,20 +142,8 @@ export class LavaManager {
     }
 
     // ── Bullseye level ───────────────────────────────────────────────────────
-    // Single fixed lava pool at the centre of the inner ring.
+    // No lava pools on the bullseye level.
     if (gc.level.bullseyeRings) {
-      const lavaPool = new LavaPool({
-        centerX:      0,
-        centerZ:      0,
-        baseRadius:   3.5,
-        numVertices:  12,
-        irregularity: 0.15,
-        yPosition:    0.05,
-      });
-      if (lavaPool.getMesh()) {
-        gc.scene.add(lavaPool.getMesh());
-        gc.lavaPools.push(lavaPool);
-      }
       return;
     }
 

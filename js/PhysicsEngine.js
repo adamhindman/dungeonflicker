@@ -143,52 +143,6 @@ export class PhysicsEngine {
       }
     }
 
-    // ── Bullseye level: rotate every disc's world position with its ring ────
-    // This makes the rings act as a conveyor — discs are carried regardless of their own velocity.
-    if (gc.level && gc.level.bullseyeRings) {
-      const { inner, middle, outer } = gc.level.bullseyeRings;
-      for (const disc of gc.discs) {
-        const dx = disc.mesh.position.x;
-        const dz = disc.mesh.position.z;
-        const r  = Math.sqrt(dx * dx + dz * dz);
-        let omega = 0;
-        if (r < 8)       omega = inner.rotDir  * inner.speed;
-        else if (r < 16) omega = middle.rotDir * middle.speed;
-        else if (r < 22) omega = outer.rotDir  * outer.speed;
-        if (omega === 0) continue;
-        const dTheta = omega * deltaTime;
-        const cos = Math.cos(dTheta);
-        const sin = Math.sin(dTheta);
-        // Use Three.js Y-rotation convention: x' = x·cos + z·sin, z' = −x·sin + z·cos
-        disc.mesh.position.x =  dx * cos + dz * sin;
-        disc.mesh.position.z = -dx * sin + dz * cos;
-        // Keep animated-dead ring and spotlight in sync when disc isn't self-moving
-        if (disc.animatedDeadRing) {
-          disc.animatedDeadRing.position.x = disc.mesh.position.x;
-          disc.animatedDeadRing.position.z = disc.mesh.position.z;
-        }
-        if (disc.spotlight) {
-          disc.spotlight.position.x = disc.mesh.position.x;
-          disc.spotlight.position.z = disc.mesh.position.z;
-        }
-        // Keep the throw-direction line anchored to the disc while the ring carries it.
-        if (disc === gc.currentDisc && gc.throwDirectionLine && gc.throwDirectionLine.visible) {
-          const rotateVec = (v) => {
-            const vx = v.x, vz = v.z;
-            v.x =  vx * cos + vz * sin;
-            v.z = -vx * sin + vz * cos;
-          };
-          if (gc._prevLineStart) rotateVec(gc._prevLineStart);
-          if (gc._prevLineEnd)   rotateVec(gc._prevLineEnd);
-          const pos = gc.throwDirectionLine.geometry.attributes.position;
-          if (pos) {
-            pos.setXYZ(0, gc._prevLineStart.x, gc._prevLineStart.y, gc._prevLineStart.z);
-            pos.setXYZ(1, gc._prevLineEnd.x,   gc._prevLineEnd.y,   gc._prevLineEnd.z);
-            pos.needsUpdate = true;
-          }
-        }
-      }
-    }
 
     // ── Snap every disc's Y to terrain height (hex and donut levels) ──────────
     if (gc.level && (gc.level.hexRings || gc.level.donutRings)) {

@@ -65,7 +65,7 @@ export class NecromancerController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'animate-dead-button';
-      button.textContent = '[1] Animate Dead (1💀)';
+      button.innerHTML = '<kbd>1</kbd> Animate Dead (1💀)';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -78,7 +78,7 @@ export class NecromancerController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'raise-dead-button';
-      button.textContent = '[2] Raise Dead (2💀)';
+      button.innerHTML = '<kbd>2</kbd> Raise Dead (2💀)';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -115,7 +115,7 @@ export class NecromancerController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'necromancer-end-turn-button';
-      button.textContent = '[Space] End Turn';
+      button.innerHTML = '<kbd>Space</kbd> End Turn';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
