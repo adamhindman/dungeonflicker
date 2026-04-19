@@ -1441,6 +1441,11 @@ clamp(value, min, max) {
     // Update door animation (slab lift) and bullseye ring step animation
     if (this.level) this.level.update(deltaTime);
 
+    // Update drain life aura animations (throbbing effect)
+    this.discs.forEach(disc => {
+      disc.updateDrainLifeAura(deltaTime);
+    });
+
     // Orbit discs with their rings during the ring-step animation.
     // Positions are computed from the ring group's actual rotation delta each frame
     // so the disc tracks the floor exactly without any Three.js reparenting.

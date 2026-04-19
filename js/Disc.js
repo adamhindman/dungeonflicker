@@ -563,6 +563,11 @@ export default class Disc {
     group.position.set(this.mesh.position.x, 0.05, this.mesh.position.z);
     this.scene.add(group);
     this.drainLifeAura = group;
+
+    // Store ring material and animation state for throbbing effect
+    this.drainLifeAuraRingMaterial = ringMat;
+    this.drainLifeAuraAnimationTime = 0;
+    this.drainLifeAuraAnimationDuration = 2.5; // 2.5 seconds for full throb cycle
   }
 
   hideDrainLifeAura() {
@@ -573,6 +578,26 @@ export default class Disc {
       if (child.material) child.material.dispose();
     });
     this.drainLifeAura = null;
+    this.drainLifeAuraRingMaterial = null;
+    this.drainLifeAuraAnimationTime = 0;
+  }
+
+  updateDrainLifeAura(deltaTime) {
+    if (!this.drainLifeAura || !this.drainLifeAuraRingMaterial) return;
+
+    // Update animation time
+    this.drainLifeAuraAnimationTime += deltaTime;
+    if (this.drainLifeAuraAnimationTime >= this.drainLifeAuraAnimationDuration) {
+      this.drainLifeAuraAnimationTime -= this.drainLifeAuraAnimationDuration;
+    }
+
+    // Calculate animation progress (0 to 1 and back to 0)
+    const progress = this.drainLifeAuraAnimationTime / this.drainLifeAuraAnimationDuration;
+    // Use sine wave for smooth throbbing: darker at 0 and 1, lighter at 0.5
+    const throb = 0.5 - 0.5 * Math.cos(progress * Math.PI * 2);
+
+    // Animate opacity from 0.3 to 0.95 for pronounced effect
+    this.drainLifeAuraRingMaterial.opacity = 0.3 + throb * 0.65;
   }
 
   // Update spotlight with configuration for the given state
