@@ -240,4 +240,136 @@ button kbd {
     opacity: 0.7;
 }
 
+/* ── Camera controls ──────────────────────────────────────────────────────── */
+
+#camera-controls-wrapper {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1010;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0;
+}
+
+#camera-controls-button {
+    padding: 8px 14px;
+    font-size: 14px;
+    background-color: var(--ui-bg-90);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+}
+
+#camera-controls-menu {
+    display: none;
+    background-color: var(--ui-bg-90);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px 6px 0 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    margin-bottom: -1px; /* merge bottom border with button's top border */
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
+#camera-controls-menu.open {
+    display: block;
+}
+
+#camera-controls-menu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* ── First-time-event notification cards ──────────────────────────────────── */
+
+#notification-area {
+    position: fixed;
+    bottom: 70px; /* sits above the camera-controls-button (~50px tall + 20px margin) */
+    right: 20px;
+    z-index: 1050; /* above camera-controls-menu when open */
+    width: 280px;
+}
+
+.notification-card {
+    background-color: var(--ui-bg-90);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    color: white;
+    padding: 14px 16px 12px;
+    font-size: 13px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    padding-bottom: 8px;
+}
+
+.notification-title {
+    font-size: 1em;
+    font-weight: bold;
+}
+
+.notification-dismiss {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+    transition: color 0.15s;
+}
+
+.notification-dismiss:hover {
+    color: white;
+}
+
+.notification-body {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.8);
+    background-color: rgba(0, 0, 0, 0.2);
+    padding: 8px 10px;
+    border-radius: 4px;
+    line-height: 1.45;
+}
+
+.notification-dots {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+    padding-top: 2px;
+}
+
+.notification-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.25);
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.notification-dot:hover {
+    background: rgba(255, 255, 255, 0.55);
+}
+
+.notification-dot.active {
+    background: rgba(255, 255, 255, 0.9);
+}
 

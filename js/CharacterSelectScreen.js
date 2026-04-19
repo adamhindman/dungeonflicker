@@ -21,7 +21,7 @@ const CHARACTERS = [
     summary: 'A nimble spellcaster who bends magic to their will.',
     skills: [
       'Summon Orb (1 Mana): launch a volatile magical projectile.',
-      'Summon Healing Orb (1 Mana): a sphere that heals allies it touches.',
+      'Healing Orb (1 Mana): a sphere that restores 2 HP to allies it touches.',
       'Radius Blast (2 Mana): detonate all orbs in a shockwave.',
       'Earn Mana from kills and clearing rooms.',
     ],
@@ -30,11 +30,12 @@ const CHARACTERS = [
     kind: 'Necromancer',
     name: 'Necromancer',
     image: '/images/necromancer-nobg.png',
-    color: '#6600CC',
+    color: '#9944EE',
     hp: 3,
     summary: 'A dark sorcerer who commands the dead.',
     skills: [
       'Animate Dead (1 Mana): raise a fallen enemy as a minion.',
+      'Drain Life (2 Mana): sap HP from all nearby enemies at turn\'s end.',
       'Raise Dead (2 Mana): revive a fallen ally at half HP.',
       'Earn Mana from kills and clearing rooms.',
     ],
@@ -105,6 +106,7 @@ export class CharacterSelectScreen {
     // Image area
     const imgWrap = document.createElement('div');
     imgWrap.className = 'char-card-image';
+    if (char.kind === 'Necromancer') imgWrap.style.padding = '0.2rem';
     const img = document.createElement('img');
     img.src = char.image;
     img.alt = char.name;

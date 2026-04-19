@@ -51,7 +51,14 @@ export default class Disc {
       angle: Math.PI / 4,
       penumbra: 1.2,
       color: 0xcc66ff // Bright purple — corpse currently under cursor
-    }
+    },
+    drainingLife: {
+      intensity: 80,
+      distance: 25,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0x8833CC // Purple — Necromancer Drain Life is active
+    },
   };
 
   /**
@@ -121,6 +128,8 @@ export default class Disc {
     this.description = description;
     this.relativeOffset = new THREE.Vector3(); // Used for orbs to follow the wizard
     this.healedDiscs = new Set(); // Track discs healed by this disc (e.g., Healing Orb) this throw
+    this.drainLifeActive = false; // Whether Drain Life aura is active (Necromancer only)
+    this.drainLifeAura = null; // Three.js Group for the Drain Life floor aura
 
     // Create the main disc geometry
     const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);
@@ -231,6 +240,11 @@ export default class Disc {
       this.animatedDeadRing.position.x = this.mesh.position.x;
       this.animatedDeadRing.position.y = this.mesh.position.y + 0.06;
       this.animatedDeadRing.position.z = this.mesh.position.z;
+    }
+    // Update drain life aura position to follow disc
+    if (this.drainLifeAura) {
+      this.drainLifeAura.position.x = this.mesh.position.x;
+      this.drainLifeAura.position.z = this.mesh.position.z;
     }
   }
 
@@ -468,6 +482,7 @@ export default class Disc {
       this.mesh.material.transparent = false; // Set transparent to false
     }
     this.hideAnimatedDeadRing();
+    this.hideDrainLifeAura();
     // Update spotlight to dead configuration when disc dies
     this.updateSpotlightConfig('dead');
   }
@@ -483,6 +498,9 @@ export default class Disc {
     } else if (this.kind === "AnimatedDead") {
       this.showAnimatedDeadRing();
       this.updateSpotlightConfig('inactive');
+    } else if (this.kind === "Necromancer" && this.drainLifeActive) {
+      this.hideAnimatedDeadRing();
+      this.updateSpotlightConfig('drainingLife');
     } else if (isActive) {
       this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('active');
@@ -513,6 +531,50 @@ export default class Disc {
     this.animatedDeadRing = null;
   }
 
+  showDrainLifeAura(radius) {
+    if (this.drainLifeAura) return;
+    const group = new THREE.Group();
+
+    // Boundary ring showing the drain radius
+    const ringGeo = new THREE.TorusGeometry(radius, 0.22, 8, 64);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0x8833CC,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    group.add(ring);
+
+    // Semi-transparent fill showing the affected area
+    const fillGeo = new THREE.CircleGeometry(radius, 48);
+    const fillMat = new THREE.MeshBasicMaterial({
+      color: 0x6600AA,
+      transparent: true,
+      opacity: 0.07,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const fill = new THREE.Mesh(fillGeo, fillMat);
+    fill.rotation.x = -Math.PI / 2;
+    group.add(fill);
+
+    group.position.set(this.mesh.position.x, 0.05, this.mesh.position.z);
+    this.scene.add(group);
+    this.drainLifeAura = group;
+  }
+
+  hideDrainLifeAura() {
+    if (!this.drainLifeAura) return;
+    this.scene.remove(this.drainLifeAura);
+    this.drainLifeAura.children.forEach(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) child.material.dispose();
+    });
+    this.drainLifeAura = null;
+  }
+
   // Update spotlight with configuration for the given state
   updateSpotlightConfig(state) {
     const config = Disc.spotlightConfig[state];
@@ -541,6 +603,7 @@ export default class Disc {
   // Clean up disc and its spotlight
   dispose() {
     this.hideAnimatedDeadRing();
+    this.hideDrainLifeAura();
     if (this.scene) {
       this.scene.remove(this.mesh);
       this.scene.remove(this.spotlight);

@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import Disc from './Disc.js';
+import { firstTimeEvents } from './FirstTimeEvents.js';
+import { tooltipManager } from './TooltipManager.js';
 
 export class WizardController {
   constructor(gc) {
@@ -30,6 +32,21 @@ export class WizardController {
     this._setupEndTurnButtonListener();
     this.updateActionButtons();
     this.updateEndTurnButtonVisibility();
+    tooltipManager.register(
+      this.summonOrbsButton,
+      'wizard_orb_summoned',
+      'Spend 1 mana to place a magic orb. Throw it into enemies to deal damage.'
+    );
+    tooltipManager.register(
+      this.summonHealingOrbsButton,
+      'wizard_healing_orb_summoned',
+      'Spend 1 mana to place a healing orb. Throw it into an ally to restore 2 HP.'
+    );
+    tooltipManager.register(
+      this.radiusBlastButton,
+      'wizard_radius_blast_used',
+      'Spend 2 mana to knock back and deal 1 damage to all nearby discs.'
+    );
   }
 
   getDisc() {
@@ -44,6 +61,7 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'summon-orbs-button';
+      button.dataset.shortcut = '1';
       button.innerHTML = '<kbd>1</kbd> Summon Orb';
       this._actionButtonsContainer.appendChild(button);
     }
@@ -57,7 +75,8 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'summon-healing-orbs-button';
-      button.innerHTML = '<kbd>2</kbd> Summon Healing Orb';
+      button.dataset.shortcut = '2';
+      button.innerHTML = '<kbd>2</kbd> Healing Orb';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -70,6 +89,7 @@ export class WizardController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'radius-blast-button';
+      button.dataset.shortcut = '3';
       button.innerHTML = '<kbd>3</kbd> Radius Blast (2 Mana)';
       this._actionButtonsContainer.appendChild(button);
     }
@@ -124,6 +144,7 @@ export class WizardController {
     if (this.mana > 0) {
       const success = this.summonSingleOrb(currentDisc);
       if (success) {
+        firstTimeEvents.track('wizard_orb_summoned');
         this.mana--;
         if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(currentDisc);
       }
@@ -137,6 +158,7 @@ export class WizardController {
     if (this.mana > 0) {
       const success = this.summonHealingOrb(currentDisc);
       if (success) {
+        firstTimeEvents.track('wizard_healing_orb_summoned');
         this.mana--;
         if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(currentDisc);
       }
@@ -148,6 +170,7 @@ export class WizardController {
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (!currentDisc || currentDisc.kind !== 'Wizard' || currentDisc.dead) return;
     if (this.mana >= 2) {
+      firstTimeEvents.track('wizard_radius_blast_used');
       this.castRadiusBlast(currentDisc);
     }
   }

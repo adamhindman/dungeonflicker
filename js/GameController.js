@@ -11,6 +11,8 @@ import { DiscSpawner }       from './DiscSpawner.js';
 import { LavaManager }       from './LavaManager.js';
 import { SoundManager }      from './SoundManager.js';
 import { CharacterSelectScreen } from './CharacterSelectScreen.js';
+import { firstTimeEvents } from './FirstTimeEvents.js';
+import { NotificationManager } from './NotificationManager.js';
 
 let instance = null;
 
@@ -186,8 +188,13 @@ export default class GameController {
     this.pointerDisc = null;
 
     // Instantiate UIManager
-    this.uiManager = new UIManager(this.restartGame.bind(this), this.recenterCamera.bind(this), this.focusCameraOnDisc.bind(this));
+    this.uiManager = new UIManager(this.restartGame.bind(this), this.recenterCamera.bind(this), this.focusCameraOnDisc.bind(this), this.restartLevel.bind(this));
     this.uiManager._menuSoundCallback = () => this.soundManager.playMenuOpen();
+
+    // Notification system — subscribe to first-time events so each newly fired
+    // event automatically queues a notification card in the lower-right corner.
+    this.notificationManager = new NotificationManager();
+    firstTimeEvents.addListener(key => this.notificationManager.push(key));
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
       console.error("GameController: Action buttons container not found from UIManager.");
@@ -296,9 +303,19 @@ export default class GameController {
       this.npcsKilledForRageCharge.clear(); // Reset set of NPCs that granted a charge
     }
 
+    // Track first-ever level load
+    firstTimeEvents.track('level_loaded');
+
     // Disc creation and placement is handled by DiscSpawner
     const spawned = this.discSpawner.spawn(playerStats);
     this.discs.push(...spawned);
+
+    // Track first time each player character kind is used
+    this.discs.forEach(d => {
+      if (d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead') {
+        firstTimeEvents.track(`character_used_${d.kind.toLowerCase()}`);
+      }
+    });
 
     // Immediately mark any player discs that carried over as dead (hitPoints=0 from playerStats)
     // so they appear in the Raise Dead target list without waiting for the animation loop.
@@ -353,6 +370,10 @@ export default class GameController {
           this._spawnTurnStartRings(discAtStart);
           if (this.soundManager) this.soundManager.playBuzz(discAtStart.mesh.position.clone());
         }
+        // After beam completes (~580ms) + 1s grace, reveal queued notifications
+        setTimeout(() => {
+          if (this.notificationManager) this.notificationManager.reveal();
+        }, 1580);
       }, 7000);
     } else {
       // Subsequent levels: short delay then beam + buzz
@@ -408,6 +429,7 @@ export default class GameController {
       const intersects = this.raycaster.intersectObject(disc.mesh, true); // true = recursive, needed for Group-based meshes
       if (intersects.length > 0) {
         this.pointerDisc = disc;
+        firstTimeEvents.track('disc_clicked');
         break;
       }
     }
@@ -804,6 +826,7 @@ export default class GameController {
         this.currentDisc.hasThrown = true;
         this.currentDisc.resetDamageState();
         this.thrownDisc = this.currentDisc;
+        firstTimeEvents.track('throw_made');
         this.playerDamagedNPCsThisThrow.clear();
         this.waitingForDiscToStop = true;
       }
@@ -867,7 +890,21 @@ clamp(value, min, max) {
     }
     this.discs.forEach(disc => {
       if (disc.hitPoints <= 0 && !disc.dead) {
+        // Track first time a real PC disc dies
+        if (disc.type === 'player' &&
+            disc.kind !== 'Orb' && disc.kind !== 'HealingOrb' && disc.kind !== 'AnimatedDead') {
+          firstTimeEvents.track('pc_disc_died');
+        }
+        // Track first time an AnimatedDead disc kills another disc (NPC or player)
+        if (disc.type !== 'player' && this.thrownDisc && this.thrownDisc.kind === 'AnimatedDead') {
+          firstTimeEvents.track('animated_dead_kill');
+        }
         disc.die();
+        // When an AnimatedDead disc dies here (e.g. from lava while stationary),
+        // clean up its state so it reverts to a plain dead NPC and can be re-animated.
+        if (disc.kind === 'AnimatedDead' && this.necromancerController) {
+          this.necromancerController.removeAnimatedDead(disc);
+        }
         // When the Necromancer dies, kill all its animated dead minions
         if (disc.kind === 'Necromancer' && this.necromancerController) {
           [...this.necromancerController.animatedDeadDiscs].forEach(minion => {
@@ -942,6 +979,7 @@ clamp(value, min, max) {
               const pos = dc ? new THREE.Vector3(dc.x, 0, dc.z) : new THREE.Vector3();
               this.soundManager.playDoorUnlock(pos);
             }
+            firstTimeEvents.track('portal_door_opened');
             this.level.openDoor();
           }, 1500);
         }
@@ -1100,6 +1138,86 @@ clamp(value, min, max) {
     }
 
     if (this.soundManager) this.soundManager.playTension(this.currentDisc.mesh.position.clone());
+  }
+
+  async restartLevel() {
+    this.cancelAiming();
+    if (this.inputHandler) {
+      this.inputHandler.reset();
+    }
+
+    if (this.discs && this.discs.length > 0) {
+      this.discs.forEach(disc => disc.dispose());
+    }
+    this.discs = [];
+    this.wizardController.onGameRestart();
+    this.necromancerController.onGameRestart();
+    this.barbarianController.onGameRestart();
+
+    if (this.lavaPools && this.lavaPools.length > 0) {
+      this.lavaPools.forEach(pool => {
+        if (pool.getMesh()) this.scene.remove(pool.getMesh());
+        pool.dispose();
+      });
+    }
+    this.lavaPools = [];
+    this._clearTurnStartBeams();
+    this._clearTurnStartRings();
+    this._ringStepDiscData = null;
+
+    if (this.level) {
+      this.level.unload();
+      // Keep currentLevelNumber as-is — restart the level the player died on.
+      this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
+      this.level.load();
+    } else {
+      return;
+    }
+
+    this.lavaManager.generate();
+    this.initDiscs();
+
+    this.currentTurnIndex = 0;
+    this._currentDisc = null;
+    this.waitingForDiscToStop = false;
+    this.playerDamagedNPCsThisThrow.clear();
+    this.npcsKilledForRageCharge.clear();
+    this.gameOverState.active = false;
+    this.roundWon = false;
+    this.panningKeys = { up: false, down: false, left: false, right: false };
+
+    if (this.discs.length > 0) {
+      let startingDisc = this.discs.find(disc => disc.type === 'player');
+      if (!startingDisc) startingDisc = this.discs[0];
+      this.currentTurnIndex = this.discs.indexOf(startingDisc);
+      if (this.currentTurnIndex === -1) this.currentTurnIndex = 0;
+
+      this.currentDisc = this.discs[this.currentTurnIndex];
+      this.discs[this.currentTurnIndex].hasThrown = false;
+
+      if (this.currentDisc.type === "NPC") {
+        await this.aiThrow(this.currentDisc);
+      }
+    }
+
+    this.updateDiscNames();
+    this._hideDiscInfoPopup();
+    this.barbarianController.updateRageButtonVisibility();
+    this.barbarianController.updateEndTurnButtonVisibility();
+    this.wizardController.updateActionButtons();
+    this.wizardController.updateEndTurnButtonVisibility();
+    this.necromancerController.updateActionButtons();
+    this.necromancerController.updateEndTurnButtonVisibility();
+    this.necromancerController.cancelTargetSelection();
+    this.necromancerController.hideTargetSelectionPopup();
+
+    this.recenterCamera();
+    if (this.controls) {
+      this.controls.enabled = true;
+    }
+    this.controlsEnabled = true;
+    this._prevLineStart = null;
+    this._prevLineEnd = null;
   }
 
   async restartGame() {
@@ -1482,6 +1600,13 @@ clamp(value, min, max) {
   updateDiscNames() {
     if (this.uiManager) {
       this.uiManager.updateDiscNames(this.discs, this.currentDisc);
+    }
+  }
+
+  // Delegate used by Disc.updatePosition when a non-thrown AnimatedDead disc dies and stops.
+  removeAnimatedDead(disc) {
+    if (this.necromancerController) {
+      this.necromancerController.removeAnimatedDead(disc);
     }
   }
 

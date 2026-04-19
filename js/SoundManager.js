@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 
+// Dynamically discover all drain sound MP3s — adding/removing files in
+// public/sounds/drain/ is enough; no code changes needed.
+const DRAIN_SOUND_URLS = Object.values(
+  import.meta.glob('../public/sounds/drain/*.mp3', { eager: true, query: '?url', import: 'default' })
+);
+
 const BREATH_FILES = [
   'magic-elements-vocal-breath-inhale-01.mp3',
   'magic-elements-vocal-breath-inhale-02.mp3',
@@ -40,6 +46,7 @@ export class SoundManager {
     this.breathBuffers = [];
     this.buzzBuffer = null;
     this.rageBuffer = null;
+    this.drainBuffers = [];
     this.tensionBuffer = null;
     this.doorUnlockBuffer = null;
     this.stoneSlideBuffer = null;
@@ -97,6 +104,11 @@ export class SoundManager {
       this._onReadyCallbacks = [];
     });
 
+    // Load drain pool independently — doesn't block gameplay sounds from being ready
+    Promise.all(DRAIN_SOUND_URLS.map(url => load(url))).then(buffers => {
+      this.drainBuffers = buffers.filter(Boolean);
+    });
+
     load('/sounds/atmosphere/background-loop.mp3').then(music => {
       this.musicBuffer = music || null;
     });
@@ -152,6 +164,10 @@ export class SoundManager {
 
     sound.play();
     sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playDrain(position) {
+    this._play(this.drainBuffers, position, 1.0);
   }
 
   playTension(position, onEnded) {

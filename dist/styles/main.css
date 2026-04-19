@@ -141,6 +141,21 @@ body {
         border-radius: .3rem;
         color: white;
     }
+    button kbd {
+        display: inline-block;
+        padding: .1rem .5rem;
+        font-family: inherit;
+        font-size: .85em;
+        font-weight: bold;
+        color: #1a2e3b;
+        background-color: #dde4ea;
+        border: .1rem solid #8a9db5;
+        border-bottom: .2rem solid #5a7a99;
+        border-radius: .3rem;
+        margin-right: .4rem;
+        vertical-align: baseline;
+        line-height: 1.4;
+    }
     #action-buttons-container{
         display: flex;
         flex-direction: row;
@@ -149,6 +164,79 @@ body {
     .hearts-container{
         margin-left: 1rem;
     }
+}
+
+#camera-controls-wrapper {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 1001;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: .6rem;
+}
+
+#camera-controls-menu {
+    display: none;
+    background-color: var(--ui-bg-90);
+    box-shadow: 0 .4rem 1.5rem rgba(0,0,0,0.5);
+    border: .1rem solid rgba(255,255,255,0.1);
+    border-radius: .3rem;
+    padding: .8rem 1.2rem;
+    color: white;
+    font-size: 1.4rem;
+    white-space: nowrap;
+}
+
+#camera-controls-menu.open {
+    display: block;
+}
+
+#camera-controls-menu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+}
+
+#camera-controls-menu li {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+#camera-controls-button {
+    padding: 1rem 2rem;
+    background-color: var(--ui-bg-75);
+    box-shadow: 0 .4rem 1.5rem rgba(0,0,0,0.5);
+    color: white;
+    border: .1rem solid rgba(255,255,255,0.1);
+    border-radius: .3rem;
+    font-size: 1.4rem;
+    cursor: pointer;
+}
+
+#camera-controls-button:hover, #camera-controls-button.open {
+    background-color: var(--ui-bg-100) !important;
+}
+
+button kbd, #camera-controls-menu kbd {
+    display: inline-block;
+    padding: .1rem .5rem;
+    font-family: inherit;
+    font-size: .85em;
+    font-weight: bold;
+    color: #1a2e3b;
+    background-color: #dde4ea;
+    border: .1rem solid #8a9db5;
+    border-bottom: .2rem solid #5a7a99;
+    border-radius: .3rem;
+    margin-right: .4rem;
+    vertical-align: baseline;
+    line-height: 1.4;
 }
 
 .element-hidden {
@@ -242,6 +330,194 @@ body {
 #disc-info-popup.dead .kind {
     opacity: 0.7;
 }
+
+#black-overlay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 1;
+    transition: opacity 3s ease-out;
+}
+
+/* ─── Character Selection Screen ──────────────────────────────────────────── */
+
+#char-select-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.97);
+    z-index: 10000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.6s ease-out;
+    padding: 2rem;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+#char-select-overlay.fading {
+    opacity: 0;
+    pointer-events: none;
+}
+
+.char-select-title {
+    font-size: 3.6rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    margin: 0 0 0.8rem;
+    color: white;
+    text-align: center;
+}
+
+.char-select-subtitle {
+    font-size: 1.6rem;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0 0 3rem;
+    text-align: center;
+}
+
+.char-select-cards {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 3rem;
+}
+
+.char-card {
+    width: 22rem;
+    background: var(--ui-bg-75);
+    border-radius: 0.8rem;
+    border: 0.2rem solid rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s, background-color 0.2s;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+}
+
+.char-card:hover:not(.disabled) {
+    background: var(--ui-bg-90);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
+.char-card.selected {
+    background: var(--ui-bg-90);
+}
+
+.char-card.disabled {
+    opacity: 0.35;
+    cursor: default;
+    pointer-events: none;
+}
+
+.char-card-image {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: rgba(0, 0, 0, 0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    box-sizing: border-box;
+}
+
+.char-card-image img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+.char-card-body {
+    padding: 1.5rem;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.char-card-name {
+    font-size: 2rem;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.char-card-hp {
+    font-size: 1.4rem;
+    color: rgba(255, 255, 255, 0.55);
+    line-height: 1;
+}
+
+.char-card-summary {
+    font-size: 1.3rem;
+    color: rgba(255, 255, 255, 0.75);
+    font-style: italic;
+    line-height: 1.4;
+    border-top: 0.1rem solid rgba(255, 255, 255, 0.1);
+    padding-top: 0.6rem;
+    margin-top: 0.2rem;
+}
+
+.char-card-skills {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.char-card-skills li {
+    font-size: 1.2rem;
+    color: rgba(255, 255, 255, 0.6);
+    line-height: 1.4;
+    padding-left: 1.2rem;
+    position: relative;
+}
+
+.char-card-skills li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: rgba(255, 255, 255, 0.3);
+}
+
+#char-select-start-button {
+    padding: 1.4rem 5rem;
+    font-size: 1.8rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.25);
+    border: 0.2rem solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    cursor: default;
+    transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    font-family: inherit;
+}
+
+#char-select-start-button.active {
+    background: rgba(255, 255, 255, 0.12);
+    color: white;
+    border-color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+}
+
+#char-select-start-button.active:hover {
+    background: rgba(255, 255, 255, 0.22);
+    border-color: white;
+    box-shadow: 0 0 1.5rem rgba(255, 255, 255, 0.15);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────── */
 
 #fps-counter {
     position: fixed;

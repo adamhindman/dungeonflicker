@@ -10,7 +10,9 @@ npm run build    # Build to dist/
 npm run preview  # Preview the production build locally
 ```
 
-No test suite exists. Verify changes by running the dev server and playing the game.
+## Testing
+
+No testing exists. Do not write tests. Do not attempt to run tests.
 
 ## Architecture
 
@@ -69,5 +71,4 @@ Static assets live in `public/` and are served at the root. Disc images are in `
 
 ### Forbidden Actions
 
-- Never attempt to write or run tests. All tests will be administered by the user.
 - Never write Python, Ruby, or Bash scripts to manipulate files. Use the dedicated Edit, Write, Read, Glob, and Grep tools instead.

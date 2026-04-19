@@ -25,5 +25,20 @@
             <button id="rage-button">Rage!</button>
         </div>
         <div id="fps-counter">FPS: --</div>
+
+        <!-- DEV: clear first-time-event metrics from localStorage -->
+        <button id="clear-first-time-events-btn"
+                style="position:fixed;bottom:8px;left:8px;z-index:9999;font-size:10px;
+                       padding:3px 7px;opacity:0.55;cursor:pointer;"
+                title="Clear all first-time event records from localStorage">
+          Clear Metrics
+        </button>
+        <script type="module">
+          import { firstTimeEvents } from '/js/FirstTimeEvents.js';
+          document.getElementById('clear-first-time-events-btn')
+            .addEventListener('click', () => {
+              firstTimeEvents.clear();
+            });
+        </script>
     </body>
 </html>

@@ -1,3 +1,6 @@
+import { firstTimeEvents } from './FirstTimeEvents.js';
+import { tooltipManager } from './TooltipManager.js';
+
 export class BarbarianController {
   constructor(gc) {
     this.gc = gc;
@@ -18,6 +21,11 @@ export class BarbarianController {
     this._setupRageButtonListener();
     this.updateEndTurnButtonVisibility();
     this.updateRageButtonVisibility();
+    tooltipManager.register(
+      this.gc.uiManager && this.gc.uiManager.rageButtonElement,
+      'barbarian_rage_used',
+      'Spend a Rage charge to throw with extra force. Earn charges by hitting enemies.'
+    );
   }
 
   getDisc() {
@@ -69,6 +77,7 @@ export class BarbarianController {
       playerDisc.rageIsActiveForNextThrow = true;
       this.rageCharges--;
       playerDisc.setSpotlightIntensity(true);
+      firstTimeEvents.track('barbarian_rage_used');
       if (this.gc.soundManager) {
         this.gc.soundManager.playRage(playerDisc.mesh.position.clone());
       }

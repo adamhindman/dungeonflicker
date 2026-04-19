@@ -164,13 +164,24 @@ export default class InputHandler {
             case '3':
             case '4':
             case '5': {
-                // Numbered keys = action/spell buttons in visible order (excluding end-turn)
-                const idx = parseInt(key) - 1;
+                // Numbered keys = action/spell buttons.
+                // Prefer a button with a matching data-shortcut attribute (stable regardless of
+                // which other buttons are visible). Fall back to position-based selection for
+                // buttons that don't carry the attribute.
                 const container = document.getElementById('action-buttons-container');
                 if (container) {
-                    const actionBtns = [...container.querySelectorAll('button')]
-                        .filter(b => !b.id.includes('end-turn') && b.style.display !== 'none' && !b.disabled);
-                    if (actionBtns[idx]) actionBtns[idx].click();
+                    const byAttr = container.querySelector(
+                        `button[data-shortcut="${key}"]:not([style*="display: none"]):not([disabled])`
+                    );
+                    if (byAttr) {
+                        byAttr.click();
+                    } else {
+                        const idx = parseInt(key) - 1;
+                        const actionBtns = [...container.querySelectorAll('button')]
+                            .filter(b => !b.id.includes('end-turn') && !b.dataset.shortcut &&
+                                         b.style.display !== 'none' && !b.disabled);
+                        if (actionBtns[idx]) actionBtns[idx].click();
+                    }
                 }
                 break;
             }

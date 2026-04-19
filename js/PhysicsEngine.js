@@ -197,7 +197,7 @@ export class PhysicsEngine {
             const target     = d1.kind === 'HealingOrb' ? d2 : d1;
 
             if (!healingOrb.healedDiscs.has(target)) {
-              target.restoreHealth(1);
+              target.restoreHealth(2);
               healingOrb.healedDiscs.add(target);
               gc.updateDiscNames();
               if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(gc.currentDisc);

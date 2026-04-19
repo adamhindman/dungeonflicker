@@ -1,5 +1,5 @@
 export default class UIManager {
-    constructor(restartGameCallback, recenterCameraCallback, focusCameraOnDiscCallback) {
+    constructor(restartGameCallback, recenterCameraCallback, focusCameraOnDiscCallback, restartLevelCallback) {
         this.throwInfoDiv = document.getElementById("throw-info");
         this.discNamesList = document.getElementById("disc-names-list");
         this.focusCameraOnDiscCallback = focusCameraOnDiscCallback;
@@ -37,7 +37,7 @@ export default class UIManager {
         this.cameraControlsButton = null;
         this.cameraControlsMenu = null;
 
-        this._createGameOverUI(restartGameCallback);
+        this._createGameOverUI(restartGameCallback, restartLevelCallback);
         this._createCameraControlsButton(recenterCameraCallback);
 
         this.floatingTextContainer = document.createElement("div");
@@ -150,7 +150,7 @@ export default class UIManager {
         }
     }
 
-    _createGameOverUI(restartGameCallback) {
+    _createGameOverUI(restartGameCallback, restartLevelCallback) {
         // Create container div
         this.gameOverMessageContainer = document.createElement("div");
         this.gameOverMessageContainer.id = "gameOverMessageContainer";
@@ -214,6 +214,36 @@ export default class UIManager {
         });
 
         this.gameOverMessageContainer.appendChild(this.playAgainButton);
+
+        const restartLevelButton = document.createElement("button");
+        restartLevelButton.textContent = "Restart Level";
+        Object.assign(restartLevelButton.style, {
+            marginTop: "10px",
+            marginLeft: "10px",
+            padding: "10px 20px",
+            fontSize: "1em",
+            color: "white",
+            backgroundColor: "#555",
+            border: "none",
+            borderRadius: "5px",
+            cursor: "pointer",
+        });
+
+        restartLevelButton.addEventListener("mouseover", () => {
+            restartLevelButton.style.backgroundColor = "#777";
+        });
+        restartLevelButton.addEventListener("mouseout", () => {
+            restartLevelButton.style.backgroundColor = "#555";
+        });
+
+        restartLevelButton.addEventListener("click", () => {
+            this.hideGameOver();
+            if (restartLevelCallback) {
+                restartLevelCallback();
+            }
+        });
+
+        this.gameOverMessageContainer.appendChild(restartLevelButton);
         document.body.appendChild(this.gameOverMessageContainer);
     }
 

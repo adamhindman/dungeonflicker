@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import { firstTimeEvents } from './FirstTimeEvents.js';
+import { tooltipManager } from './TooltipManager.js';
+
+const DRAIN_LIFE_RADIUS = 8;
+const DRAIN_LIFE_MANA_COST = 2;
 
 export class NecromancerController {
   constructor(gc) {
@@ -11,15 +16,14 @@ export class NecromancerController {
     this.movedThisTurn = new Set(); // AnimatedDead discs that have already moved this turn
     this.selectingTarget = false;   // True while player must click a dead NPC in the scene
     this.hoveredDisc = null;        // Corpse currently under cursor during target selection
-    this._focusIndex = 0;
     this._targetBeams = [];
     this._beamGeo = null;
     this._beamMat = null;
+    this.drainLifeActive = false;   // Whether Drain Life aura is currently active
 
     this.animateDeadButton = null;
     this.raiseDeadButton = null;
-    this.focusPrevButton = null;
-    this.focusNextButton = null;
+    this.drainLifeButton = null;
     this.endTurnButton = null;
     this.targetSelectionPopup = null;
     this._actionButtonsContainer = null;
@@ -29,14 +33,24 @@ export class NecromancerController {
     this._actionButtonsContainer = actionButtonsContainer;
     this._createAnimateDeadButton();
     this._setupAnimateDeadButtonListener();
+    this._createDrainLifeButton();
+    this._setupDrainLifeButtonListener();
     this._createRaiseDeadButton();
     this._setupRaiseDeadButtonListener();
-    this._createFocusButtons();
-    this._setupFocusButtonListeners();
     this._createEndTurnButton();
     this._setupEndTurnButtonListener();
     this.updateActionButtons();
     this.updateEndTurnButtonVisibility();
+    tooltipManager.register(
+      this.animateDeadButton,
+      'animate_dead_button_clicked',
+      'Spend 1 mana to reanimate a fallen enemy as a minion under your control.'
+    );
+    tooltipManager.register(
+      this.drainLifeButton,
+      'drain_life_button_clicked',
+      'Spend 2 mana to activate Drain Life. At turn\'s end, sap HP from all nearby enemies. If no enemies are drained, take 1 damage.'
+    );
   }
 
   getDisc() {
@@ -45,6 +59,7 @@ export class NecromancerController {
 
   canCastSpells(necromancer) {
     if (!necromancer || necromancer.dead) return false;
+    if (this.drainLifeActive) return true; // can deactivate for free
     const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
@@ -54,6 +69,7 @@ export class NecromancerController {
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
     if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
     if (this.mana >= 2 && deadPCs.length > 0) return true;
+    if (this.mana >= DRAIN_LIFE_MANA_COST) return true; // can activate drain life
     return false;
   }
 
@@ -65,6 +81,7 @@ export class NecromancerController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'animate-dead-button';
+      button.dataset.shortcut = '1';
       button.innerHTML = '<kbd>1</kbd> Animate Dead (1💀)';
       this._actionButtonsContainer.appendChild(button);
     }
@@ -78,35 +95,26 @@ export class NecromancerController {
     if (!button) {
       button = document.createElement('button');
       button.id = 'raise-dead-button';
-      button.innerHTML = '<kbd>2</kbd> Raise Dead (2💀)';
+      button.dataset.shortcut = '3';
+      button.innerHTML = '<kbd>3</kbd> Raise Dead (2💀)';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
     this.raiseDeadButton = button;
   }
 
-  _createFocusButtons() {
+  _createDrainLifeButton() {
     if (!this._actionButtonsContainer) return;
-
-    let prev = document.getElementById('focus-animated-prev-button');
-    if (!prev) {
-      prev = document.createElement('button');
-      prev.id = 'focus-animated-prev-button';
-      prev.textContent = '<';
-      this._actionButtonsContainer.appendChild(prev);
+    let button = document.getElementById('drain-life-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'drain-life-button';
+      button.dataset.shortcut = '2';
+      this._actionButtonsContainer.appendChild(button);
     }
-    prev.style.display = 'none';
-    this.focusPrevButton = prev;
-
-    let next = document.getElementById('focus-animated-next-button');
-    if (!next) {
-      next = document.createElement('button');
-      next.id = 'focus-animated-next-button';
-      next.textContent = '>';
-      this._actionButtonsContainer.appendChild(next);
-    }
-    next.style.display = 'none';
-    this.focusNextButton = next;
+    button.style.display = 'none';
+    this.drainLifeButton = button;
+    this._updateDrainLifeButtonLabel();
   }
 
   _createEndTurnButton() {
@@ -136,12 +144,9 @@ export class NecromancerController {
     }
   }
 
-  _setupFocusButtonListeners() {
-    if (this.focusPrevButton) {
-      this.focusPrevButton.addEventListener('click', this._focusPrev.bind(this));
-    }
-    if (this.focusNextButton) {
-      this.focusNextButton.addEventListener('click', this._focusNext.bind(this));
+  _setupDrainLifeButtonListener() {
+    if (this.drainLifeButton) {
+      this.drainLifeButton.addEventListener('click', this._handleDrainLifeButtonClick.bind(this));
     }
   }
 
@@ -157,6 +162,7 @@ export class NecromancerController {
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (!currentDisc || currentDisc.kind !== 'Necromancer' || currentDisc.dead) return;
     if (this.mana < 1) return;
+    firstTimeEvents.track('animate_dead_button_clicked');
 
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
     if (animatedCount >= 3) return;
@@ -199,25 +205,84 @@ export class NecromancerController {
     );
   }
 
+  _handleDrainLifeButtonClick() {
+    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    if (!currentDisc || currentDisc.kind !== 'Necromancer' || currentDisc.dead) return;
+
+    if (this.drainLifeActive) {
+      this._deactivateDrainLife(currentDisc);
+    } else {
+      if (this.mana < DRAIN_LIFE_MANA_COST) return;
+      firstTimeEvents.track('drain_life_button_clicked');
+      this._activateDrainLife(currentDisc);
+    }
+    this.updateActionButtons();
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(currentDisc);
+  }
+
+  _activateDrainLife(necDisc) {
+    this.mana -= DRAIN_LIFE_MANA_COST;
+    this.drainLifeActive = true;
+    necDisc.drainLifeActive = true;
+    necDisc.showDrainLifeAura(DRAIN_LIFE_RADIUS);
+    necDisc.setSpotlightIntensity(true);
+    if (this.gc.soundManager) {
+      this.gc.soundManager.playDrain(necDisc.mesh.position.clone());
+    }
+  }
+
+  _deactivateDrainLife(necDisc) {
+    this.drainLifeActive = false;
+    necDisc.drainLifeActive = false;
+    necDisc.hideDrainLifeAura();
+    necDisc.setSpotlightIntensity(true);
+  }
+
   async _handleEndTurnButtonClick() {
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (currentDisc && currentDisc.kind === 'Necromancer' && !currentDisc.dead) {
+      this._applyDrainLifeOnTurnEnd();
       await this.gc._proceedToNextPlayerTurn();
     }
   }
 
-  _focusPrev() {
-    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
-    if (!liveMinions.length) return;
-    this._focusIndex = (this._focusIndex - 1 + liveMinions.length) % liveMinions.length;
-    if (this.gc.controls) this.gc.controls.target.copy(liveMinions[this._focusIndex].mesh.position);
-  }
+  _applyDrainLifeOnTurnEnd() {
+    if (!this.drainLifeActive) return;
+    const necDisc = this.getDisc();
+    if (!necDisc) return;
 
-  _focusNext() {
-    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
-    if (!liveMinions.length) return;
-    this._focusIndex = (this._focusIndex + 1) % liveMinions.length;
-    if (this.gc.controls) this.gc.controls.target.copy(liveMinions[this._focusIndex].mesh.position);
+    const necPos = necDisc.mesh.position;
+    let totalDrained = 0;
+    this.gc.discs.forEach(d => {
+      if (d.type !== 'NPC' || d.dead) return;
+      const dx = d.mesh.position.x - necPos.x;
+      const dz = d.mesh.position.z - necPos.z;
+      if (dx * dx + dz * dz > DRAIN_LIFE_RADIUS * DRAIN_LIFE_RADIUS) return;
+      const oldHP = d.hitPoints;
+      d.takeHit(1, necDisc);
+      const drained = oldHP - d.hitPoints;
+      if (d.hitPoints <= 0 && !d.dead) {
+        d.die();
+        this.gc.updateDiscNames();
+      }
+      if (drained > 0) {
+        necDisc.restoreHealth(drained);
+        totalDrained += drained;
+      }
+    });
+
+    if (totalDrained > 0 && this.gc.soundManager) {
+      this.gc.soundManager.playDrain(necPos.clone());
+    }
+
+    // Self-cost: only when no NPCs were drained
+    if (totalDrained === 0) {
+      necDisc.takeHit(1, null);
+      if (necDisc.hitPoints <= 0 && !necDisc.dead) {
+        necDisc.die();
+        this._deactivateDrainLife(necDisc);
+      }
+    }
   }
 
   // ─── Visibility updates ─────────────────────────────────────────────────────
@@ -225,7 +290,7 @@ export class NecromancerController {
   updateActionButtons() {
     this._updateAnimateDeadButtonVisibility();
     this._updateRaiseDeadButtonVisibility();
-    this._updateFocusButtonVisibility();
+    this._updateDrainLifeButtonVisibility();
   }
 
   _updateAnimateDeadButtonVisibility() {
@@ -265,17 +330,40 @@ export class NecromancerController {
     this.raiseDeadButton.disabled = !shouldBeVisible;
   }
 
-  _updateFocusButtonVisibility() {
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    const liveMinions = this.animatedDeadDiscs.filter(d => d && !d.dead && d.hitPoints > 0);
-    const shouldShow = !!(currentDisc && currentDisc.kind === 'Necromancer' && !currentDisc.dead && liveMinions.length > 1);
-    if (this.focusPrevButton) {
-      this.focusPrevButton.style.display = shouldShow ? 'inline-block' : 'none';
-      this.focusPrevButton.disabled = !shouldShow;
+  _updateDrainLifeButtonLabel() {
+    if (!this.drainLifeButton) return;
+    if (this.drainLifeActive) {
+      this.drainLifeButton.innerHTML = '<kbd>2</kbd> Drain Life: ON';
+    } else {
+      this.drainLifeButton.innerHTML = `<kbd>2</kbd> Drain Life (${DRAIN_LIFE_MANA_COST}\u{1F480})`;
     }
-    if (this.focusNextButton) {
-      this.focusNextButton.style.display = shouldShow ? 'inline-block' : 'none';
-      this.focusNextButton.disabled = !shouldShow;
+  }
+
+  _updateDrainLifeButtonVisibility() {
+    if (!this.drainLifeButton) return;
+    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const isNecroTurn = !!(currentDisc &&
+      currentDisc.kind === 'Necromancer' &&
+      currentDisc.type === 'player' &&
+      !currentDisc.dead &&
+      !this.gc.gameOverState.active);
+
+    this._updateDrainLifeButtonLabel();
+
+    if (!isNecroTurn) {
+      this.drainLifeButton.style.display = 'none';
+      this.drainLifeButton.disabled = true;
+      return;
+    }
+
+    if (this.drainLifeActive) {
+      // Always show when active so player can deactivate for free
+      this.drainLifeButton.style.display = 'inline-block';
+      this.drainLifeButton.disabled = false;
+    } else {
+      const canActivate = this.mana >= DRAIN_LIFE_MANA_COST;
+      this.drainLifeButton.style.display = canActivate ? 'inline-block' : 'none';
+      this.drainLifeButton.disabled = !canActivate;
     }
   }
 
@@ -458,6 +546,32 @@ export class NecromancerController {
     return true;
   }
 
+  applyDrainLifeToNPC(npcDisc) {
+    if (!this.drainLifeActive) return;
+    if (!npcDisc || npcDisc.dead) return;
+    const necDisc = this.getDisc();
+    if (!necDisc || necDisc.dead) return;
+
+    const necPos = necDisc.mesh.position;
+    const npcPos = npcDisc.mesh.position;
+    const dx = npcPos.x - necPos.x;
+    const dz = npcPos.z - necPos.z;
+    if (dx * dx + dz * dz > DRAIN_LIFE_RADIUS * DRAIN_LIFE_RADIUS) return;
+
+    const oldHP = npcDisc.hitPoints;
+    npcDisc.takeHit(1, necDisc);
+    const actualDamage = oldHP - npcDisc.hitPoints;
+
+    if (npcDisc.hitPoints <= 0 && !npcDisc.dead) {
+      npcDisc.die();
+      this.gc.updateDiscNames();
+    }
+
+    if (actualDamage > 0) {
+      necDisc.restoreHealth(actualDamage);
+    }
+  }
+
   removeAnimatedDead(disc) {
     if (!disc) return;
     const idx = this.animatedDeadDiscs.indexOf(disc);
@@ -553,6 +667,8 @@ export class NecromancerController {
     this.movedThisTurn.clear();
     this.cancelTargetSelection();
     this.hideTargetSelectionPopup();
+    // Drain Life resets each level (disc is re-spawned, aura cleaned up by dispose)
+    this.drainLifeActive = false;
   }
 
   onGameRestart() {
@@ -563,5 +679,6 @@ export class NecromancerController {
     this.movedThisTurn.clear();
     this.cancelTargetSelection();
     this.hideTargetSelectionPopup();
+    this.drainLifeActive = false;
   }
 }
