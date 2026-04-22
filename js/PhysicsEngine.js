@@ -177,7 +177,9 @@ export class PhysicsEngine {
         const isRegularOrb2 = d2.kind === 'Orb';
         const isAnyOrb1 = isRegularOrb1 || d1.kind === 'HealingOrb';
         const isAnyOrb2 = isRegularOrb2 || d2.kind === 'HealingOrb';
-        if ((isRegularOrb1 && d2.dead) || (isRegularOrb2 && d1.dead) || (isAnyOrb1 && isAnyOrb2)) {
+        const isDissolvingCorpse = (d1.dead && d1.isDissolving) || (d2.dead && d2.isDissolving);
+        if (!isDissolvingCorpse &&
+            ((isRegularOrb1 && d2.dead) || (isRegularOrb2 && d1.dead) || (isAnyOrb1 && isAnyOrb2))) {
           continue;
         }
 
@@ -191,6 +193,17 @@ export class PhysicsEngine {
         const minDist = d1.radius + d2.radius;
 
         if (dist < minDist && dist > 0) {
+          // Carrion Feast: Necromancer touching a corpse marks it for dissolve and heals
+          const necro = d1.kind === 'Necromancer' ? d1 : d2.kind === 'Necromancer' ? d2 : null;
+          const corpse = necro === d1 ? d2 : necro === d2 ? d1 : null;
+          const isNecromancerCorpse = corpse && corpse.kind === 'Necromancer';
+          if (necro && corpse && necro.carrionFeastActive && corpse.dead && !isNecromancerCorpse && !corpse.isDissolving) {
+            necro.restoreHealth(1);
+            corpse.startDissolve(2);
+            if (gc.necromancerController) gc.necromancerController.carrionFeastAteThisTurn = true;
+            if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(necro);
+          }
+
           // Special Case: Wizard Healing Orb hitting anything (Heal and pass through)
           if ((d1.kind === 'HealingOrb' || d2.kind === 'HealingOrb') && !d1.dead && !d2.dead) {
             const healingOrb = d1.kind === 'HealingOrb' ? d1 : d2;
@@ -228,7 +241,13 @@ export class PhysicsEngine {
 
             if (gc.soundManager && velocityAlongNormal < -0.05) {
               const midPoint = d1.mesh.position.clone().add(d2.mesh.position).multiplyScalar(0.5);
-              gc.soundManager.playDiscHit(midPoint);
+              const hitWardenNpc = (d1.kind === 'Warden' && d1.type === 'NPC') ||
+                                   (d2.kind === 'Warden' && d2.type === 'NPC');
+              if (hitWardenNpc) {
+                gc.soundManager.playWardenHit(midPoint);
+              } else {
+                gc.soundManager.playDiscHit(midPoint);
+              }
             }
 
             // Push overlapping discs apart to ensure momentum is felt cleanly

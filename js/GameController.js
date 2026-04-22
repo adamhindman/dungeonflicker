@@ -80,6 +80,7 @@ export default class GameController {
     // Game Over State
     this.gameOverState = { active: false, playerWon: false };
     this.roundWon = false;
+    this.levelTransitionInProgress = false;
 
     this.thrownDisc = null;
 
@@ -106,7 +107,7 @@ export default class GameController {
     this.discDescriptions = {
         Barbarian: "Deals 2 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
         Wizard: "Summon orbs with Mana. Costs 1 Mana per orb. Kills with orbs or bumps earn Mana back. Clearing rooms grants Mana.",
-        Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Raise Dead allies for 2 mana, reviving them at half HP. Earn mana from kills and clearing rooms.",
+        Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Raise Dead allies for 2 mana, reviving them at half HP. Activate Carrion Feast for 2 mana to consume corpses for healing and keep it active each turn. Earn mana from kills and clearing rooms.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
         Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
         Orb: "A volatile sphere of magical energy, summoned by the Wizard.",
@@ -824,6 +825,7 @@ export default class GameController {
         );
         this.currentDisc.moving = true;
         this.currentDisc.hasThrown = true;
+        if (this.uiManager) this.uiManager.updateMoveStatusChip(this.currentDisc);
         this.currentDisc.resetDamageState();
         this.thrownDisc = this.currentDisc;
         firstTimeEvents.track('throw_made');
@@ -907,6 +909,18 @@ clamp(value, min, max) {
         }
         // When the Necromancer dies, kill all its animated dead minions
         if (disc.kind === 'Necromancer' && this.necromancerController) {
+          if (this.necromancerController.carrionFeastActive) {
+            this.necromancerController.carrionFeastActive = false;
+            this.necromancerController.carrionFeastAteThisTurn = false;
+          }
+          if (disc.carrionFeastActive) {
+            disc.carrionFeastActive = false;
+            if (disc.deactivateCarrionFeastGlow) {
+              disc.deactivateCarrionFeastGlow();
+            } else {
+              disc.setSpotlightIntensity(true);
+            }
+          }
           [...this.necromancerController.animatedDeadDiscs].forEach(minion => {
             if (!minion.dead) {
               minion.hitPoints = 0;
@@ -959,12 +973,6 @@ clamp(value, min, max) {
       if (!this.roundWon) {
         this.roundWon = true;
 
-        // Wizard earns 2 mana for clearing a room
-        const wizard = this.wizardController.getDisc();
-        if (wizard && !wizard.dead) {
-            this.wizardController.mana += 2;
-        }
-
         // Necromancer earns 2 mana for clearing a room
         const necromancer = this.necromancerController.getDisc();
         if (necromancer && !necromancer.dead) {
@@ -981,7 +989,7 @@ clamp(value, min, max) {
             }
             firstTimeEvents.track('portal_door_opened');
             this.level.openDoor();
-          }, 1500);
+          }, 3000);
         }
       }
     }
@@ -1006,11 +1014,19 @@ clamp(value, min, max) {
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
     // Level sequence cycles: bullseye → donut → rectangular → circular → repeat.
-    const sequence = ['bullseye', 'donut', 'rect', 'circle'];
+    const sequence = ['circle','rect', 'bullseye', 'donut'];
     return sequence[(n - 1) % sequence.length];
   }
 
   async startNextLevel(triggeringDisc = null) {
+    if (this.levelTransitionInProgress) return;
+    this.levelTransitionInProgress = true;
+
+    if (this.uiManager) {
+      this.uiManager.showBlackOverlay();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
     // 1. Save critical state before clearing
     const playerStats = this.discs
       .filter(d => d.type === "player" && d.kind !== "Orb")
@@ -1138,6 +1154,8 @@ clamp(value, min, max) {
     }
 
     if (this.soundManager) this.soundManager.playTension(this.currentDisc.mesh.position.clone());
+    if (this.uiManager) this.uiManager.fadeBlackOverlayAfterDelay(1000, 600);
+    this.levelTransitionInProgress = false;
   }
 
   async restartLevel() {
@@ -1377,7 +1395,7 @@ clamp(value, min, max) {
 
       // Update disc appearance for dead discs
       [...this.discs].forEach((disc) => {
-        if (disc.dead) {
+        if (disc.dead && !disc.isDissolving) {
           // Handle both group and single mesh structures
           if (disc.mesh.isGroup) {
             disc.mesh.children.forEach(child => {
@@ -1446,6 +1464,21 @@ clamp(value, min, max) {
       disc.updateDrainLifeAura(deltaTime);
     });
 
+    // Update Carrion Feast dissolves and remove finished corpses
+    for (let i = this.discs.length - 1; i >= 0; i--) {
+      const disc = this.discs[i];
+      if (!disc || !disc.isDissolving) continue;
+      const finished = disc.updateDissolve(deltaTime);
+      if (finished) {
+        this.discs.splice(i, 1);
+        if (i < this.currentTurnIndex) {
+          this.currentTurnIndex--;
+        }
+        disc.dispose();
+        this.updateDiscNames();
+      }
+    }
+
     // Orbit discs with their rings during the ring-step animation.
     // Positions are computed from the ring group's actual rotation delta each frame
     // so the disc tracks the floor exactly without any Three.js reparenting.
@@ -1466,6 +1499,10 @@ clamp(value, min, max) {
         if (disc.animatedDeadRing) {
           disc.animatedDeadRing.position.x = disc.mesh.position.x;
           disc.animatedDeadRing.position.z = disc.mesh.position.z;
+        }
+        if (disc.drainLifeAura) {
+          disc.drainLifeAura.position.x = disc.mesh.position.x;
+          disc.drainLifeAura.position.z = disc.mesh.position.z;
         }
 
         // Check pillar collisions — columns move with the rings so their obsRef
@@ -1490,6 +1527,10 @@ clamp(value, min, max) {
               if (disc.animatedDeadRing) {
                 disc.animatedDeadRing.position.x = disc.mesh.position.x;
                 disc.animatedDeadRing.position.z = disc.mesh.position.z;
+              }
+              if (disc.drainLifeAura) {
+                disc.drainLifeAura.position.x = disc.mesh.position.x;
+                disc.drainLifeAura.position.z = disc.mesh.position.z;
               }
               // Knock the disc free of the ring orbit so physics takes over
               disc.velocity.set(nx * 0.25, 0, nz * 0.25);
@@ -1564,12 +1605,12 @@ clamp(value, min, max) {
         }
       });
 
-      // After lava checks, update dead states and check game over conditions
-      // This ensures immediate feedback if a disc dies in lava.
-      this.updateAllDiscDeadStates();
-      if (!this.gameOverState.active) {
-        this.checkGameOverConditions();
-      }
+    }
+
+    // Check room-clear state every frame after physics/lava damage so the portal
+    // timer starts when the last NPC dies, not when the current round advances.
+    if (!this.gameOverState.active) {
+      this.checkGameOverConditions();
     }
 
     // Render the scene
@@ -1694,7 +1735,7 @@ clamp(value, min, max) {
       !d.dead && (d.type === 'player' || d.type === 'NPC') &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead'
     );
-    if (this.level && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
+    if (this.level && !this.roundWon && !this.level.doorIsOpen && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
       const ringData = this.level.stepRings();
       if (ringData) {
         this.soundManager.playStoneSlide(new THREE.Vector3(0, 0, 0));
@@ -1910,9 +1951,10 @@ clamp(value, min, max) {
 
     this.discInfoNameElement.innerText = disc.discName;
     const currentHp = Number(disc.hitPoints) || 0;
-    const maxHp = Number(disc.maxHitPoints) || 0;
+    const rawMaxHp = disc.maxHitPoints;
+    const maxHp = Number.isFinite(rawMaxHp) ? Math.max(0, rawMaxHp) : Number.POSITIVE_INFINITY;
     const filledHearts = currentHp > 0 ? '❤️'.repeat(currentHp) : '';
-    const emptyHearts = maxHp > currentHp ? '🩶'.repeat(maxHp - currentHp) : '';
+    const emptyHearts = Number.isFinite(maxHp) && maxHp > currentHp ? '🩶'.repeat(maxHp - currentHp) : '';
     this.discInfoHpElement.innerText = filledHearts + emptyHearts;
     this.discInfoDescriptionElement.innerText = disc.description || "No description available.";
 
@@ -2039,6 +2081,7 @@ clamp(value, min, max) {
     disc.velocity.set(bestDir.x * finalSpeed, 0, bestDir.z * finalSpeed);
     disc.moving = true;
     disc.hasThrown = true;
+    if (this.uiManager) this.uiManager.updateMoveStatusChip(disc);
     disc.resetDamageState();
     this.thrownDisc = disc; // Set thrownDisc for AI turns
     this.waitingForDiscToStop = true;

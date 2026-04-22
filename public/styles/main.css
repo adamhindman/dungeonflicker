@@ -131,6 +131,27 @@ body {
         font-weight: bold;
         order: -1;
     }
+    #move-status-chip {
+        order: -1;
+        pointer-events: none;
+        padding: 0.35rem 0.85rem;
+        border-radius: 0;
+        border: none;
+        background-color: var(--ui-bg-90);
+        box-shadow: 0 .2rem .7rem rgba(0,0,0,0.26);
+        color: rgba(255,255,255,.9);
+        font-size: 1.2rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    #move-status-chip[data-state="available"] {
+        color: rgba(255,255,255,.9);
+    }
+    #move-status-chip[data-state="used"] {
+        background-color: rgba(0,0,0,.25);
+        color: rgba(255,255,255, .5);
+    }
     button {
         pointer-events: auto;
         padding: 1rem 2rem;
@@ -138,6 +159,14 @@ body {
         border: none;
         border-radius: .3rem;
         color: white;
+    }
+    button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+        filter: saturate(0.65);
+    }
+    button:disabled:hover {
+        background-color: var(--ui-bg-90) !important;
     }
     button kbd {
         display: inline-block;

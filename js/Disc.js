@@ -59,6 +59,13 @@ export default class Disc {
       penumbra: 1.2,
       color: 0x8833CC // Purple — Necromancer Drain Life is active
     },
+    carrionFeast: {
+      intensity: 80,
+      distance: 25,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0x9933ff // Purple — Necromancer Carrion Feast is active
+    },
   };
 
   /**
@@ -114,7 +121,7 @@ export default class Disc {
     this.kind = kind;
     this.hitPoints = hitPoints;
     this.lastHitPoints = hitPoints;
-    this.maxHitPoints = hitPoints; // Store initial HP as max HP
+    this.maxHitPoints = kind === "Necromancer" ? Number.POSITIVE_INFINITY : hitPoints; // Store initial HP as max HP (uncapped for Necromancer)
     this.dead = false;
     this.skillLevel = skillLevel;
     this.scene = scene;
@@ -130,6 +137,10 @@ export default class Disc {
     this.healedDiscs = new Set(); // Track discs healed by this disc (e.g., Healing Orb) this throw
     this.drainLifeActive = false; // Whether Drain Life aura is active (Necromancer only)
     this.drainLifeAura = null; // Three.js Group for the Drain Life floor aura
+    this.carrionFeastActive = false; // Whether Carrion Feast glow is active (Necromancer only)
+    this.isDissolving = false;
+    this.dissolveElapsed = 0;
+    this.dissolveDuration = 0;
 
     // Create the main disc geometry
     const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);
@@ -366,6 +377,9 @@ export default class Disc {
     this.hasThrown = false;
     this.moving = false;
     this.velocity.set(0, 0, 0);
+    this.isDissolving = false;
+    this.dissolveElapsed = 0;
+    this.dissolveDuration = 0;
     // Restore original disc color
     if (this.mesh.isGroup) {
       this.mesh.children.forEach(child => {
@@ -440,7 +454,8 @@ export default class Disc {
   restoreHealth(amount = 1) {
     if (this.dead) return;
     const oldHP = this.hitPoints;
-    this.hitPoints = Math.min(this.hitPoints + amount, this.maxHitPoints);
+    const nextHP = this.hitPoints + amount;
+    this.hitPoints = Number.isFinite(this.maxHitPoints) ? Math.min(nextHP, this.maxHitPoints) : nextHP;
     const actualHealing = this.hitPoints - oldHP;
 
     if (actualHealing > 0 && this.gameController && this.gameController.uiManager) {
@@ -498,6 +513,9 @@ export default class Disc {
     } else if (this.kind === "AnimatedDead") {
       this.showAnimatedDeadRing();
       this.updateSpotlightConfig('inactive');
+    } else if (this.kind === "Necromancer" && this.carrionFeastActive) {
+      this.hideAnimatedDeadRing();
+      this.updateSpotlightConfig('carrionFeast');
     } else if (this.kind === "Necromancer" && this.drainLifeActive) {
       this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('drainingLife');
@@ -598,6 +616,66 @@ export default class Disc {
 
     // Animate opacity from 0.3 to 0.95 for pronounced effect
     this.drainLifeAuraRingMaterial.opacity = 0.3 + throb * 0.65;
+  }
+
+  activateCarrionFeastGlow() {
+    if (this.dead) return;
+    this.carrionFeastActive = true;
+    this.setSpotlightIntensity(true);
+  }
+
+  deactivateCarrionFeastGlow() {
+    this.carrionFeastActive = false;
+    this.setSpotlightIntensity(true);
+  }
+
+  startDissolve(durationSeconds = 2) {
+    if (this.isDissolving) return;
+    this.isDissolving = true;
+    this.dissolveElapsed = 0;
+    this.dissolveDuration = Math.max(0.01, durationSeconds);
+  }
+
+  updateDissolve(deltaTime) {
+    if (!this.isDissolving) return false;
+    this.dissolveElapsed += deltaTime;
+    const t = Math.min(this.dissolveElapsed / this.dissolveDuration, 1);
+    const opacity = 1 - t;
+
+    if (this.mesh.isGroup) {
+      this.mesh.children.forEach(child => {
+        if (child.material) {
+          child.material.transparent = true;
+          child.material.opacity = opacity;
+        }
+      });
+    } else if (this.mesh.material) {
+      this.mesh.material.transparent = true;
+      this.mesh.material.opacity = opacity;
+    }
+
+    if (t >= 1) {
+      this.isDissolving = false;
+      return true;
+    }
+    return false;
+  }
+
+  resetDissolve() {
+    this.isDissolving = false;
+    this.dissolveElapsed = 0;
+    this.dissolveDuration = 0;
+    if (this.mesh.isGroup) {
+      this.mesh.children.forEach(child => {
+        if (child.material) {
+          child.material.transparent = true;
+          child.material.opacity = 0.9;
+        }
+      });
+    } else if (this.mesh.material) {
+      this.mesh.material.transparent = true;
+      this.mesh.material.opacity = 0.9;
+    }
   }
 
   // Update spotlight with configuration for the given state

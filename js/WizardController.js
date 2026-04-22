@@ -188,6 +188,7 @@ export class WizardController {
     this._updateSummonOrbsButtonVisibility();
     this._updateSummonHealingOrbsButtonVisibility();
     this._updateRadiusBlastButtonVisibility();
+    if (this.gc.uiManager) this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
   }
 
   _updateSummonOrbsButtonVisibility() {

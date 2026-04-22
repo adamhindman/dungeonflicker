@@ -110,11 +110,11 @@ export default class Level {
 
   getAllWalls() {
     // Return all wall meshes including internal walls.
-    // For the bullseye level, skip polygon outer walls (poly_*) — their rotated
-    // BoxGeometry produces inflated AABBs that create phantom collisions.  The
-    // circular radial clamp in PhysicsEngine is the authoritative outer boundary.
+    // For radial-boundary levels, skip polygon outer walls (poly_*) — their
+    // rotated BoxGeometry produces inflated AABBs that create phantom collisions.
+    // The radial clamp in PhysicsEngine is the authoritative outer boundary.
     const walls = Object.entries(this.walls)
-      .filter(([key, wall]) => wall !== undefined && !(this.bullseyeRings && key.startsWith('poly_')))
+      .filter(([key, wall]) => wall !== undefined && !(this.circleRadius && key.startsWith('poly_')))
       .map(([, wall]) => wall);
     // Include the door slab for collision while the door is closed
     if (this.doorSlab && !this.doorIsOpen) {

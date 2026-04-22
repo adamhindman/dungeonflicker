@@ -16,6 +16,11 @@ export default class UIManager {
             // Styles for currentTurnDiscNameElement are now in main.css
             this.powersAreaElement.prepend(this.currentTurnDiscNameElement);
 
+            this.moveStatusChipElement = document.createElement("div");
+            this.moveStatusChipElement.id = "move-status-chip";
+            this.moveStatusChipElement.classList.add("element-hidden");
+            this.powersAreaElement.appendChild(this.moveStatusChipElement);
+
             // Create container for action buttons
             this.actionButtonsContainerElement = document.createElement("div");
             this.actionButtonsContainerElement.id = "action-buttons-container";
@@ -28,6 +33,7 @@ export default class UIManager {
 
         } else {
             this.currentTurnDiscNameElement = null;
+            this.moveStatusChipElement = null;
             this.actionButtonsContainerElement = null; // Ensure it's null if powersAreaElement is not found
         }
 
@@ -64,6 +70,30 @@ export default class UIManager {
             overlay.style.display = 'none';
             if (onComplete) onComplete();
         }, { once: true });
+    }
+
+    showBlackOverlay() {
+        const overlay = document.getElementById('black-overlay');
+        if (!overlay) return;
+        overlay.style.transition = 'none';
+        overlay.style.display = '';
+        overlay.style.opacity = '1';
+        void overlay.offsetHeight;
+    }
+
+    fadeBlackOverlayAfterDelay(delayMs = 1000, fadeMs = 600, onComplete) {
+        const overlay = document.getElementById('black-overlay');
+        if (!overlay) { if (onComplete) onComplete(); return; }
+
+        window.setTimeout(() => {
+            overlay.style.transition = `opacity ${fadeMs}ms ease-out`;
+            overlay.style.opacity = '0';
+            overlay.addEventListener('transitionend', () => {
+                overlay.style.display = 'none';
+                overlay.style.transition = '';
+                if (onComplete) onComplete();
+            }, { once: true });
+        }, delayMs);
     }
 
     showFloatingText(disc, amount, isHealing) {
@@ -419,11 +449,12 @@ export default class UIManager {
             if (currentDisc && currentDisc.discName) {
                 if (typeof currentDisc.hitPoints === 'number' && typeof currentDisc.maxHitPoints === 'number') {
                     const currentHP = Math.max(0, currentDisc.hitPoints);
-                    const maxHP = Math.max(0, currentDisc.maxHitPoints); // Ensure maxHP is also non-negative
-                    const lostHP = Math.max(0, maxHP - currentHP);
+                    const rawMaxHP = currentDisc.maxHitPoints;
+                    const maxHP = Number.isFinite(rawMaxHP) ? Math.max(0, rawMaxHP) : Number.POSITIVE_INFINITY;
+                    const lostHP = Number.isFinite(maxHP) ? Math.max(0, maxHP - currentHP) : 0;
 
                     const redHearts = '❤️'.repeat(currentHP);
-                    const grayHearts = '🩶'.repeat(lostHP);
+                    const grayHearts = lostHP > 0 ? '🩶'.repeat(lostHP) : '';
 
                     // Clear existing content
                     this.currentTurnDiscNameElement.innerHTML = '';
@@ -462,11 +493,13 @@ export default class UIManager {
                     }
 
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
+                    this.updateMoveStatusChip(currentDisc);
                 } else {
                     // Fallback if maxHitPoints or hitPoints is not available or not a number
                     const fallbackHP = typeof currentDisc.hitPoints === 'number' ? currentDisc.hitPoints : 'N/A';
                     this.currentTurnDiscNameElement.textContent = `${currentDisc.discName} (HP: ${fallbackHP})`;
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
+                    this.updateMoveStatusChip(currentDisc);
                     if (typeof currentDisc.maxHitPoints !== 'number') {
                          console.warn(`UIManager: Disc "${currentDisc.discName}" is missing or has invalid maxHitPoints property for heart display. Displaying fallback.`);
                     }
@@ -477,8 +510,30 @@ export default class UIManager {
             } else {
                 this.currentTurnDiscNameElement.textContent = '';
                 this.currentTurnDiscNameElement.classList.add('element-hidden');
+                this.updateMoveStatusChip(null);
             }
         }
+    }
+
+    updateMoveStatusChip(currentDisc) {
+        if (!this.moveStatusChipElement) return;
+
+        if (!currentDisc || currentDisc.dead || currentDisc.type !== 'player') {
+            this.moveStatusChipElement.classList.add('element-hidden');
+            return;
+        }
+
+        const gc = currentDisc.gameController;
+        let moveUsed = !!currentDisc.hasThrown;
+        if (gc && currentDisc.kind === 'Wizard') {
+            moveUsed = !!gc.wizardController.hasMovedThisTurn;
+        } else if (gc && currentDisc.kind === 'Necromancer') {
+            moveUsed = !!gc.necromancerController.hasMovedThisTurn;
+        }
+
+        this.moveStatusChipElement.textContent = moveUsed ? 'Move used' : 'Move available';
+        this.moveStatusChipElement.dataset.state = moveUsed ? 'used' : 'available';
+        this.moveStatusChipElement.classList.remove('element-hidden');
     }
 
     updateRageButtonVisibility(visible, enabled, charges, maxCharges) {

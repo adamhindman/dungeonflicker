@@ -4,12 +4,13 @@ import { tooltipManager } from './TooltipManager.js';
 
 const DRAIN_LIFE_RADIUS = 8;
 const DRAIN_LIFE_MANA_COST = 2;
+const CARRION_FEAST_MANA_COST = 2;
 
 export class NecromancerController {
   constructor(gc) {
     this.gc = gc;
 
-    this.mana = 3;
+    this.mana = 4;
     this.manaEarnedThisTurn = 0;
     this.hasMovedThisTurn = false;
     this.animatedDeadDiscs = [];
@@ -20,10 +21,13 @@ export class NecromancerController {
     this._beamGeo = null;
     this._beamMat = null;
     this.drainLifeActive = false;   // Whether Drain Life aura is currently active
+    this.carrionFeastActive = false; // Whether Carrion Feast is currently active
+    this.carrionFeastAteThisTurn = false; // Tracks if a corpse was consumed this turn
 
     this.animateDeadButton = null;
     this.raiseDeadButton = null;
     this.drainLifeButton = null;
+    this.carrionFeastButton = null;
     this.endTurnButton = null;
     this.targetSelectionPopup = null;
     this._actionButtonsContainer = null;
@@ -37,6 +41,8 @@ export class NecromancerController {
     this._setupDrainLifeButtonListener();
     this._createRaiseDeadButton();
     this._setupRaiseDeadButtonListener();
+    this._createCarrionFeastButton();
+    this._setupCarrionFeastButtonListener();
     this._createEndTurnButton();
     this._setupEndTurnButtonListener();
     this.updateActionButtons();
@@ -51,6 +57,11 @@ export class NecromancerController {
       'drain_life_button_clicked',
       'Spend 2 mana to activate Drain Life. At turn\'s end, sap HP from all nearby enemies. If no enemies are drained, take 1 damage.'
     );
+    tooltipManager.register(
+      this.carrionFeastButton,
+      'carrion_feast_button_clicked',
+      'Spend 2 mana to activate. Feast on corpses each turn to keep it active. Each corpse devoured earns 1 HP.'
+    );
   }
 
   getDisc() {
@@ -60,7 +71,8 @@ export class NecromancerController {
   canCastSpells(necromancer) {
     if (!necromancer || necromancer.dead) return false;
     if (this.drainLifeActive) return true; // can deactivate for free
-    const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    if (this.carrionFeastActive) return true; // can deactivate for free
+    const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
@@ -70,6 +82,7 @@ export class NecromancerController {
     if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
     if (this.mana >= 2 && deadPCs.length > 0) return true;
     if (this.mana >= DRAIN_LIFE_MANA_COST) return true; // can activate drain life
+    if (this.mana >= CARRION_FEAST_MANA_COST && !this.hasMovedThisTurn) return true; // can activate carrion feast
     return false;
   }
 
@@ -117,6 +130,20 @@ export class NecromancerController {
     this._updateDrainLifeButtonLabel();
   }
 
+  _createCarrionFeastButton() {
+    if (!this._actionButtonsContainer) return;
+    let button = document.getElementById('carrion-feast-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'carrion-feast-button';
+      button.dataset.shortcut = '4';
+      button.innerHTML = `<kbd>4</kbd> Carrion Feast (${CARRION_FEAST_MANA_COST}\u{1F480})`;
+      this._actionButtonsContainer.appendChild(button);
+    }
+    button.style.display = 'none';
+    this.carrionFeastButton = button;
+  }
+
   _createEndTurnButton() {
     if (!this._actionButtonsContainer) return;
     let button = document.getElementById('necromancer-end-turn-button');
@@ -150,6 +177,12 @@ export class NecromancerController {
     }
   }
 
+  _setupCarrionFeastButtonListener() {
+    if (this.carrionFeastButton) {
+      this.carrionFeastButton.addEventListener('click', this._handleCarrionFeastButtonClick.bind(this));
+    }
+  }
+
   _setupEndTurnButtonListener() {
     if (this.endTurnButton) {
       this.endTurnButton.addEventListener('click', this._handleEndTurnButtonClick.bind(this));
@@ -159,15 +192,15 @@ export class NecromancerController {
   // ─── Button handlers ────────────────────────────────────────────────────────
 
   _handleAnimateDeadButtonClick() {
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    if (!currentDisc || currentDisc.kind !== 'Necromancer' || currentDisc.dead) return;
+    const necro = this.getDisc();
+    if (!necro) return;
     if (this.mana < 1) return;
     firstTimeEvents.track('animate_dead_button_clicked');
 
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
     if (animatedCount >= 3) return;
 
-    const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
     if (deadNPCs.length === 0) return;
 
     this.selectingTarget = true;
@@ -180,9 +213,8 @@ export class NecromancerController {
   }
 
   _handleRaiseDeadButtonClick() {
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    if (!currentDisc || currentDisc.kind !== 'Necromancer' || currentDisc.dead) return;
-    if (this.mana < 2) return;
+    const necro = this.getDisc();
+    if (!necro) return;
 
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
@@ -194,9 +226,9 @@ export class NecromancerController {
     this._showTargetSelectionPopup(
       deadPCs,
       (target) => {
-        const success = this.raiseDeadDisc(currentDisc, target);
+        const success = this.raiseDeadDisc(necro, target);
         if (success) {
-          if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(currentDisc);
+          if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necro);
           this.updateActionButtons();
           this.gc.updateDiscNames();
         }
@@ -206,18 +238,55 @@ export class NecromancerController {
   }
 
   _handleDrainLifeButtonClick() {
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    if (!currentDisc || currentDisc.kind !== 'Necromancer' || currentDisc.dead) return;
+    const necro = this.getDisc();
+    if (!necro) return;
 
     if (this.drainLifeActive) {
-      this._deactivateDrainLife(currentDisc);
+      this._deactivateDrainLife(necro);
     } else {
       if (this.mana < DRAIN_LIFE_MANA_COST) return;
       firstTimeEvents.track('drain_life_button_clicked');
-      this._activateDrainLife(currentDisc);
+      this._activateDrainLife(necro);
     }
     this.updateActionButtons();
-    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(currentDisc);
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necro);
+  }
+
+  _handleCarrionFeastButtonClick() {
+    const necro = this.getDisc();
+    if (!necro) return;
+
+    if (this.carrionFeastActive) {
+      this._deactivateCarrionFeast(necro);
+    } else {
+      if (this.hasMovedThisTurn) return;
+      if (this.mana < CARRION_FEAST_MANA_COST) return;
+      firstTimeEvents.track('carrion_feast_button_clicked');
+      this._activateCarrionFeast(necro);
+    }
+    this.updateActionButtons();
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necro);
+  }
+
+  _activateCarrionFeast(necDisc) {
+    this.mana -= CARRION_FEAST_MANA_COST;
+    this.carrionFeastActive = true;
+    this.carrionFeastAteThisTurn = false;
+    necDisc.carrionFeastActive = true;
+    necDisc.setSpotlightIntensity(true);
+    if (this.gc.soundManager) {
+      this.gc.soundManager.playDrain(necDisc.mesh.position.clone());
+    }
+  }
+
+  _deactivateCarrionFeast(necDisc) {
+    this.carrionFeastActive = false;
+    this.carrionFeastAteThisTurn = false;
+    necDisc.carrionFeastActive = false;
+    necDisc.setSpotlightIntensity(true);
+    if (this.gc.soundManager) {
+      this.gc.soundManager.playDrain(necDisc.mesh.position.clone());
+    }
   }
 
   _activateDrainLife(necDisc) {
@@ -239,9 +308,13 @@ export class NecromancerController {
   }
 
   async _handleEndTurnButtonClick() {
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    if (currentDisc && currentDisc.kind === 'Necromancer' && !currentDisc.dead) {
+    const necro = this.getDisc();
+    if (necro) {
       this._applyDrainLifeOnTurnEnd();
+      this._applyCarrionFeastOnTurnEnd();
+      if (necro.dead && this.carrionFeastActive) {
+        this._deactivateCarrionFeast(necro);
+      }
       await this.gc._proceedToNextPlayerTurn();
     }
   }
@@ -262,6 +335,10 @@ export class NecromancerController {
       d.takeHit(1, necDisc);
       const drained = oldHP - d.hitPoints;
       if (d.hitPoints <= 0 && !d.dead) {
+        if (!this.gc.npcsKilledForRageCharge.has(d.discName)) {
+          this.manaEarnedThisTurn += 2;
+          this.gc.npcsKilledForRageCharge.add(d.discName);
+        }
         d.die();
         this.gc.updateDiscNames();
       }
@@ -281,7 +358,29 @@ export class NecromancerController {
       if (necDisc.hitPoints <= 0 && !necDisc.dead) {
         necDisc.die();
         this._deactivateDrainLife(necDisc);
+        if (this.carrionFeastActive) {
+          this._deactivateCarrionFeast(necDisc);
+        } else if (necDisc.carrionFeastActive) {
+          if (necDisc.deactivateCarrionFeastGlow) {
+            necDisc.deactivateCarrionFeastGlow();
+          } else {
+            necDisc.setSpotlightIntensity(true);
+          }
+        }
       }
+    }
+  }
+
+  _applyCarrionFeastOnTurnEnd() {
+    if (!this.carrionFeastActive) return;
+    const necDisc = this.getDisc();
+    if (!necDisc) return;
+    if (necDisc.dead) {
+      this._deactivateCarrionFeast(necDisc);
+      return;
+    }
+    if (!this.carrionFeastAteThisTurn) {
+      this._deactivateCarrionFeast(necDisc);
     }
   }
 
@@ -291,17 +390,18 @@ export class NecromancerController {
     this._updateAnimateDeadButtonVisibility();
     this._updateRaiseDeadButtonVisibility();
     this._updateDrainLifeButtonVisibility();
+    this._updateCarrionFeastButtonVisibility();
+    if (this.gc.uiManager) this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
   }
 
   _updateAnimateDeadButtonVisibility() {
     if (!this.animateDeadButton) return;
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    const necro = this.getDisc();
+    const currentTurnDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    const shouldBeVisible = !!(currentDisc &&
-      currentDisc.kind === 'Necromancer' &&
-      currentDisc.type === 'player' &&
-      !currentDisc.dead &&
+    const shouldBeVisible = !!(necro &&
+      necro === currentTurnDisc &&
       !this.gc.gameOverState.active &&
       this.mana >= 1 &&
       deadNPCs.length > 0 &&
@@ -313,16 +413,15 @@ export class NecromancerController {
 
   _updateRaiseDeadButtonVisibility() {
     if (!this.raiseDeadButton) return;
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const necro = this.getDisc();
+    const currentTurnDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
       d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
     );
-    const shouldBeVisible = !!(currentDisc &&
-      currentDisc.kind === 'Necromancer' &&
-      currentDisc.type === 'player' &&
-      !currentDisc.dead &&
+    const shouldBeVisible = !!(necro &&
+      necro === currentTurnDisc &&
       !this.gc.gameOverState.active &&
       this.mana >= 2 &&
       deadPCs.length > 0);
@@ -341,11 +440,10 @@ export class NecromancerController {
 
   _updateDrainLifeButtonVisibility() {
     if (!this.drainLifeButton) return;
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    const isNecroTurn = !!(currentDisc &&
-      currentDisc.kind === 'Necromancer' &&
-      currentDisc.type === 'player' &&
-      !currentDisc.dead &&
+    const necro = this.getDisc();
+    const currentTurnDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const isNecroTurn = !!(necro &&
+      necro === currentTurnDisc &&
       !this.gc.gameOverState.active);
 
     this._updateDrainLifeButtonLabel();
@@ -367,13 +465,56 @@ export class NecromancerController {
     }
   }
 
+  _updateCarrionFeastButtonLabel() {
+    if (!this.carrionFeastButton) return;
+    if (this.carrionFeastActive) {
+      this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast: ON';
+    } else {
+      this.carrionFeastButton.innerHTML = `<kbd>4</kbd> Carrion Feast (${CARRION_FEAST_MANA_COST}\u{1F480})`;
+    }
+  }
+
+  _updateCarrionFeastButtonVisibility() {
+    if (!this.carrionFeastButton) return;
+    const necro = this.getDisc();
+    const currentTurnDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const isNecroTurn = !!(necro &&
+      necro === currentTurnDisc &&
+      !this.gc.gameOverState.active);
+
+    this._updateCarrionFeastButtonLabel();
+
+    if (!isNecroTurn) {
+      this.carrionFeastButton.style.display = 'none';
+      this.carrionFeastButton.disabled = true;
+      this.carrionFeastButton.title = '';
+      return;
+    }
+
+    if (this.carrionFeastActive) {
+      // Always show when active so player can deactivate for free
+      this.carrionFeastButton.style.display = 'inline-block';
+      this.carrionFeastButton.disabled = false;
+      this.carrionFeastButton.title = 'Deactivate Carrion Feast.';
+    } else {
+      const canActivate = this.mana >= CARRION_FEAST_MANA_COST;
+      this.carrionFeastButton.style.display = canActivate ? 'inline-block' : 'none';
+      this.carrionFeastButton.disabled = !canActivate || this.hasMovedThisTurn;
+      if (this.hasMovedThisTurn) {
+        this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast (Move Used)';
+      }
+      this.carrionFeastButton.title = this.hasMovedThisTurn
+        ? 'Requires the Necromancer to activate it before moving.'
+        : '';
+    }
+  }
+
   updateEndTurnButtonVisibility() {
     if (!this.endTurnButton) return;
-    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
-    const shouldBeVisible = !!(currentDisc &&
-      currentDisc.type === 'player' &&
-      currentDisc.kind === 'Necromancer' &&
-      !currentDisc.dead &&
+    const necro = this.getDisc();
+    const currentTurnDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const shouldBeVisible = !!(necro &&
+      necro === currentTurnDisc &&
       !this.gc.gameOverState.active);
     this.endTurnButton.style.display = shouldBeVisible ? 'inline-block' : 'none';
     this.endTurnButton.disabled = !shouldBeVisible;
@@ -385,11 +526,12 @@ export class NecromancerController {
     if (!this.selectingTarget) return;
     this.selectingTarget = false;
     this.hoveredDisc = null;
-    this.gc.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead)
+    this.gc.discs.filter(d => d.type === 'NPC' && d.dead)
                  .forEach(d => d.updateSpotlightConfig('dead'));
     this._clearTargetBeams();
     if (this.gc.uiManager) this.gc.uiManager.updateThrowInfo('', false);
     this.updateActionButtons();
+    this._updateCarrionFeastButtonVisibility();
   }
 
   handlePointerHover(event) {
@@ -401,7 +543,7 @@ export class NecromancerController {
     );
     this.gc.raycaster.setFromCamera(mouse, this.gc.camera);
 
-    const eligible = this.gc.discs.filter(d => d.type === 'NPC' && d.dead && !d.isAnimatedDead);
+    const eligible = this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
     let hovered = null;
     for (const disc of eligible) {
       if (this.gc.raycaster.intersectObject(disc.mesh, true).length > 0) {
@@ -417,7 +559,7 @@ export class NecromancerController {
   }
 
   handleTargetClick(clickedDisc) {
-    if (clickedDisc && clickedDisc.type === 'NPC' && clickedDisc.dead && !clickedDisc.isAnimatedDead) {
+    if (clickedDisc && clickedDisc.type === 'NPC' && clickedDisc.dead) {
       const necromancer = this.gc.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
       if (necromancer) {
         const success = this.animateDeadDisc(necromancer, clickedDisc);
@@ -563,6 +705,10 @@ export class NecromancerController {
     const actualDamage = oldHP - npcDisc.hitPoints;
 
     if (npcDisc.hitPoints <= 0 && !npcDisc.dead) {
+      if (!this.gc.npcsKilledForRageCharge.has(npcDisc.discName)) {
+        this.manaEarnedThisTurn += 2;
+        this.gc.npcsKilledForRageCharge.add(npcDisc.discName);
+      }
       npcDisc.die();
       this.gc.updateDiscNames();
     }
@@ -610,6 +756,8 @@ export class NecromancerController {
       const canCast = this.canCastSpells(disc);
 
       if (activeAnimatedCount === 0 && !canCast) {
+        this._applyDrainLifeOnTurnEnd();
+        this._applyCarrionFeastOnTurnEnd();
         await this.gc._proceedToNextPlayerTurn();
       } else {
         this.gc.currentDisc = disc;
@@ -639,6 +787,8 @@ export class NecromancerController {
         const unmovedAnimated = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead && !this.movedThisTurn.has(d)).length;
         const canStillCast = this.canCastSpells(necromancerDisc);
         if (unmovedAnimated === 0 && this.hasMovedThisTurn && !canStillCast) {
+          this._applyDrainLifeOnTurnEnd();
+          this._applyCarrionFeastOnTurnEnd();
           await this.gc._proceedToNextPlayerTurn();
         }
       } else {
@@ -657,6 +807,7 @@ export class NecromancerController {
   onTurnEnd() {
     this.hasMovedThisTurn = false;
     this.movedThisTurn.clear();
+    this.carrionFeastAteThisTurn = false;
     this.cancelTargetSelection();
   }
 
@@ -667,18 +818,40 @@ export class NecromancerController {
     this.movedThisTurn.clear();
     this.cancelTargetSelection();
     this.hideTargetSelectionPopup();
+    this.carrionFeastActive = false;
+    this.carrionFeastAteThisTurn = false;
+    const necDisc = this.getDisc();
+    if (necDisc) {
+      necDisc.carrionFeastActive = false;
+      if (necDisc.deactivateCarrionFeastGlow) {
+        necDisc.deactivateCarrionFeastGlow();
+      } else {
+        necDisc.setSpotlightIntensity(true);
+      }
+    }
     // Drain Life resets each level (disc is re-spawned, aura cleaned up by dispose)
     this.drainLifeActive = false;
   }
 
   onGameRestart() {
-    this.mana = 3;
+    this.mana = 4;
     this.manaEarnedThisTurn = 0;
     this.hasMovedThisTurn = false;
     this.animatedDeadDiscs = [];
     this.movedThisTurn.clear();
     this.cancelTargetSelection();
     this.hideTargetSelectionPopup();
+    this.carrionFeastActive = false;
+    this.carrionFeastAteThisTurn = false;
+    const necDisc = this.getDisc();
+    if (necDisc) {
+      necDisc.carrionFeastActive = false;
+      if (necDisc.deactivateCarrionFeastGlow) {
+        necDisc.deactivateCarrionFeastGlow();
+      } else {
+        necDisc.setSpotlightIntensity(true);
+      }
+    }
     this.drainLifeActive = false;
   }
 }

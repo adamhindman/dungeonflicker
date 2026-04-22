@@ -1,5 +1,7 @@
 // dungeonflicker/js/InputHandler.js
 
+import { firstTimeEvents } from './FirstTimeEvents.js';
+
 export default class InputHandler {
     constructor(domElement, gameController, uiManager) {
         this.domElement = domElement; // Typically renderer.domElement
@@ -81,6 +83,12 @@ export default class InputHandler {
 
         const key = (event.key || '').toLowerCase();
         // console.log("InputHandler: KeyDown detected - key:", key, "original event.key:", event.key); // DETAILED DEBUG
+
+        if (event.shiftKey && key === 'm') {
+            event.preventDefault();
+            firstTimeEvents.clear();
+            return;
+        }
 
         if (key === 'escape' || key === 'esc' || event.code === 'Escape' || event.keyCode === 27) {
             if (this.isPointerDown) {

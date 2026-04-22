@@ -30,6 +30,7 @@ Mastering the controls is essential for victory in Dungeonflicker:
 *   **Aim and Throw:** Click and drag the currently active disc. The direction of the drag determines the throw angle, and the length of the drag dictates the power.
 *   **Cancel Throw:** Press the `Escape` key while dragging to cancel the current throw before release.
 *   **Camera Pan:** Use `WASD` or `Arrow Keys` to pan the camera and get a better view of the arena.
+*   **Clear First-Time Metrics:** Press `Shift+M` to clear stored first-time event metrics from localStorage.
 *   **(Implicit) Turn Management:** The game automatically handles turn progression to the next available disc once the current thrown disc stops.
 
 ## Technical Details

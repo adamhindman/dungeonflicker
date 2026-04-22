@@ -37,11 +37,18 @@ const WOOD_HIT_FILES = [
   'object-wood-impact-flat-square-wood-clap-06.mp3',
 ];
 
+const WARDEN_HIT_FILES = [
+  'warden-hit-01.mp3',
+  'warden-hit-02.mp3',
+  'warden-hit-03.mp3',
+];
+
 export class SoundManager {
   constructor(gc) {
     this.gc = gc;
     this.listener = null;
     this.woodHitBuffers = [];
+    this.wardenHitBuffers = [];
     this.bounceBuffers = [];
     this.breathBuffers = [];
     this.buzzBuffer = null;
@@ -76,6 +83,7 @@ export class SoundManager {
     });
 
     const woodPromises   = WOOD_HIT_FILES.map(f => load(`/sounds/wood/hits/${f}`));
+    const wardenPromises = WARDEN_HIT_FILES.map(f => load(`/sounds/clang/${f}`));
     const bouncePromises = BOUNCE_FILES.map(f => load(`/sounds/bounce/${f}`));
     const breathPromises = BREATH_FILES.map(f => load(`/sounds/breath/${f}`));
     const buzzPromise        = load('/sounds/buzz/character-highlight.mp3');
@@ -88,8 +96,9 @@ export class SoundManager {
 
     // Gameplay sounds load together; music loads independently so a large file
     // doesn't block sfx from becoming ready.
-    Promise.all([Promise.all(woodPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise]).then(([wood, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen]) => {
+    Promise.all([Promise.all(woodPromises), Promise.all(wardenPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise]).then(([wood, warden, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen]) => {
       this.woodHitBuffers    = wood.filter(Boolean);
+      this.wardenHitBuffers  = warden.filter(Boolean);
       this.bounceBuffers     = bounce.filter(Boolean);
       this.breathBuffers     = breath.filter(Boolean);
       this.buzzBuffer        = buzz || null;
@@ -137,6 +146,10 @@ export class SoundManager {
 
   playDiscHit(position) {
     this._play(this.woodHitBuffers, position, 0.8);
+  }
+
+  playWardenHit(position) {
+    this._play(this.wardenHitBuffers, position, 0.5);
   }
 
   playBounce(position) {
