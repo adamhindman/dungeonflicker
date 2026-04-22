@@ -110,7 +110,7 @@ export class NecromancerController {
       button = document.createElement('button');
       button.id = 'raise-dead-button';
       button.dataset.shortcut = '3';
-      button.innerHTML = '<kbd>3</kbd> Raise Dead (2💀)';
+      button.innerHTML = '<kbd>3</kbd> Resurrect Ally (2💀)';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -227,7 +227,8 @@ export class NecromancerController {
 
     this.selectingTarget = true;
     this.targetSelectionMode = 'raiseDead';
-    this._spawnTargetBeams(deadPCs, 0xffffff, 0.18);
+    deadPCs.forEach(d => d.updateSpotlightConfig('raiseDeadTarget'));
+    this._spawnTargetBeams(deadPCs, 0xffffff, 0.1);
     if (this.gc.uiManager) {
       this.gc.uiManager.updateThrowInfo('Click a dead ally to raise them  •  Esc to cancel', true);
     }
@@ -252,6 +253,7 @@ export class NecromancerController {
   _handleCarrionFeastButtonClick() {
     const necro = this.getDisc();
     if (!necro) return;
+    if (this.gc.roundWon) return;
 
     if (this.carrionFeastActive) {
       this._deactivateCarrionFeast(necro);
@@ -284,6 +286,18 @@ export class NecromancerController {
     if (this.gc.soundManager) {
       this.gc.soundManager.playDrain(necDisc.mesh.position.clone());
     }
+  }
+
+  cancelCarrionFeast() {
+    const necDisc = this.getDisc();
+    this.carrionFeastActive = false;
+    this.carrionFeastAteThisTurn = false;
+    if (necDisc) {
+      necDisc.carrionFeastActive = false;
+      necDisc.setSpotlightIntensity(this.gc.currentDisc === necDisc);
+    }
+    this.updateActionButtons();
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(this.gc.currentDisc);
   }
 
   _activateDrainLife(necDisc) {
@@ -442,7 +456,8 @@ export class NecromancerController {
     const currentTurnDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     const isNecroTurn = !!(necro &&
       necro === currentTurnDisc &&
-      !this.gc.gameOverState.active);
+      !this.gc.gameOverState.active &&
+      !this.gc.roundWon);
 
     this._updateDrainLifeButtonLabel();
 
@@ -486,6 +501,14 @@ export class NecromancerController {
       this.carrionFeastButton.style.display = 'none';
       this.carrionFeastButton.disabled = true;
       this.carrionFeastButton.title = '';
+      return;
+    }
+
+    if (this.gc.roundWon) {
+      this.carrionFeastButton.style.display = 'inline-block';
+      this.carrionFeastButton.disabled = true;
+      this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast (Round Over)';
+      this.carrionFeastButton.title = 'Carrion Feast cannot be used after the round is over.';
       return;
     }
 
@@ -552,12 +575,16 @@ export class NecromancerController {
     }
 
     if (hovered === this.hoveredDisc) return;
-    if (this.hoveredDisc && this.targetSelectionMode === 'animateDead') {
-      this.hoveredDisc.updateSpotlightConfig('animateDeadTarget');
+    if (this.hoveredDisc) {
+      this.hoveredDisc.updateSpotlightConfig(
+        this.targetSelectionMode === 'raiseDead' ? 'raiseDeadTarget' : 'animateDeadTarget'
+      );
     }
     this.hoveredDisc = hovered;
-    if (hovered && this.targetSelectionMode === 'animateDead') {
-      hovered.updateSpotlightConfig('animateDeadHovered');
+    if (hovered) {
+      hovered.updateSpotlightConfig(
+        this.targetSelectionMode === 'raiseDead' ? 'raiseDeadHovered' : 'animateDeadHovered'
+      );
     }
   }
 

@@ -52,6 +52,20 @@ export default class Disc {
       penumbra: 1.2,
       color: 0xcc66ff // Bright purple — corpse currently under cursor
     },
+    raiseDeadTarget: {
+      intensity: 15,
+      distance: 10,
+      angle: Math.PI / 5,
+      penumbra: 1.0,
+      color: 0xffffff // White — marks a fallen ally eligible for Resurrect Ally
+    },
+    raiseDeadHovered: {
+      intensity: 80,
+      distance: 18,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0xffffff // Bright white — fallen ally currently under cursor
+    },
     drainingLife: {
       intensity: 80,
       distance: 25,
@@ -366,7 +380,7 @@ export default class Disc {
 
   /**
    * Revives a dead disc, restoring it to life with the given HP.
-   * Used by the Necromancer's Raise Dead and Animate Dead spells.
+   * Used by the Necromancer's Resurrect Ally and Animate Dead spells.
    * @param {number} hp - The hit points to restore the disc to.
    */
   revive(hp) {

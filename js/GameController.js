@@ -107,7 +107,7 @@ export default class GameController {
     this.discDescriptions = {
         Barbarian: "Deals 2 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
         Wizard: "Summon orbs with Mana. Costs 1 Mana per orb. Kills with orbs or bumps earn Mana back. Clearing rooms grants Mana.",
-        Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Raise Dead allies for 2 mana, reviving them at half HP. Activate Carrion Feast for 2 mana to consume corpses for healing and keep it active each turn. Earn mana from kills and clearing rooms.",
+        Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Resurrect Ally for 2 mana, reviving a fallen ally at half HP. Activate Carrion Feast for 2 mana to consume corpses for healing and keep it active each turn. Earn mana from kills and clearing rooms.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
         Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
         Orb: "A volatile sphere of magical energy, summoned by the Wizard.",
@@ -319,7 +319,7 @@ export default class GameController {
     });
 
     // Immediately mark any player discs that carried over as dead (hitPoints=0 from playerStats)
-    // so they appear in the Raise Dead target list without waiting for the animation loop.
+    // so they appear in the Resurrect Ally target list without waiting for the animation loop.
     this.updateAllDiscDeadStates();
 
     // Initialize all spotlight intensities to inactive state
@@ -972,6 +972,9 @@ clamp(value, min, max) {
     if (npcDiscsExist && aliveNpcDiscs === 0 && alivePlayerDiscs > 0) {
       if (!this.roundWon) {
         this.roundWon = true;
+        if (this.necromancerController) {
+          this.necromancerController.cancelCarrionFeast();
+        }
 
         // Necromancer earns 2 mana for clearing a room
         const necromancer = this.necromancerController.getDisc();

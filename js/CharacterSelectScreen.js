@@ -36,7 +36,7 @@ const CHARACTERS = [
     skills: [
       'Animate Dead (1 Mana): raise a fallen enemy as a minion.',
       'Drain Life (2 Mana): sap HP from all nearby enemies at turn\'s end.',
-      'Raise Dead (2 Mana): revive a fallen ally at half HP.',
+      'Resurrect Ally (2 Mana): revive a fallen ally at half HP.',
       'Earn Mana from kills and clearing rooms.',
     ],
   },
