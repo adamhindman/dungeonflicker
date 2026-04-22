@@ -29,6 +29,11 @@ export class LavaManager {
     }
     gc.lavaPools = [];
 
+    // Crusher level: no random lava pools.
+    if (gc.level.crusherConfig) {
+      return;
+    }
+
     // ── Hexagonal level ──────────────────────────────────────────────────────
     // Center pit pool + random pools on the flat outer ring.
     if (gc.level.hexRings) {

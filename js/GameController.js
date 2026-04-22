@@ -733,7 +733,7 @@ export default class GameController {
       return;
     }
 
-    if (this.level && this.level.ringsAnimating) {
+    if (this.level && (this.level.ringsAnimating || this.level._crusherAnim)) {
       return;
     }
 
@@ -1016,8 +1016,8 @@ clamp(value, min, max) {
 
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
-    // Level sequence cycles: bullseye → donut → rectangular → circular → repeat.
-    const sequence = ['circle','rect', 'bullseye', 'donut'];
+    // Level sequence cycles through the authored room types.
+    const sequence = ['crusher', 'circle', 'rect', 'bullseye', 'donut'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1659,6 +1659,68 @@ clamp(value, min, max) {
     }
   }
 
+  _applyCrusherImpacts(crusher, impactLength = crusher ? crusher.currentLength : 0) {
+    if (!crusher || !crusher.mesh) return;
+    const flingDir = new THREE.Vector3(
+      Math.cos(crusher.angle),
+      0,
+      Math.sin(crusher.angle),
+    ).normalize();
+    const sideDir = new THREE.Vector3(-flingDir.z, 0, flingDir.x);
+
+    for (const disc of this.discs) {
+      if (!disc || !disc.mesh || disc.dead || disc.hitPoints <= 0) continue;
+      if (disc.type !== 'player' && disc.type !== 'NPC') continue;
+      if (disc.kind === 'Orb' || disc.kind === 'HealingOrb') continue;
+      const center = disc.mesh.position.clone();
+      const rel = new THREE.Vector3(center.x - crusher.anchorX, 0, center.z - crusher.anchorZ);
+      const along = rel.dot(flingDir);
+      const side = rel.dot(sideDir);
+      if (along < -disc.radius || along > impactLength + disc.radius) continue;
+      if (Math.abs(side) > crusher.width / 2 + disc.radius) continue;
+      if (crusher.hitDiscs && crusher.hitDiscs.has(disc)) continue;
+
+      if (crusher.hitDiscs) crusher.hitDiscs.add(disc);
+      disc.takeHit(2, null);
+      const awayFromAnchor = new THREE.Vector3(
+        center.x - crusher.anchorX,
+        0,
+        center.z - crusher.anchorZ,
+      );
+      if (awayFromAnchor.lengthSq() < 0.001) {
+        awayFromAnchor.copy(flingDir);
+      } else {
+        awayFromAnchor.normalize();
+      }
+      const fling = flingDir.clone().multiplyScalar(0.55).add(awayFromAnchor.multiplyScalar(0.35));
+      disc.velocity.set(fling.x, 0, fling.z);
+      disc.moving = true;
+      if (disc.spotlight) {
+        disc.spotlight.position.x = disc.mesh.position.x;
+        disc.spotlight.position.z = disc.mesh.position.z;
+      }
+    }
+
+    this.updateAllDiscDeadStates();
+    this.updateDiscNames();
+    if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
+  }
+
+  async _waitForCrusherFlingToSettle() {
+    const start = performance.now();
+    await new Promise(resolve => {
+      const poll = setInterval(() => {
+        const anyMoving = this.discs.some(d =>
+          d && !d.dead && d.moving && d.velocity && d.velocity.length() >= 0.01
+        );
+        if (!anyMoving || performance.now() - start > 4000) {
+          clearInterval(poll);
+          resolve();
+        }
+      }, 50);
+    });
+  }
+
   async _proceedToNextPlayerTurn() {
     if (this.checkGameOverConditions()) {
       return;
@@ -1769,6 +1831,54 @@ clamp(value, min, max) {
 
         this._ringStepDiscData = null;
       }
+
+      const crusherData = this.level.stepCrushers();
+      if (crusherData) {
+        this.soundManager.playStoneSlide(new THREE.Vector3(0, 0, 0));
+        await new Promise(resolve => {
+          const poll = setInterval(() => {
+            if (!this.level._crusherAnim || this.level._crusherAnim.impactReady) {
+              clearInterval(poll);
+              resolve();
+            }
+          }, 25);
+        });
+
+        const activeCrushers = crusherData.activeCrushers || [crusherData.activeCrusher];
+        for (const crusher of activeCrushers) {
+          this._applyCrusherImpacts(crusher, crusher.extendedLength);
+        }
+
+        await new Promise(resolve => {
+          const poll = setInterval(() => {
+            if (!this.level._crusherAnim) {
+              clearInterval(poll);
+              resolve();
+            }
+          }, 50);
+        });
+
+        await this._waitForCrusherFlingToSettle();
+      }
+    }
+
+    if (this.checkGameOverConditions()) {
+      return;
+    }
+
+    if (!this.discs[nextIndex] || this.discs[nextIndex].dead || this.discs[nextIndex].hitPoints <= 0) {
+      nextAvailableDiscFound = false;
+      for (let i = 0; i < this.discs.length; i++) {
+        const candidateIndex = (nextIndex + i) % this.discs.length;
+        const candidate = this.discs[candidateIndex];
+        if (!candidate || candidate.dead || candidate.hitPoints <= 0) continue;
+        if (candidate.type !== 'player' && candidate.type !== 'NPC') continue;
+        if (candidate.kind === 'Orb' || candidate.kind === 'HealingOrb' || candidate.kind === 'AnimatedDead') continue;
+        nextIndex = candidateIndex;
+        nextAvailableDiscFound = true;
+        break;
+      }
+      if (!nextAvailableDiscFound) return;
     }
 
     // Reset hasThrown for new currentDisc so it can be thrown

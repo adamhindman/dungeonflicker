@@ -61,6 +61,12 @@ export class PhysicsEngine {
           }
         });
 
+        if (gc.level && gc.level.crusherConfig) {
+          for (const crusher of gc.level.crusherConfig.crushers) {
+            this._handleCrusherCollision(disc, crusher);
+          }
+        }
+
         // Circular obstacle collision for pillars and triangular columns.
         // Box3.setFromObject on a 3-segment prism produces an asymmetric AABB
         // that misses from certain approach angles; a 2D circle push is exact.
@@ -483,5 +489,44 @@ export class PhysicsEngine {
     }
 
     return false; // no early exit needed
+  }
+
+  _handleCrusherCollision(disc, crusher) {
+    const gc = this.gc;
+    if (!disc || !disc.mesh || disc.dead || disc.hitPoints <= 0) return;
+    if (disc.type !== 'player' && disc.type !== 'NPC') return;
+    if (disc.kind === 'Orb' || disc.kind === 'HealingOrb') return;
+
+    const dir = new THREE.Vector3(Math.cos(crusher.angle), 0, Math.sin(crusher.angle)).normalize();
+    const sideDir = new THREE.Vector3(-dir.z, 0, dir.x);
+    const rel = new THREE.Vector3(
+      disc.mesh.position.x - crusher.anchorX,
+      0,
+      disc.mesh.position.z - crusher.anchorZ,
+    );
+    const along = rel.dot(dir);
+    const side = rel.dot(sideDir);
+    const clampedAlong = Math.max(0, Math.min(along, crusher.currentLength));
+    const clampedSide = Math.max(-crusher.width / 2, Math.min(side, crusher.width / 2));
+    const closest = dir.clone().multiplyScalar(clampedAlong).add(sideDir.clone().multiplyScalar(clampedSide));
+    const delta = rel.clone().sub(closest);
+    const dist = delta.length();
+    if (dist >= disc.radius) return;
+
+    const normal = dist > 0.001 ? delta.multiplyScalar(1 / dist) : dir.clone();
+    disc.mesh.position.x += normal.x * (disc.radius - dist);
+    disc.mesh.position.z += normal.z * (disc.radius - dist);
+
+    if (!crusher.hitDiscs.has(disc)) {
+      crusher.hitDiscs.add(disc);
+      disc.takeHit(2, null);
+      if (gc.updateAllDiscDeadStates) gc.updateAllDiscDeadStates();
+      if (gc.updateDiscNames) gc.updateDiscNames();
+    }
+
+    const fling = dir.clone().multiplyScalar(0.55).add(normal.multiplyScalar(0.35));
+    disc.velocity.set(fling.x, 0, fling.z);
+    disc.moving = true;
+    if (gc.soundManager) gc.soundManager.playBounce(disc.mesh.position.clone());
   }
 }
