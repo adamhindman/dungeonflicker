@@ -15,7 +15,8 @@ export class NecromancerController {
     this.hasMovedThisTurn = false;
     this.animatedDeadDiscs = [];
     this.movedThisTurn = new Set(); // AnimatedDead discs that have already moved this turn
-    this.selectingTarget = false;   // True while player must click a dead NPC in the scene
+    this.selectingTarget = false;   // True while player must click a spell target in the scene
+    this.targetSelectionMode = null;
     this.hoveredDisc = null;        // Corpse currently under cursor during target selection
     this._targetBeams = [];
     this._beamGeo = null;
@@ -204,6 +205,7 @@ export class NecromancerController {
     if (deadNPCs.length === 0) return;
 
     this.selectingTarget = true;
+    this.targetSelectionMode = 'animateDead';
     deadNPCs.forEach(d => d.updateSpotlightConfig('animateDeadTarget'));
     this._spawnTargetBeams(deadNPCs);
     if (this.gc.uiManager) {
@@ -223,18 +225,13 @@ export class NecromancerController {
     );
     if (deadPCs.length === 0) return;
 
-    this._showTargetSelectionPopup(
-      deadPCs,
-      (target) => {
-        const success = this.raiseDeadDisc(necro, target);
-        if (success) {
-          if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necro);
-          this.updateActionButtons();
-          this.gc.updateDiscNames();
-        }
-      },
-      'Choose an ally to raise:'
-    );
+    this.selectingTarget = true;
+    this.targetSelectionMode = 'raiseDead';
+    this._spawnTargetBeams(deadPCs, 0xffffff, 0.18);
+    if (this.gc.uiManager) {
+      this.gc.uiManager.updateThrowInfo('Click a dead ally to raise them  •  Esc to cancel', true);
+    }
+    this.updateActionButtons();
   }
 
   _handleDrainLifeButtonClick() {
@@ -424,7 +421,8 @@ export class NecromancerController {
       necro === currentTurnDisc &&
       !this.gc.gameOverState.active &&
       this.mana >= 2 &&
-      deadPCs.length > 0);
+      deadPCs.length > 0 &&
+      !this.selectingTarget);
     this.raiseDeadButton.style.display = shouldBeVisible ? 'inline-block' : 'none';
     this.raiseDeadButton.disabled = !shouldBeVisible;
   }
@@ -525,8 +523,9 @@ export class NecromancerController {
   cancelTargetSelection() {
     if (!this.selectingTarget) return;
     this.selectingTarget = false;
+    this.targetSelectionMode = null;
     this.hoveredDisc = null;
-    this.gc.discs.filter(d => d.type === 'NPC' && d.dead)
+    this.gc.discs.filter(d => d.dead)
                  .forEach(d => d.updateSpotlightConfig('dead'));
     this._clearTargetBeams();
     if (this.gc.uiManager) this.gc.uiManager.updateThrowInfo('', false);
@@ -543,7 +542,7 @@ export class NecromancerController {
     );
     this.gc.raycaster.setFromCamera(mouse, this.gc.camera);
 
-    const eligible = this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
+    const eligible = this._getTargetSelectionDiscs();
     let hovered = null;
     for (const disc of eligible) {
       if (this.gc.raycaster.intersectObject(disc.mesh, true).length > 0) {
@@ -553,23 +552,54 @@ export class NecromancerController {
     }
 
     if (hovered === this.hoveredDisc) return;
-    if (this.hoveredDisc) this.hoveredDisc.updateSpotlightConfig('animateDeadTarget');
+    if (this.hoveredDisc && this.targetSelectionMode === 'animateDead') {
+      this.hoveredDisc.updateSpotlightConfig('animateDeadTarget');
+    }
     this.hoveredDisc = hovered;
-    if (hovered) hovered.updateSpotlightConfig('animateDeadHovered');
+    if (hovered && this.targetSelectionMode === 'animateDead') {
+      hovered.updateSpotlightConfig('animateDeadHovered');
+    }
   }
 
   handleTargetClick(clickedDisc) {
-    if (clickedDisc && clickedDisc.type === 'NPC' && clickedDisc.dead) {
-      const necromancer = this.gc.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
-      if (necromancer) {
+    const necromancer = this.gc.discs.find(d => d.kind === 'Necromancer' && d.type === 'player' && !d.dead);
+    if (clickedDisc && necromancer) {
+      if (this.targetSelectionMode === 'animateDead' && clickedDisc.type === 'NPC' && clickedDisc.dead) {
         const success = this.animateDeadDisc(necromancer, clickedDisc);
         if (success) {
           if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necromancer);
           this.gc.updateDiscNames();
         }
+      } else if (this.targetSelectionMode === 'raiseDead' && this._isRaiseDeadTarget(clickedDisc)) {
+        const success = this.raiseDeadDisc(necromancer, clickedDisc);
+        if (success) {
+          if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necromancer);
+          this.updateActionButtons();
+          this.gc.updateDiscNames();
+        }
       }
     }
     this.cancelTargetSelection();
+  }
+
+  _getTargetSelectionDiscs() {
+    if (this.targetSelectionMode === 'raiseDead') {
+      return this.gc.discs.filter(d => this._isRaiseDeadTarget(d));
+    }
+    if (this.targetSelectionMode === 'animateDead') {
+      return this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
+    }
+    return [];
+  }
+
+  _isRaiseDeadTarget(disc) {
+    return !!(disc &&
+      disc.type === 'player' &&
+      disc.dead &&
+      disc.kind !== 'Orb' &&
+      disc.kind !== 'HealingOrb' &&
+      disc.kind !== 'AnimatedDead' &&
+      disc.kind !== 'Necromancer');
   }
 
   _showTargetSelectionPopup(targets, onSelect, title) {
@@ -612,13 +642,13 @@ export class NecromancerController {
     }
   }
 
-  _spawnTargetBeams(discs) {
+  _spawnTargetBeams(discs, color = 0x9933ff, opacity = 0.13) {
     this._clearTargetBeams();
     if (!discs.length) return;
     const beamH = 200;
     this._beamGeo = new THREE.CylinderGeometry(1.0, 1.0, beamH, 16, 1, true);
     this._beamMat = new THREE.MeshBasicMaterial({
-      color: 0x9933ff, transparent: true, opacity: 0.13,
+      color, transparent: true, opacity,
       side: THREE.BackSide, depthWrite: false,
     });
     discs.forEach(d => {
