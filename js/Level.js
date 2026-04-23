@@ -16,6 +16,7 @@ export default class Level {
     this.floor = null;
     this.textureLoader = new THREE.TextureLoader();
     this.wallMaterial = null;
+    this.obstacleMaterial = null;
     this.obstacles = [];
     // Legacy portal arrays kept for safety (unused with new door system)
     this.portals = [];
@@ -118,6 +119,20 @@ export default class Level {
       uv.setXY(i, u, v);
     }
     uv.needsUpdate = true;
+  }
+
+  _getObstacleMaterial() {
+    if (!this.obstacleMaterial) {
+      const tex = this.textureLoader.load("images/stacked-tile-light.png");
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      this.obstacleMaterial = new THREE.MeshStandardMaterial({
+        map: tex,
+        roughness: 0.6,
+        metalness: 0.2,
+      });
+    }
+    return this.obstacleMaterial;
   }
 
   getAllWalls() {
@@ -454,7 +469,7 @@ export default class Level {
   }
 
   /**
-   * Scatter vine-tile overlay quads on wall and obstacle faces.
+   * Scatter vine-tile overlay quads on wall faces.
    * Each quad is a TILE×TILE PlaneGeometry placed on a TILE-aligned grid,
    * offset slightly in front of the surface to prevent z-fighting.
    * All quads share one material; the geometry per quad is small and cheap.
@@ -539,21 +554,6 @@ export default class Level {
       scatterFace(D, H, 'east',  (lh, cy) => addTile( W / 2 - OFFSET, cy,  lh,             -Math.PI / 2));
       // West  (x = -W/2): inner face faces +X → rotY = +Math.PI/2
       scatterFace(D, H, 'west',  (lh, cy) => addTile(-W / 2 + OFFSET, cy,  lh,              Math.PI / 2));
-    }
-
-    // Obstacle faces — all four vertical sides of non-pillar obstacles
-    for (const obs of this.obstacles) {
-      if (obs.type === 'pillar') continue;
-      const { x: ox, z: oz, width: ow, depth: od } = obs;
-
-      // South face (+Z normal), rotY = 0
-      scatterFace(ow, H, null, (lh, cy) => addTile(ox + lh, cy, oz + od / 2 + OFFSET,  0));
-      // North face (-Z normal), rotY = Math.PI
-      scatterFace(ow, H, null, (lh, cy) => addTile(ox + lh, cy, oz - od / 2 - OFFSET,  Math.PI));
-      // East face  (+X normal), rotY = +Math.PI/2
-      scatterFace(od, H, null, (lh, cy) => addTile(ox + ow / 2 + OFFSET, cy, oz + lh,  Math.PI / 2));
-      // West face  (-X normal), rotY = -Math.PI/2
-      scatterFace(od, H, null, (lh, cy) => addTile(ox - ow / 2 - OFFSET, cy, oz + lh, -Math.PI / 2));
     }
   }
 
@@ -797,7 +797,7 @@ export default class Level {
       this.applyWallUVs(geometry, obstacle.width, this.wallHeight, obstacle.depth);
     }
 
-    const mesh = new THREE.Mesh(geometry, this.wallMaterial);
+    const mesh = new THREE.Mesh(geometry, this._getObstacleMaterial());
     mesh.position.set(obstacle.x, this.wallHeight / 2, obstacle.z);
     if (obstacle.type === "triangle") {
       mesh.rotation.y = obstacle.rotY ?? 0;
@@ -978,6 +978,12 @@ export default class Level {
       if (this.wallMaterial.map) this.wallMaterial.map.dispose();
       this.wallMaterial.dispose();
       this.wallMaterial = null;
+    }
+
+    if (this.obstacleMaterial) {
+      if (this.obstacleMaterial.map) this.obstacleMaterial.map.dispose();
+      this.obstacleMaterial.dispose();
+      this.obstacleMaterial = null;
     }
 
     // Vine tile overlays

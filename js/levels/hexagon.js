@@ -290,7 +290,7 @@ export function loadHexagon() {
 
     const geo = new THREE.CylinderGeometry(COL_W / 2, COL_W / 2, this.wallHeight, 3);
     this.applyCylinderUVs(geo, COL_W / 2, this.wallHeight);
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new THREE.Mesh(geo, this._getObstacleMaterial());
     mesh.position.set(x, MED_Y + this.wallHeight / 2, z);
     mesh.rotation.y = rotY;
     mesh.castShadow    = true;

@@ -102,7 +102,7 @@ export function loadBullseye() {
 
       const geo  = new THREE.CylinderGeometry(COL_RAD, COL_RAD, wallH, 16);
       this.applyCylinderUVs(geo, COL_RAD, wallH);
-      const mesh = new THREE.Mesh(geo, this.wallMaterial);
+      const mesh = new THREE.Mesh(geo, this._getObstacleMaterial());
       mesh.position.set(cx, wallH / 2, cz);
       mesh.castShadow    = true;
       mesh.receiveShadow = true;

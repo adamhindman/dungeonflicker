@@ -257,7 +257,7 @@ export function loadDonut() {
     this.obstacles.push({ x, z, width: COL_R * 2, depth: COL_R * 2, type: 'pillar' });
     const geo = new THREE.CylinderGeometry(COL_R, COL_R, wallH, 12);
     this.applyCylinderUVs(geo, COL_R, wallH);
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new THREE.Mesh(geo, this._getObstacleMaterial());
     mesh.position.set(x, MED_Y + wallH / 2, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
