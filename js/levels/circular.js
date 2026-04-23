@@ -20,8 +20,26 @@ export function loadCircular() {
   tileTexture.wrapT = THREE.RepeatWrapping;
   tileTexture.repeat.set((INNER_R * 2) / 6, (INNER_R * 2) / 6);
 
+  const floorOuterR = INNER_R / Math.cos(Math.PI / N);
+  const floorPositions = [[0, 0, 0]];
+  const floorUvs = [[0.5, 0.5]];
+  const floorIndices = [];
+  for (let i = 0; i < N; i++) {
+    const theta = i * (2 * Math.PI / N) - Math.PI / N;
+    const x = Math.sin(theta) * floorOuterR;
+    const z = Math.cos(theta) * floorOuterR;
+    floorPositions.push([x, 0, z]);
+    floorUvs.push([(x / floorOuterR + 1) / 2, (z / floorOuterR + 1) / 2]);
+    floorIndices.push(0, i + 1, i === N - 1 ? 1 : i + 2);
+  }
+  const floorGeo = new THREE.BufferGeometry();
+  floorGeo.setAttribute('position', new THREE.Float32BufferAttribute(floorPositions.flat(), 3));
+  floorGeo.setAttribute('uv', new THREE.Float32BufferAttribute(floorUvs.flat(), 2));
+  floorGeo.setIndex(floorIndices);
+  floorGeo.computeVertexNormals();
+
   this.floor = new THREE.Mesh(
-    new THREE.CircleGeometry(INNER_R, 48),
+    floorGeo,
     new THREE.MeshStandardMaterial({
       map: tileTexture,
       roughness: 0.6,
@@ -29,7 +47,6 @@ export function loadCircular() {
       side: THREE.DoubleSide,
     })
   );
-  this.floor.rotation.x = -Math.PI / 2;
   this.floor.receiveShadow = true;
   this.scene.add(this.floor);
 

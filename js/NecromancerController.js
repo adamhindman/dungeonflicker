@@ -365,7 +365,7 @@ export class NecromancerController {
 
     // Self-cost: only when no NPCs were drained
     if (totalDrained === 0) {
-      necDisc.takeHit(1, null);
+      necDisc.takeHit(2, null);
       if (necDisc.hitPoints <= 0 && !necDisc.dead) {
         necDisc.die();
         this._deactivateDrainLife(necDisc);

@@ -1017,7 +1017,7 @@ clamp(value, min, max) {
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
     // Level sequence cycles through the authored room types.
-    const sequence = ['crusher', 'circle', 'rect', 'bullseye', 'donut'];
+    const sequence = ['circle', 'crusher', 'rect', 'bullseye', 'donut'];
     return sequence[(n - 1) % sequence.length];
   }
 
