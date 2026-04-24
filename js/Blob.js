@@ -17,7 +17,7 @@ export default class Blob extends Disc {
             /* imagePath: */ "images/gelatinous-nobg.png",
             /* canDoReboundDamage: */ false,
             /* throwPowerMultiplier: */ 1,
-            /* mass: */ 0.5,
+            /* mass: */ 1.5,
             /* rageIsActiveForNextThrow: */ false,
             /* rageWasUsedThisThrow: */ false,
             /* attackDamage: */ 2,
@@ -43,8 +43,8 @@ export default class Blob extends Disc {
         this.maxHitPoints = 4 + (this.evolutionForm - 1);
         this.hitPoints = Math.min(this.hitPoints + 1, this.maxHitPoints);
         this.attackDamage = 2 + (this.evolutionForm - 1);
-        this.throwPowerMultiplier = Math.pow(0.8, this.evolutionForm - 1);
-        this.mass = 0.5 * Math.pow(1.5, this.evolutionForm - 1);
+        this.throwPowerMultiplier = 1;
+        this.mass = 1.5 * Math.pow(1.15, this.evolutionForm - 1);
 
         this.description = `A gelatinous cube that evolves with each corpse eaten. Grows stronger and slower as it absorbs its prey.\n\nThis blob has evolved to level ${this.evolutionForm}`;
 

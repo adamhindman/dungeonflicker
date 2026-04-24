@@ -346,8 +346,6 @@ export default class UIManager {
     updateFPS(fps) {
         if (this.fpsDisplayElement) {
             this.fpsDisplayElement.textContent = `FPS: ${fps}`;
-            // If updateFPS is called, it means the FPS counter should be visible
-            this.fpsDisplayElement.style.display = 'inline-block'; // Or 'block' or 'inline' based on original CSS
         }
     }
 
@@ -470,6 +468,18 @@ export default class UIManager {
                     heartsDiv.textContent = redHearts + grayHearts;
                     this.currentTurnDiscNameElement.appendChild(heartsDiv);
 
+                    // Add Charges display for Barbarian
+                    if (currentDisc.kind === 'Barbarian' && currentDisc.gameController) {
+                        const chargesDiv = document.createElement('div');
+                        chargesDiv.classList.add('mana-container');
+                        chargesDiv.style.display = 'block';
+                        chargesDiv.style.fontSize = '0.8em';
+                        chargesDiv.style.marginTop = '4px';
+                        const charges = currentDisc.gameController.barbarianController.rageCharges;
+                        chargesDiv.textContent = `Charges: ${'⚡'.repeat(charges)}`;
+                        this.currentTurnDiscNameElement.appendChild(chargesDiv);
+                    }
+
                     // Add Mana display for Wizard
                     if (currentDisc.kind === 'Wizard' && currentDisc.gameController) {
                         const manaDiv = document.createElement('div');
@@ -543,7 +553,7 @@ export default class UIManager {
             // Ensure charges and maxCharges are numbers before calling toFixed or similar
             const currentCharges = typeof charges === 'number' ? charges : 0;
             const maximumCharges = typeof maxCharges === 'number' ? maxCharges : 0;
-            this.rageButtonElement.innerHTML = `<kbd>1</kbd> Rage (${currentCharges}/${maximumCharges})`;
+            this.rageButtonElement.innerHTML = `<kbd>1</kbd> Rage`;
         }
     }
 

@@ -16,8 +16,14 @@ export class WizardController {
     this.summonOrbsButton = null;
     this.summonHealingOrbsButton = null;
     this.radiusBlastButton = null;
+    this.flameStrikeButton = null;
     this.endTurnButton = null;
     this._actionButtonsContainer = null;
+
+    this.flameStrikeTargetingActive = false;
+    this.flameStrikeTargetRing = null;
+    this.flameStrikeTargetPos = new THREE.Vector3();
+    this._flameStrikeCones = [];
   }
 
   init(actionButtonsContainer) {
@@ -28,6 +34,8 @@ export class WizardController {
     this._setupSummonHealingOrbsButtonListener();
     this._createRadiusBlastButton();
     this._setupRadiusBlastButtonListener();
+    this._createFlameStrikeButton();
+    this._setupFlameStrikeButtonListener();
     this._createEndTurnButton();
     this._setupEndTurnButtonListener();
     this.updateActionButtons();
@@ -46,6 +54,11 @@ export class WizardController {
       this.radiusBlastButton,
       'wizard_radius_blast_used',
       'Spend 2 mana to knock back and deal 1 damage to all nearby discs.'
+    );
+    tooltipManager.register(
+      this.flameStrikeButton,
+      'wizard_flame_strike_used',
+      'Spend 4 mana to strike a 3-unit radius with flames, dealing 3 damage and knockback.'
     );
   }
 
@@ -97,6 +110,20 @@ export class WizardController {
     this.radiusBlastButton = button;
   }
 
+  _createFlameStrikeButton() {
+    if (!this._actionButtonsContainer) return;
+    let button = document.getElementById('flame-strike-button');
+    if (!button) {
+      button = document.createElement('button');
+      button.id = 'flame-strike-button';
+      button.dataset.shortcut = '4';
+      button.innerHTML = '<kbd>4</kbd> Flame Strike (1 Mana)';
+      this._actionButtonsContainer.appendChild(button);
+    }
+    button.style.display = 'none';
+    this.flameStrikeButton = button;
+  }
+
   _createEndTurnButton() {
     if (!this._actionButtonsContainer) return;
     let button = document.getElementById('wizard-end-turn-button');
@@ -127,6 +154,12 @@ export class WizardController {
   _setupRadiusBlastButtonListener() {
     if (this.radiusBlastButton) {
       this.radiusBlastButton.addEventListener('click', this._handleRadiusBlastButtonClick.bind(this));
+    }
+  }
+
+  _setupFlameStrikeButtonListener() {
+    if (this.flameStrikeButton) {
+      this.flameStrikeButton.addEventListener('click', this._handleFlameStrikeButtonClick.bind(this));
     }
   }
 
@@ -175,6 +208,15 @@ export class WizardController {
     }
   }
 
+  _handleFlameStrikeButtonClick() {
+    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    if (!currentDisc || currentDisc.kind !== 'Wizard' || currentDisc.dead) return;
+    if (this.mana >= 1) {
+      firstTimeEvents.track('wizard_flame_strike_used');
+      this.startFlameStrikeTargeting(currentDisc);
+    }
+  }
+
   async _handleEndTurnButtonClick() {
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (currentDisc && currentDisc.kind === 'Wizard' && !currentDisc.dead) {
@@ -188,6 +230,7 @@ export class WizardController {
     this._updateSummonOrbsButtonVisibility();
     this._updateSummonHealingOrbsButtonVisibility();
     this._updateRadiusBlastButtonVisibility();
+    this._updateFlameStrikeButtonVisibility();
     if (this.gc.uiManager) this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
   }
 
@@ -232,6 +275,19 @@ export class WizardController {
       this.mana >= 2);
     this.radiusBlastButton.style.display = shouldBeVisible ? 'inline-block' : 'none';
     this.radiusBlastButton.disabled = !shouldBeVisible;
+  }
+
+  _updateFlameStrikeButtonVisibility() {
+    if (!this.flameStrikeButton) return;
+    const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    const shouldBeVisible = !!(currentDisc &&
+      currentDisc.kind === 'Wizard' &&
+      currentDisc.type === 'player' &&
+      !currentDisc.dead &&
+      !this.gc.gameOverState.active &&
+      this.mana >= 1);
+    this.flameStrikeButton.style.display = shouldBeVisible ? 'inline-block' : 'none';
+    this.flameStrikeButton.disabled = !shouldBeVisible;
   }
 
   updateEndTurnButtonVisibility() {
@@ -384,11 +440,81 @@ export class WizardController {
     this.updateActionButtons();
   }
 
+  startFlameStrikeTargeting(wizardDisc) {
+    if (!wizardDisc || wizardDisc.dead || this.mana < 1) return;
+    this.flameStrikeTargetingActive = true;
+    this.flameStrikeTargetPos.copy(wizardDisc.mesh.position);
+
+    const geometry = new THREE.TorusGeometry(1, 0.1, 8, 64);
+    const material = new THREE.MeshBasicMaterial({
+      color: 0xFF8800, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+    });
+    this.flameStrikeTargetRing = new THREE.Mesh(geometry, material);
+    this.flameStrikeTargetRing.rotation.x = Math.PI / 2;
+    this.flameStrikeTargetRing.scale.set(3, 3, 1);
+    this.flameStrikeTargetRing.position.copy(this.flameStrikeTargetPos);
+    this.gc.scene.add(this.flameStrikeTargetRing);
+
+    if (this.gc.controls) this.gc.controls.enabled = false;
+    if (this.gc) this.gc.controlsEnabled = false;
+  }
+
+  castFlameStrike(targetX, targetZ, wizardDisc) {
+    if (!wizardDisc || wizardDisc.dead || this.mana < 1) return;
+    this.endFlameStrikeTargeting();
+
+    this.mana -= 1;
+
+    const STRIKE_RADIUS = 2.5;
+    const BEAM_H = 60;
+    const geo = new THREE.CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
+    const tex = new THREE.TextureLoader().load('images/fire-column-tile.png');
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 6);
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(targetX, BEAM_H * 1.5, targetZ);
+    this.gc.scene.add(mesh);
+
+    this._flameStrikeCones.push({
+      mesh, geometry: geo, material: mat, texture: tex,
+      elapsed: 0,
+      targetX, targetZ,
+      wizardDisc,
+      shockwaveSpawned: false,
+    });
+
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(wizardDisc);
+    this.updateActionButtons();
+
+    if (this.gc.controls) this.gc.controls.enabled = true;
+    if (this.gc) this.gc.controlsEnabled = true;
+  }
+
+  endFlameStrikeTargeting() {
+    if (this.flameStrikeTargetRing) {
+      this.gc.scene.remove(this.flameStrikeTargetRing);
+      this.flameStrikeTargetRing.geometry.dispose();
+      this.flameStrikeTargetRing.material.dispose();
+      this.flameStrikeTargetRing = null;
+    }
+    this.flameStrikeTargetingActive = false;
+  }
+
   // ─── Per-frame update (called from animate loop) ────────────────────────────
 
   update(deltaTime) {
     this._updateOrbFollowing();
     this._updateRadiusBlastRings(deltaTime);
+    this._updateFlameStrikeTargeting();
+    this._updateFlameStrikeCones(deltaTime);
   }
 
   _updateOrbFollowing() {
@@ -433,6 +559,95 @@ export class WizardController {
         r.mesh.geometry.dispose();
         r.mesh.material.dispose();
         this._radiusBlastRings.splice(i, 1);
+      }
+    }
+  }
+
+  _updateFlameStrikeTargeting() {
+    if (!this.flameStrikeTargetingActive || !this.flameStrikeTargetRing) return;
+
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    this.gc.raycaster.setFromCamera(this.gc.mouse, this.gc.camera);
+    const intersection = new THREE.Vector3();
+    this.gc.raycaster.ray.intersectPlane(plane, intersection);
+
+    if (this.gc.level) {
+      const r = 0.35;
+      intersection.x = Math.max(-this.gc.level.fieldWidth / 2 + r, Math.min(this.gc.level.fieldWidth / 2 - r, intersection.x));
+      intersection.z = Math.max(-this.gc.level.fieldDepth / 2 + r, Math.min(this.gc.level.fieldDepth / 2 - r, intersection.z));
+    }
+
+    this.flameStrikeTargetRing.position.x = intersection.x;
+    this.flameStrikeTargetRing.position.z = intersection.z;
+    this.flameStrikeTargetPos.copy(intersection);
+  }
+
+  _updateFlameStrikeCones(deltaTime) {
+    const DESCEND_DUR = 0.18;
+    const FADE_DUR    = 0.22;
+    const BEAM_H      = 60;
+    const MAX_OPACITY = 0.9;
+    const STRIKE_RADIUS = 2.5;
+    const START_Y = BEAM_H * 1.5;
+    const END_Y   = BEAM_H / 2;
+
+    for (let i = this._flameStrikeCones.length - 1; i >= 0; i--) {
+      const cone = this._flameStrikeCones[i];
+      cone.elapsed += deltaTime;
+
+      cone.texture.offset.y -= deltaTime * 3;
+
+      if (cone.elapsed < DESCEND_DUR) {
+        const t = cone.elapsed / DESCEND_DUR;
+        cone.mesh.position.y = START_Y + (END_Y - START_Y) * t;
+        cone.material.opacity = MAX_OPACITY;
+      } else {
+        cone.mesh.position.y = END_Y;
+        const t = (cone.elapsed - DESCEND_DUR) / FADE_DUR;
+        cone.material.opacity = MAX_OPACITY * Math.max(0, 1 - t);
+      }
+
+      if (!cone.shockwaveSpawned && cone.elapsed >= DESCEND_DUR) {
+        cone.shockwaveSpawned = true;
+
+        const { targetX, targetZ, wizardDisc } = cone;
+        this.gc.discs.forEach(disc => {
+          if (disc.dead) return;
+          const dx = disc.mesh.position.x - targetX;
+          const dz = disc.mesh.position.z - targetZ;
+          const dist = Math.sqrt(dx * dx + dz * dz);
+          if (dist <= STRIKE_RADIUS) {
+            const force = 0.5 * (1 - dist / STRIKE_RADIUS);
+            const length = dist > 0 ? dist : 0.1;
+            disc.velocity.x += (dx / length) * force;
+            disc.velocity.z += (dz / length) * force;
+            disc.moving = true;
+            disc.takeHit(4, wizardDisc);
+          }
+        });
+        this.gc.updateAllDiscDeadStates();
+        this.gc.checkGameOverConditions();
+
+        const ringY = 0.1;
+        for (let j = 0; j < 2; j++) {
+          const geometry = new THREE.TorusGeometry(1, 0.05, 8, 64);
+          const material = new THREE.MeshBasicMaterial({
+            color: 0xFF8800, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+          });
+          const ring = new THREE.Mesh(geometry, material);
+          ring.rotation.x = Math.PI / 2;
+          ring.position.set(targetX, ringY, targetZ);
+          this.gc.scene.add(ring);
+          this._radiusBlastRings.push({ mesh: ring, delay: j * 0.1, elapsed: 0, duration: 0.45, maxRadius: STRIKE_RADIUS * 1.5 });
+        }
+      }
+
+      if (cone.elapsed >= DESCEND_DUR + FADE_DUR) {
+        this.gc.scene.remove(cone.mesh);
+        cone.geometry.dispose();
+        cone.texture.dispose();
+        cone.material.dispose();
+        this._flameStrikeCones.splice(i, 1);
       }
     }
   }
@@ -490,6 +705,7 @@ export class WizardController {
 
   onTurnEnd() {
     this.hasMovedThisTurn = false;
+    this.endFlameStrikeTargeting();
   }
 
   onLevelStart() {
@@ -503,5 +719,13 @@ export class WizardController {
     this.manaEarnedThisTurn = 0;
     this.hasMovedThisTurn = false;
     this.orbs = [];
+    this.endFlameStrikeTargeting();
+    for (const cone of this._flameStrikeCones) {
+      this.gc.scene.remove(cone.mesh);
+      cone.geometry.dispose();
+      if (cone.texture) cone.texture.dispose();
+      cone.material.dispose();
+    }
+    this._flameStrikeCones = [];
   }
 }

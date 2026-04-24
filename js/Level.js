@@ -660,7 +660,7 @@ export default class Level {
    */
   generateRandomObstacles(maxCount = null) {
     this.obstacles = [];
-    const defaultCount = 4 + Math.floor(Math.random() * 4);
+    const defaultCount = 3 + Math.floor(Math.random() * 3);
     const numObstacles = maxCount !== null ? Math.min(maxCount, defaultCount) : defaultCount;
 
     for (let i = 0; i < numObstacles; i++) {

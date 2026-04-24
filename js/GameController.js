@@ -391,12 +391,13 @@ export default class GameController {
 }
 
   handlePointerHover(event) {
+    this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+    this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
     this.necromancerController.handlePointerHover(event);
 
     // Highlight the door frame when the round is won and the door is open
     if (this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
-      this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
       this.raycaster.setFromCamera(this.mouse, this.camera);
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       const isHovered = hits.length > 0;
@@ -409,6 +410,9 @@ export default class GameController {
 
   handlePointerDownInteraction(event, initialPointerDownPos) {
     if (this.gameOverState.active) {
+      return;
+    }
+    if (this.wizardController.flameStrikeTargetingActive) {
       return;
     }
     if (this.soundManager) this.soundManager.notifyUserInteraction();
@@ -489,6 +493,8 @@ export default class GameController {
                 discToControl = discForTurn; // This character is the controlled disc
                 if (discForTurn.hasThrown) { // Crucial check: Has this disc already been thrown this turn?
                     allowAiming = false;
+                } else if (discForTurn.kind === 'Barbarian' && this.barbarianController.hasMoved && !discForTurn.rageIsActiveForNextThrow) {
+                    allowAiming = false; // Must activate Rage before throwing again
                 } else {
                     allowAiming = true;
                 }
@@ -656,6 +662,23 @@ export default class GameController {
     const clickedDisc = this.pointerDisc; // Disc under cursor at pointerdown, set in handlePointerDownInteraction
 
     if (dragLength <= clickThreshold) { // It's a click/tap
+      // Handle Flame Strike targeting
+      if (this.wizardController.flameStrikeTargetingActive) {
+        const currentDisc = this.currentTurnIndex !== -1 ? this.discs[this.currentTurnIndex] : null;
+        if (currentDisc && currentDisc.kind === 'Wizard') {
+          this.wizardController.castFlameStrike(
+            this.wizardController.flameStrikeTargetPos.x,
+            this.wizardController.flameStrikeTargetPos.z,
+            currentDisc
+          );
+        } else {
+          this.wizardController.endFlameStrikeTargeting();
+        }
+        this.controls.enabled = true;
+        this.controlsEnabled = true;
+        return;
+      }
+
       // Handle Animate Dead disc-selection mode — player clicks a corpse in the scene
       if (this.necromancerController.selectingTarget) {
         this.necromancerController.handleTargetClick(clickedDisc);
@@ -1018,7 +1041,7 @@ clamp(value, min, max) {
   /** Returns the room shape for a given 1-based level number. */
   _shapeForLevel(n) {
     // Level sequence cycles through the authored room types.
-    const sequence = ['circle', 'crusher', 'rect', 'bullseye', 'donut'];
+    const sequence = ['rect', 'circle', 'crusher', 'bullseye', 'donut'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1094,40 +1117,30 @@ clamp(value, min, max) {
     this.thrownDisc = null;
     this.playerDamagedNPCsThisThrow.clear();
 
-    // 5. Determine who starts the next level
+    // 5. Determine who starts the next level and reorder discs so that
+    //    turn progression is: triggering PC → other PCs → NPCs
     let foundNext = false;
 
-    // If a specific player disc triggered the portal, they start the next level
     if (triggeringDisc) {
         let targetKind = triggeringDisc.kind;
         // Healing orbs count as the Wizard's move
         if (targetKind === 'HealingOrb') targetKind = 'Wizard';
 
-        const matchingDiscIndex = this.discs.findIndex(d =>
+        const triggeringPlayer = this.discs.find(d =>
             d.kind === targetKind && d.type === 'player' && !d.dead
         );
-        if (matchingDiscIndex !== -1) {
-            this.currentTurnIndex = matchingDiscIndex;
+        if (triggeringPlayer) {
+            const isSpecialPlayer = d => d.kind === 'Orb' || d.kind === 'HealingOrb' || d.kind === 'AnimatedDead';
+            const otherPCs = this.discs.filter(d => d !== triggeringPlayer && d.type === 'player' && !isSpecialPlayer(d));
+            const rest = this.discs.filter(d => d.type !== 'player' || isSpecialPlayer(d));
+            this.discs = [triggeringPlayer, ...otherPCs, ...rest];
+            this.currentTurnIndex = 0;
             foundNext = true;
         }
     }
 
     if (!foundNext) {
-        // Fallback: advance turn to the next player
-        // We use previousActingIndex because initDiscs resets currentTurnIndex
-        let nextIndex = (previousActingIndex + 1) % this.discs.length;
-        for (let i = 0; i < this.discs.length; i++) {
-            const idx = (nextIndex + i) % this.discs.length;
-            const d = this.discs[idx];
-            if (d && d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && !d.dead) {
-                this.currentTurnIndex = idx;
-                foundNext = true;
-                break;
-            }
-        }
-    }
-
-    if (!foundNext) {
+        // Fallback: find first alive player
         const firstAlive = this.discs.findIndex(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && !d.dead);
         this.currentTurnIndex = firstAlive !== -1 ? firstAlive : 0;
     }
@@ -1587,9 +1600,7 @@ clamp(value, min, max) {
                   const actor = this.currentDisc;
                   if (actor && actor.type === 'player') {
                       if (actor.kind === 'Barbarian') {
-                          if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
-                              this.barbarianController.rageCharges++;
-                          }
+                          this.barbarianController.rageCharges++;
                       } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
                           this.wizardController.manaEarnedThisTurn++;
                       }
@@ -1646,8 +1657,10 @@ clamp(value, min, max) {
             await this.wizardController.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Necromancer' || justMovedDisc.kind === 'AnimatedDead') {
             await this.necromancerController.onDiscStopped(justMovedDisc);
+        } else if (justMovedDisc.kind === 'Barbarian') {
+            await this.barbarianController.onDiscStopped(justMovedDisc);
         } else {
-            // Barbarian, NPC, or any other disc
+            // NPC or any other disc
             await this._proceedToNextPlayerTurn();
         }
       }
@@ -2321,9 +2334,7 @@ clamp(value, min, max) {
             const actor = this.currentDisc;
             if (actor && actor.type === 'player') {
                 if (actor.kind === 'Barbarian') {
-                    if (this.barbarianController.rageCharges < this.barbarianController.maxRageChargesCap) {
-                        this.barbarianController.rageCharges++;
-                    }
+                    this.barbarianController.rageCharges++;
                 } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
                     this.wizardController.manaEarnedThisTurn++;
                 }

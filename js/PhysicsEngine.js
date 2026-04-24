@@ -165,9 +165,9 @@ export class PhysicsEngine {
       for (let j = i + 1; j < collisionArray.length; j++) {
         const d2 = collisionArray[j];
 
-        // Skip collision between Wizard and his own orbs while they are orbiting
-        if ((d1.kind === 'Wizard' && gc.wizardController.orbs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Wizard' && gc.wizardController.orbs.includes(d1) && !d1.moving)) {
+        // Skip collision between Wizard and his own regular Orbs while they are orbiting
+        if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && gc.wizardController.orbs.includes(d2) && !d2.moving) ||
+            (d2.kind === 'Wizard' && d1.kind === 'Orb' && gc.wizardController.orbs.includes(d1) && !d1.moving)) {
           continue;
         }
 
@@ -213,7 +213,8 @@ export class PhysicsEngine {
           // Blob eating corpses: Touching a dead disc eats it and counts toward evolution
           const blob = d1.kind === 'Blob' ? d1 : d2.kind === 'Blob' ? d2 : null;
           const potentialCorpse = blob === d1 ? d2 : blob === d2 ? d1 : null;
-          if (blob && !blob.dead && potentialCorpse && potentialCorpse.dead && !potentialCorpse.isDissolving) {
+          const blobIsActing = gc.currentDisc === blob;
+          if (blob && !blob.dead && blobIsActing && potentialCorpse && potentialCorpse.dead && !potentialCorpse.isDissolving) {
             blob.eatCorpse(potentialCorpse);
             continue; // Skip further collision processing for this corpse
           }
@@ -335,9 +336,7 @@ export class PhysicsEngine {
 
                     if (d2.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d2.discName)) {
                       if (d1.kind === 'Barbarian') {
-                        if (gc.barbarianController.rageCharges < gc.barbarianController.maxRageChargesCap) {
-                          gc.barbarianController.rageCharges++;
-                        }
+                        gc.barbarianController.rageCharges++;
                         if (d1.rageWasUsedThisThrow) {
                           d1.restoreHealth(1);
                           gc.updateDiscNames();
@@ -407,9 +406,7 @@ export class PhysicsEngine {
 
                     if (d1.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d1.discName)) {
                       if (d2.kind === 'Barbarian') {
-                        if (gc.barbarianController.rageCharges < gc.barbarianController.maxRageChargesCap) {
-                          gc.barbarianController.rageCharges++;
-                        }
+                        gc.barbarianController.rageCharges++;
                         if (d2.rageWasUsedThisThrow) {
                           d2.restoreHealth(1);
                           gc.updateDiscNames();
@@ -486,9 +483,7 @@ export class PhysicsEngine {
                   [d1, d2].forEach(npc => {
                     if (npc.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(npc.discName)) {
                       if (actor.kind === 'Barbarian') {
-                        if (gc.barbarianController.rageCharges < gc.barbarianController.maxRageChargesCap) {
-                          gc.barbarianController.rageCharges++;
-                        }
+                        gc.barbarianController.rageCharges++;
                         if (actor.rageWasUsedThisThrow) {
                           actor.restoreHealth(1);
                           gc.updateDiscNames();

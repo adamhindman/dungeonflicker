@@ -91,11 +91,19 @@ export default class InputHandler {
         }
 
         if (key === 'escape' || key === 'esc' || event.code === 'Escape' || event.keyCode === 27) {
+            if (this.gameController.wizardController && this.gameController.wizardController.flameStrikeTargetingActive) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.gameController.wizardController.endFlameStrikeTargeting();
+                if (this.gameController.controls) this.gameController.controls.enabled = true;
+                if (this.gameController) this.gameController.controlsEnabled = true;
+                return;
+            }
             if (this.isPointerDown) {
                 event.preventDefault();
                 event.stopPropagation();
                 this.isPointerDown = false;
-                
+
                 if (this.gameController && typeof this.gameController.cancelAiming === 'function') {
                     this.gameController.cancelAiming();
                 }

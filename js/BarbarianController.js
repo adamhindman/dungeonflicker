@@ -6,7 +6,7 @@ export class BarbarianController {
     this.gc = gc;
 
     this.rageCharges = 0;
-    this.maxRageChargesCap = 3;
+    this.hasMoved = false;
     this.uniqueNPCHitsThisThrow = new Set();
 
     this.endTurnButton = null;
@@ -103,14 +103,28 @@ export class BarbarianController {
       !currentDisc.dead &&
       !currentDisc.rageIsActiveForNextThrow &&
       this.rageCharges > 0);
-    this.gc.uiManager.updateRageButtonVisibility(visible, visible, this.rageCharges, this.maxRageChargesCap);
+    this.gc.uiManager.updateRageButtonVisibility(visible, visible);
+  }
+
+  async onDiscStopped(disc) {
+    this.hasMoved = true;
+    if (this.rageCharges === 0) {
+      await this.gc._proceedToNextPlayerTurn();
+    } else {
+      disc.hasThrown = false;
+      this.updateRageButtonVisibility();
+      this.updateEndTurnButtonVisibility();
+      if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(disc);
+    }
   }
 
   onNewThrow() {
     this.uniqueNPCHitsThisThrow.clear();
   }
 
-  onTurnEnd() {}
+  onTurnEnd() {
+    this.hasMoved = false;
+  }
 
   onLevelStart() {
     this.uniqueNPCHitsThisThrow.clear();
@@ -118,6 +132,7 @@ export class BarbarianController {
 
   onGameRestart() {
     this.rageCharges = 0;
+    this.hasMoved = false;
     this.uniqueNPCHitsThisThrow.clear();
   }
 }

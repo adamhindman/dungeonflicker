@@ -761,6 +761,7 @@ button kbd, #camera-controls-menu kbd {
 /* ─────────────────────────────────────────────────────────────────────────── */
 
 #fps-counter {
+    display: none;
     position: fixed;
     bottom: 1rem; /* 10px, given html/body font-size settings */
     left: 1rem;   /* 10px. Note: inline style on the element has margin-left: 10px, so total offset might be 20px */

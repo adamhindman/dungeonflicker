@@ -39,22 +39,9 @@ export class DiscSpawner {
 
   // Challenge ratings: Skeleton=1, Warden=3, Blob level N = N+1
   _buildNpcPool(budget) {
-    const maxBlobLevel = Math.max(1, budget - 2); // cost = level + 2; max affordable level
-    const blobTemplates = Array.from({ length: maxBlobLevel }, (_, i) => ({
-      kind: 'Blob', cost: i + 3, skillLevel: 75, startingLevel: i + 1,
-    }));
-    const TEMPLATES = [
-      { kind: 'Skeleton', cost: 1, skillLevel: 80 },
-      { kind: 'Warden',   cost: 3, skillLevel: 85 },
-      ...blobTemplates,
-    ];
-
     const result = [];
     let remaining = budget;
     const kindCounts = {};
-
-    const affordable = () => TEMPLATES.filter(t => t.cost <= remaining);
-    const shuffle    = arr => [...arr].sort(() => Math.random() - 0.5);
 
     const addNpc = (template) => {
       kindCounts[template.kind] = (kindCounts[template.kind] || 0) + 1;
@@ -66,19 +53,35 @@ export class DiscSpawner {
       remaining -= template.cost;
     };
 
-    // Pick two different kinds first to guarantee variety
-    const shuffled = shuffle(affordable());
-    if (shuffled.length === 0) return result;
-    addNpc(shuffled[0]);
+    // Each kind has equal weight; blob level is resolved randomly within affordable range
+    const pickTemplate = () => {
+      const options = [];
+      if (remaining >= 1) options.push({ kind: 'Skeleton', cost: 1, skillLevel: 80 });
+      if (remaining >= 3) options.push({ kind: 'Warden', cost: 3, skillLevel: 85 });
+      if (remaining >= 3) {
+        const maxLevel = Math.min(Math.max(1, budget - 2), remaining - 2);
+        const level = 1 + Math.floor(Math.random() * maxLevel);
+        options.push({ kind: 'Blob', cost: level + 2, skillLevel: 75, startingLevel: level });
+      }
+      if (options.length === 0) return null;
+      return options[Math.floor(Math.random() * options.length)];
+    };
 
-    const secondTemplate = shuffled.find(t => t.kind !== shuffled[0].kind && t.cost <= remaining);
-    if (secondTemplate) addNpc(secondTemplate);
+    // Guarantee at least two different kinds up front
+    const first = pickTemplate();
+    if (!first) return result;
+    addNpc(first);
 
-    // Fill remaining budget randomly
+    for (let i = 0; i < 10; i++) {
+      const candidate = pickTemplate();
+      if (candidate && candidate.kind !== first.kind) { addNpc(candidate); break; }
+    }
+
+    // Fill remaining budget
     while (remaining > 0) {
-      const pool = affordable();
-      if (pool.length === 0) break;
-      addNpc(pool[Math.floor(Math.random() * pool.length)]);
+      const pick = pickTemplate();
+      if (!pick) break;
+      addNpc(pick);
     }
 
     return result;
