@@ -77,8 +77,7 @@ export class NecromancerController {
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer' &&
-      !d.killedByBlob
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
     );
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
     if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
@@ -222,8 +221,7 @@ export class NecromancerController {
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer' &&
-      !d.killedByBlob
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
     );
     if (deadPCs.length === 0) return;
 
@@ -431,8 +429,7 @@ export class NecromancerController {
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer' &&
-      !d.killedByBlob
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
     );
     const shouldBeVisible = !!(necro &&
       necro === currentTurnDisc &&
@@ -743,6 +740,17 @@ export class NecromancerController {
     targetDisc.revive(reviveHP);
     targetDisc.hitPoints = reviveHP;
     targetDisc.lastHitPoints = reviveHP;
+    targetDisc.hasThrown = false;
+
+    // Move resurrected disc to immediately after the Necromancer in turn order
+    const discIndex = this.gc.discs.indexOf(targetDisc);
+    if (discIndex !== -1) this.gc.discs.splice(discIndex, 1);
+    const necroIndex = this.gc.discs.indexOf(necromancerDisc);
+    if (necroIndex !== -1) {
+      this.gc.discs.splice(necroIndex + 1, 0, targetDisc);
+      this.gc.currentTurnIndex = necroIndex;
+      this.gc.currentDisc = necromancerDisc;
+    }
 
     this.gc.updateDiscNames();
     return true;

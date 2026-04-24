@@ -331,9 +331,6 @@ export class PhysicsEngine {
                     // Track blob kills for evolution
                     if (d1.kind === 'Blob' && d2.hitPoints <= 0) {
                       d1.recordPotentialKill(d2);
-                      if (d2.type === 'player') {
-                        d2.killedByBlob = true;
-                      }
                     }
 
                     if (d2.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d2.discName)) {
@@ -406,9 +403,6 @@ export class PhysicsEngine {
                     // Track blob kills for evolution
                     if (d2.kind === 'Blob' && d1.hitPoints <= 0) {
                       d2.recordPotentialKill(d1);
-                      if (d1.type === 'player') {
-                        d1.killedByBlob = true;
-                      }
                     }
 
                     if (d1.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d1.discName)) {
@@ -449,9 +443,6 @@ export class PhysicsEngine {
                       // Track blob kills for evolution
                       if (d2.kind === 'Blob' && d1.hitPoints <= 0) {
                         d2.recordPotentialKill(d1);
-                        if (d1.type === 'player') {
-                          d1.killedByBlob = true;
-                        }
                       }
 
                       if (d2.type === 'NPC' && d2.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d2.discName)) {
@@ -487,13 +478,8 @@ export class PhysicsEngine {
 
                   // Track blob kills for evolution
                   [d1, d2].forEach(npc => {
-                    if (actor.kind === 'Blob') {
-                      if (npc.hitPoints <= 0) {
-                        actor.recordPotentialKill(npc);
-                        if (npc.type === 'player') {
-                          npc.killedByBlob = true;
-                        }
-                      }
+                    if (actor.kind === 'Blob' && npc.hitPoints <= 0) {
+                      actor.recordPotentialKill(npc);
                     }
                   });
 

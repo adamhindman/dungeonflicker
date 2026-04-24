@@ -1,7 +1,7 @@
 import Disc from './Disc.js';
 
 export default class Blob extends Disc {
-    constructor(scene, startX, startZ, discName, skillLevel, gameController, color, description) {
+    constructor(scene, startX, startZ, discName, skillLevel, gameController, color, description, startingLevel = 1) {
         super(
             /* radius: */ 1,
             /* height: */ 0.4,
@@ -30,21 +30,31 @@ export default class Blob extends Disc {
         this.targetDiscsThisTurn = [];
         this.initialMeshScale = this.mesh.scale.x;
         this.baseRadius = 1;
+
+        // Apply any starting levels instantly (no animation)
+        for (let i = 1; i < startingLevel; i++) {
+            this.evolve(false);
+        }
     }
 
-    evolve() {
+    evolve(animate = true) {
         this.evolutionForm++;
-        // Each form: radius *= 1.5, HP +1, attack +1, throw +0.5, mass *= 1.5
         const targetRadius = 1 + (this.evolutionForm - 1) * 0.5;
         this.maxHitPoints = 4 + (this.evolutionForm - 1);
         this.hitPoints = Math.min(this.hitPoints + 1, this.maxHitPoints);
         this.attackDamage = 2 + (this.evolutionForm - 1);
-        this.throwPowerMultiplier = Math.pow(0.9, this.evolutionForm - 1);
+        this.throwPowerMultiplier = Math.pow(0.8, this.evolutionForm - 1);
         this.mass = 0.5 * Math.pow(1.5, this.evolutionForm - 1);
 
         this.description = `A gelatinous cube that evolves with each corpse eaten. Grows stronger and slower as it absorbs its prey.\n\nThis blob has evolved to level ${this.evolutionForm}`;
 
-        this.animateRadiusChange(targetRadius);
+        if (animate) {
+            this.animateRadiusChange(targetRadius);
+        } else {
+            this.radius = targetRadius;
+            const scale = this.initialMeshScale * (targetRadius / this.baseRadius);
+            this.mesh.scale.set(scale, scale, scale);
+        }
     }
 
     animateRadiusChange(targetRadius) {

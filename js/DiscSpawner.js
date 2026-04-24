@@ -37,6 +37,53 @@ export class DiscSpawner {
     this.gc = gc;
   }
 
+  // Challenge ratings: Skeleton=1, Warden=3, Blob level N = N+1
+  _buildNpcPool(budget) {
+    const maxBlobLevel = Math.max(1, budget - 2); // cost = level + 2; max affordable level
+    const blobTemplates = Array.from({ length: maxBlobLevel }, (_, i) => ({
+      kind: 'Blob', cost: i + 3, skillLevel: 75, startingLevel: i + 1,
+    }));
+    const TEMPLATES = [
+      { kind: 'Skeleton', cost: 1, skillLevel: 80 },
+      { kind: 'Warden',   cost: 3, skillLevel: 85 },
+      ...blobTemplates,
+    ];
+
+    const result = [];
+    let remaining = budget;
+    const kindCounts = {};
+
+    const affordable = () => TEMPLATES.filter(t => t.cost <= remaining);
+    const shuffle    = arr => [...arr].sort(() => Math.random() - 0.5);
+
+    const addNpc = (template) => {
+      kindCounts[template.kind] = (kindCounts[template.kind] || 0) + 1;
+      const n = kindCounts[template.kind];
+      const name = template.kind === 'Blob'
+        ? (n === 1 ? 'Gelatinous Cube' : `Gelatinous Cube ${n}`)
+        : `${template.kind} ${n}`;
+      result.push({ ...template, name });
+      remaining -= template.cost;
+    };
+
+    // Pick two different kinds first to guarantee variety
+    const shuffled = shuffle(affordable());
+    if (shuffled.length === 0) return result;
+    addNpc(shuffled[0]);
+
+    const secondTemplate = shuffled.find(t => t.kind !== shuffled[0].kind && t.cost <= remaining);
+    if (secondTemplate) addNpc(secondTemplate);
+
+    // Fill remaining budget randomly
+    while (remaining > 0) {
+      const pool = affordable();
+      if (pool.length === 0) break;
+      addNpc(pool[Math.floor(Math.random() * pool.length)]);
+    }
+
+    return result;
+  }
+
   /**
    * Build and place all player and NPC discs for the current level.
    * @param {object[]|null} playerStats  — carry-over HP from the previous level;
@@ -279,17 +326,16 @@ export class DiscSpawner {
       .map(d => ({ x: d.mesh.position.x, z: d.mesh.position.z }));
 
     // ── NPC discs ────────────────────────────────────────────────────────────
-    const baseNpcDefinitions = [
-      { name: "Skeleton 1", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 2", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 3", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 4", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 5", skillLevel: 80, kind: "Skeleton" },
-      { name: "Skeleton 6", skillLevel: 80, kind: "Skeleton" },
-      { name: "Warden 1",   skillLevel: 85, kind: "Warden"   },
-      { name: "Warden 2",   skillLevel: 85, kind: "Warden"   },
-      { name: "Gelatinous Cube", skillLevel: 75, kind: "Blob" },
-    ];
+    // Budget: 10 points on level 1, +2 per room cleared
+    const budget = 9 + (gc.currentLevelNumber - 1) * 2;
+    const baseNpcDefinitions = this._buildNpcPool(budget);
+
+    // Always add 3-5 free skeletons on top of the budget composition
+    const bonusSkeletonCount = 3 + Math.floor(Math.random() * 3);
+    const existingSkeletonCount = baseNpcDefinitions.filter(d => d.kind === 'Skeleton').length;
+    for (let i = 0; i < bonusSkeletonCount; i++) {
+      baseNpcDefinitions.push({ kind: 'Skeleton', cost: 1, skillLevel: 80, name: `Skeleton ${existingSkeletonCount + i + 1}` });
+    }
 
     const npcData = baseNpcDefinitions.map((def, index) => ({
       ...def,
@@ -328,7 +374,7 @@ export class DiscSpawner {
       } else if (npc.kind === "Warden") {
         disc = new Warden(...commonArgs, gc.discDescriptions.Warden);
       } else if (npc.kind === "Blob") {
-        disc = new Blob(...commonArgs, gc.discDescriptions.Blob);
+        disc = new Blob(...commonArgs, gc.discDescriptions.Blob, npc.startingLevel ?? 1);
       }
       // Future: Add else if for other NPC kinds here
 
