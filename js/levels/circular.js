@@ -178,7 +178,7 @@ export function loadCircular() {
   }
 
   // ── Obstacles, transparency, vine tiles, lighting ──────────────────────────
-  this.generateRandomObstacles();
+  this.generateRandomObstacles(3 + Math.floor(Math.random() * 2));
   this._initTransparency();
   this._scatterVineTilesOnWalls();
   this._addLighting();

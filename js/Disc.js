@@ -155,6 +155,7 @@ export default class Disc {
     this.isDissolving = false;
     this.dissolveElapsed = 0;
     this.dissolveDuration = 0;
+    this.killedByBlob = false; // Whether this disc was killed by a Blob (prevents revival)
 
     // Create the main disc geometry
     const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);

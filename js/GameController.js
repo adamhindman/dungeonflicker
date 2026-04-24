@@ -110,6 +110,7 @@ export default class GameController {
         Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Resurrect Ally for 2 mana, reviving a fallen ally at half HP. Activate Carrion Feast for 2 mana to consume corpses for healing and keep it active each turn. Earn mana from kills and clearing rooms.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
         Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
+        Blob: "A gelatinous cube that evolves with each kill. Starts small and agile (2 dmg, 4 HP), grows stronger and slower with each victim. Cannot be revived when killed.",
         Orb: "A volatile sphere of magical energy, summoned by the Wizard.",
         HealingOrb: "A red sphere of restorative energy. Heals 1 HP to every living disc it passes through.",
         AnimatedDead: "A reanimated corpse under the Necromancer's command. 1 HP, 1 damage."
@@ -1390,8 +1391,10 @@ clamp(value, min, max) {
     this.cameraController.update(deltaTime, this.level);
 
     if (this.currentDisc) {
-      // Reset current disc scale and position.y
-      this.currentDisc.mesh.scale.set(1, 1, 1);
+      // Reset current disc scale and position.y (skip for Blob to preserve evolution size)
+      if (this.currentDisc.kind !== 'Blob') {
+        this.currentDisc.mesh.scale.set(1, 1, 1);
+      }
       this.currentDisc.mesh.position.y = this.currentDisc.basePositionY;
 
 
@@ -1633,6 +1636,11 @@ clamp(value, min, max) {
         this.waitingForDiscToStop = false;
         const justMovedDisc = this.thrownDisc;
         this.thrownDisc = null; // Clear tracking
+
+        // Check blob evolution after it stops
+        if (justMovedDisc.kind === 'Blob') {
+          justMovedDisc.checkForNewKills();
+        }
 
         if (justMovedDisc.kind === 'Wizard' || justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') {
             await this.wizardController.onDiscStopped(justMovedDisc);
@@ -2098,6 +2106,100 @@ clamp(value, min, max) {
 
   async aiThrow(disc) {
     if (!disc || disc.dead) return;
+
+    // Special targeting for Blob: always target nearest corpse or any disc
+    if (disc.kind === 'Blob') {
+      let target = null;
+      let minDist = Infinity;
+
+      const corpses = this.discs.filter(d => d.dead);
+      const players = this.discs.filter(d => !d.dead && d.type === 'player' && d.hitPoints > 0);
+      const targets = [...corpses, ...players];
+
+      if (targets.length === 0) return;
+      for (const potentialTarget of targets) {
+        const dist = disc.mesh.position.distanceTo(potentialTarget.mesh.position);
+        if (dist < minDist) {
+          minDist = dist;
+          target = potentialTarget;
+        }
+      }
+
+      if (!target) return;
+
+      // Continue with standard throw logic using the Blob's target
+      const idealDir = target.mesh.position.clone().sub(disc.mesh.position);
+      idealDir.y = 0;
+      idealDir.normalize();
+
+      // Function to check if a line segment intersects any wall
+      const intersectsAnyWall = (start, end) => {
+        const walls = this.level.getAllWalls();
+        for (const wall of walls) {
+          const box = new THREE.Box3().setFromObject(wall);
+
+          // Calculate the closest point on box to the line segment
+          const direction = end.clone().sub(start).normalize();
+          const length = start.distanceTo(end);
+
+          // Approximate by sampling points along the segment
+          const steps = Math.ceil(length * 10); // sampling 10 points per unit length
+          for (let i = 0; i <= steps; i++) {
+            const point = start
+              .clone()
+              .add(direction.clone().multiplyScalar((length / steps) * i));
+            if (box.containsPoint(point)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      };
+
+      // Calculate throw parameters
+      const maxAttempts = 999;
+      const maxFuzzDegrees = 15;
+      const fuzzFactor = (100 - disc.skillLevel) / 100;
+
+      let bestDir = idealDir;
+      let bestSpeed = Math.min(minDist / 10, 1) * (0.7 + 0.3 * (disc.skillLevel / 100));
+      let fuzzAngleRad = 0;
+      let foundClearPath = false;
+
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        fuzzAngleRad = (Math.random() * 2 - 1) * fuzzFactor * maxFuzzDegrees * (Math.PI / 180);
+        const quat = new THREE.Quaternion();
+        quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+        const fuzzedDir = idealDir.clone().applyQuaternion(quat).normalize();
+
+        const endPos = disc.mesh.position
+          .clone()
+          .add(fuzzedDir.clone().multiplyScalar(bestSpeed * 10));
+
+        if (!intersectsAnyWall(disc.mesh.position.clone(), endPos)) {
+          bestDir = fuzzedDir;
+          foundClearPath = true;
+          break;
+        }
+      }
+
+      if (!foundClearPath) {
+        const quat = new THREE.Quaternion();
+        quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+        bestDir = idealDir.clone().applyQuaternion(quat).normalize();
+      }
+
+      // Set velocity for the throw
+      const finalSpeed = (bestSpeed * disc.throwPowerMultiplier) / disc.mass;
+      disc.velocity.set(bestDir.x * finalSpeed, 0, bestDir.z * finalSpeed);
+      disc.moving = true;
+      disc.hasThrown = true;
+      if (this.uiManager) this.uiManager.updateMoveStatusChip(disc);
+      disc.resetDamageState();
+      this.thrownDisc = disc;
+      this.waitingForDiscToStop = true;
+      return;
+    }
 
     // Get alive player discs as targets (exclude AnimatedDead — they are player-controlled but not real targets)
     const alivePlayers = this.discs.filter(

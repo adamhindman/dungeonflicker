@@ -77,7 +77,8 @@ export class NecromancerController {
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer' &&
+      !d.killedByBlob
     );
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
     if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
@@ -221,7 +222,8 @@ export class NecromancerController {
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer' &&
+      !d.killedByBlob
     );
     if (deadPCs.length === 0) return;
 
@@ -429,7 +431,8 @@ export class NecromancerController {
     const deadPCs = this.gc.discs.filter(d =>
       d.type === 'player' && d.dead &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' &&
-      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
+      d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer' &&
+      !d.killedByBlob
     );
     const shouldBeVisible = !!(necro &&
       necro === currentTurnDisc &&

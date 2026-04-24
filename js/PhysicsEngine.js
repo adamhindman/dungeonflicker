@@ -210,6 +210,14 @@ export class PhysicsEngine {
             if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(necro);
           }
 
+          // Blob eating corpses: Touching a dead disc eats it and counts toward evolution
+          const blob = d1.kind === 'Blob' ? d1 : d2.kind === 'Blob' ? d2 : null;
+          const potentialCorpse = blob === d1 ? d2 : blob === d2 ? d1 : null;
+          if (blob && !blob.dead && potentialCorpse && potentialCorpse.dead && !potentialCorpse.isDissolving) {
+            blob.eatCorpse(potentialCorpse);
+            continue; // Skip further collision processing for this corpse
+          }
+
           // Special Case: Wizard Healing Orb hitting anything (Heal and pass through)
           if ((d1.kind === 'HealingOrb' || d2.kind === 'HealingOrb') && !d1.dead && !d2.dead) {
             const healingOrb = d1.kind === 'HealingOrb' ? d1 : d2;
@@ -320,6 +328,14 @@ export class PhysicsEngine {
                     }
                     d2.takeHit(damageToDeal, d1);
 
+                    // Track blob kills for evolution
+                    if (d1.kind === 'Blob' && d2.hitPoints <= 0) {
+                      d1.recordPotentialKill(d2);
+                      if (d2.type === 'player') {
+                        d2.killedByBlob = true;
+                      }
+                    }
+
                     if (d2.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d2.discName)) {
                       if (d1.kind === 'Barbarian') {
                         if (gc.barbarianController.rageCharges < gc.barbarianController.maxRageChargesCap) {
@@ -387,6 +403,14 @@ export class PhysicsEngine {
                     }
                     d1.takeHit(damageToDeal, d2);
 
+                    // Track blob kills for evolution
+                    if (d2.kind === 'Blob' && d1.hitPoints <= 0) {
+                      d2.recordPotentialKill(d1);
+                      if (d1.type === 'player') {
+                        d1.killedByBlob = true;
+                      }
+                    }
+
                     if (d1.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d1.discName)) {
                       if (d2.kind === 'Barbarian') {
                         if (gc.barbarianController.rageCharges < gc.barbarianController.maxRageChargesCap) {
@@ -422,6 +446,14 @@ export class PhysicsEngine {
                       d1.takeHit(damageToDeal, d2);
                       d2.hasCausedDamage = true;
 
+                      // Track blob kills for evolution
+                      if (d2.kind === 'Blob' && d1.hitPoints <= 0) {
+                        d2.recordPotentialKill(d1);
+                        if (d1.type === 'player') {
+                          d1.killedByBlob = true;
+                        }
+                      }
+
                       if (d2.type === 'NPC' && d2.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d2.discName)) {
                         if (d1.kind === 'Wizard') {
                           gc.wizardController.manaEarnedThisTurn += 1;
@@ -452,6 +484,18 @@ export class PhysicsEngine {
 
                   d1.takeHit(damageToDeal, actor);
                   d2.takeHit(damageToDeal, actor);
+
+                  // Track blob kills for evolution
+                  [d1, d2].forEach(npc => {
+                    if (actor.kind === 'Blob') {
+                      if (npc.hitPoints <= 0) {
+                        actor.recordPotentialKill(npc);
+                        if (npc.type === 'player') {
+                          npc.killedByBlob = true;
+                        }
+                      }
+                    }
+                  });
 
                   [d1, d2].forEach(npc => {
                     if (npc.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(npc.discName)) {

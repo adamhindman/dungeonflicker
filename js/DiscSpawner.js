@@ -1,6 +1,7 @@
 import Disc from './Disc.js';
 import Skeleton from './Skeleton.js';
 import Warden from './Warden.js';
+import Blob from './Blob.js';
 
 // Pre-converted hex color values for NPCs
 const NPC_HEX_COLORS = [
@@ -287,6 +288,7 @@ export class DiscSpawner {
       { name: "Skeleton 6", skillLevel: 80, kind: "Skeleton" },
       { name: "Warden 1",   skillLevel: 85, kind: "Warden"   },
       { name: "Warden 2",   skillLevel: 85, kind: "Warden"   },
+      { name: "Gelatinous Cube", skillLevel: 75, kind: "Blob" },
     ];
 
     const npcData = baseNpcDefinitions.map((def, index) => ({
@@ -325,6 +327,8 @@ export class DiscSpawner {
         disc = new Skeleton(...commonArgs, gc.discDescriptions.Skeleton);
       } else if (npc.kind === "Warden") {
         disc = new Warden(...commonArgs, gc.discDescriptions.Warden);
+      } else if (npc.kind === "Blob") {
+        disc = new Blob(...commonArgs, gc.discDescriptions.Blob);
       }
       // Future: Add else if for other NPC kinds here
 

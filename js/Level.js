@@ -658,10 +658,10 @@ export default class Level {
    * Generates a random set of obstacles (blocks and walls) for the level.
    * Obstacles are arranged to avoid the player starting area and each other.
    */
-  generateRandomObstacles() {
+  generateRandomObstacles(maxCount = null) {
     this.obstacles = [];
-    // Number of obstacles can vary between 4 and 7
-    const numObstacles = 4 + Math.floor(Math.random() * 4);
+    const defaultCount = 4 + Math.floor(Math.random() * 4);
+    const numObstacles = maxCount !== null ? Math.min(maxCount, defaultCount) : defaultCount;
 
     for (let i = 0; i < numObstacles; i++) {
       let valid = false;
