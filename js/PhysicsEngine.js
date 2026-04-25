@@ -256,9 +256,12 @@ export class PhysicsEngine {
 
             if (gc.soundManager && velocityAlongNormal < -0.05) {
               const midPoint = d1.mesh.position.clone().add(d2.mesh.position).multiplyScalar(0.5);
+              const hitBlob = d1.kind === 'Blob' || d2.kind === 'Blob';
               const hitWardenNpc = (d1.kind === 'Warden' && d1.type === 'NPC') ||
                                    (d2.kind === 'Warden' && d2.type === 'NPC');
-              if (hitWardenNpc) {
+              if (hitBlob) {
+                gc.soundManager.playBlobHit(midPoint);
+              } else if (hitWardenNpc) {
                 gc.soundManager.playWardenHit(midPoint);
               } else {
                 gc.soundManager.playDiscHit(midPoint);

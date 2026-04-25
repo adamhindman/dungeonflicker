@@ -1053,13 +1053,15 @@ clamp(value, min, max) {
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
 
-    // 1. Save critical state before clearing
+    // 1. Save critical state before clearing.
+    // Animated dead discs are alive (dead=false, hp=1) but represent a dead player —
+    // save them as 0 HP and restore their original maxHitPoints.
     const playerStats = this.discs
       .filter(d => d.type === "player" && d.kind !== "Orb")
       .map(d => ({
         kind: d.kind,
-        hitPoints: d.hitPoints,
-        maxHitPoints: d.maxHitPoints
+        hitPoints: (d.dead || d.isAnimatedDead) ? 0 : d.hitPoints,
+        maxHitPoints: d._originalMaxHitPoints ?? d.maxHitPoints
       }));
 
     const previousActingIndex = this.currentTurnIndex;

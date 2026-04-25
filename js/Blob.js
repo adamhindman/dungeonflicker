@@ -99,6 +99,9 @@ export default class Blob extends Disc {
         if (this.dead) return;
         if (corpse && corpse.dead && !corpse.isDissolving) {
             this.killCount++;
+            if (this.gameController.soundManager) {
+                this.gameController.soundManager.playBlobEat(this.mesh.position.clone());
+            }
             if (corpse.mesh && corpse.mesh.parent) {
                 corpse.mesh.parent.remove(corpse.mesh);
             }

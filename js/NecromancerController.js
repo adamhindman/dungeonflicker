@@ -817,6 +817,10 @@ export class NecromancerController {
   // ─── Post-throw disc-stopped logic ──────────────────────────────────────────
 
   async onDiscStopped(disc) {
+    if (disc.dead) {
+      await this.gc._proceedToNextPlayerTurn();
+      return;
+    }
     if (disc.kind === 'Necromancer') {
       this.hasMovedThisTurn = true;
 

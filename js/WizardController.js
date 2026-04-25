@@ -729,6 +729,10 @@ export class WizardController {
   // ─── Post-throw disc-stopped logic ──────────────────────────────────────────
 
   async onDiscStopped(disc) {
+    if (disc.dead) {
+      await this.gc._proceedToNextPlayerTurn();
+      return;
+    }
     if (disc.kind === 'Wizard') {
       this.hasMovedThisTurn = true;
       const activeOrbsCount = this.orbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;

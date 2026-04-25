@@ -202,9 +202,10 @@ export class DiscSpawner {
     const BULLSEYE_PC_R = 6.5;
     const ringPCPositions = [];
     const _ringPCPos = (radius) => {
-      const pos = isHexLevel   ? generateOuterRingPosition(radius, ringPCPositions, 5)
-                : isDonutLevel ? generateDonutRingPosition(radius, ringPCPositions, 5)
-                : null;
+      const pos = isHexLevel      ? generateOuterRingPosition(radius, ringPCPositions, 5)
+                : isDonutLevel    ? generateDonutRingPosition(radius, ringPCPositions, 5)
+                : isBullseyeLevel ? null  // bullseye uses fixed-angle placement below
+                : generateRandomPosition(radius, ringPCPositions, 5);
       if (pos) ringPCPositions.push(pos);
       return pos;
     };
@@ -364,6 +365,7 @@ export class DiscSpawner {
       }
       npcIdx++;
 
+      if (!position) position = generateRandomPosition(1.5, existingPositions);
       const finalX = position ? position.x : (Math.random() - 0.5) * gc.level.fieldWidth  * 0.7;
       const finalZ = position ? position.z : (Math.random() - 0.5) * gc.level.fieldDepth  * 0.7;
 

@@ -18,7 +18,7 @@ const CHARACTERS = [
     image: '/images/wizard-nobg.png',
     color: '#00C0C0',
     hp: 3,
-    summary: 'A nimble spellcaster who bends magic to their will.',
+    summary: 'A clever spellcaster who bends magic to his will.',
     skills: [
       'Mystical Orb: launch a volatile magical projectile.',
       'Healing Orb: a sphere that restores 2 HP to allies it touches.',

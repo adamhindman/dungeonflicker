@@ -6,6 +6,14 @@ const DRAIN_SOUND_URLS = Object.values(
   import.meta.glob('../public/sounds/drain/*.mp3', { eager: true, query: '?url', import: 'default' })
 );
 
+const JELLY_IMPACT_URLS = Object.values(
+  import.meta.glob('../public/sounds/jelly/jelly-impact-*.mp3', { eager: true, query: '?url', import: 'default' })
+);
+
+const JELLY_SQUEEZE_URLS = Object.values(
+  import.meta.glob('../public/sounds/jelly/jelly-squeeze-*.mp3', { eager: true, query: '?url', import: 'default' })
+);
+
 const BREATH_FILES = [
   'magic-elements-vocal-breath-inhale-01.mp3',
   'magic-elements-vocal-breath-inhale-02.mp3',
@@ -54,6 +62,8 @@ export class SoundManager {
     this.buzzBuffer = null;
     this.rageBuffer = null;
     this.drainBuffers = [];
+    this.jellyImpactBuffers = [];
+    this.jellySqueezeBuffers = [];
     this.tensionBuffer = null;
     this.doorUnlockBuffer = null;
     this.stoneSlideBuffer = null;
@@ -115,9 +125,15 @@ export class SoundManager {
       this._onReadyCallbacks = [];
     });
 
-    // Load drain pool independently — doesn't block gameplay sounds from being ready
+    // Load drain/jelly sounds independently — don't block gameplay sounds from being ready
     Promise.all(DRAIN_SOUND_URLS.map(url => load(url))).then(buffers => {
       this.drainBuffers = buffers.filter(Boolean);
+    });
+    Promise.all(JELLY_IMPACT_URLS.map(url => load(url))).then(buffers => {
+      this.jellyImpactBuffers = buffers.filter(Boolean);
+    });
+    Promise.all(JELLY_SQUEEZE_URLS.map(url => load(url))).then(buffers => {
+      this.jellySqueezeBuffers = buffers.filter(Boolean);
     });
 
     load('/sounds/atmosphere/background-loop.mp3').then(music => {
@@ -307,6 +323,14 @@ export class SoundManager {
 
     sound.play();
     sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playBlobHit(position) {
+    this._play(this.jellyImpactBuffers, position, 0.9);
+  }
+
+  playBlobEat(position) {
+    this._play(this.jellySqueezeBuffers, position, 1.0);
   }
 
   startMusic() {

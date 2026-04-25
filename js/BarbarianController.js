@@ -73,9 +73,9 @@ export class BarbarianController {
 
   _handleRageButtonClick() {
     const playerDisc = this.getDisc();
-    if (playerDisc && !playerDisc.dead && this.rageCharges > 0) {
+    if (playerDisc && !playerDisc.dead && this.rageCharges >= 2) {
       playerDisc.rageIsActiveForNextThrow = true;
-      this.rageCharges--;
+      this.rageCharges -= 2;
       playerDisc.setSpotlightIntensity(true);
       firstTimeEvents.track('barbarian_rage_used');
       if (this.gc.soundManager) {
@@ -102,11 +102,15 @@ export class BarbarianController {
       currentDisc.kind === 'Barbarian' &&
       !currentDisc.dead &&
       !currentDisc.rageIsActiveForNextThrow &&
-      this.rageCharges > 0);
+      this.rageCharges >= 2);
     this.gc.uiManager.updateRageButtonVisibility(visible, visible);
   }
 
   async onDiscStopped(disc) {
+    if (disc.dead) {
+      await this.gc._proceedToNextPlayerTurn();
+      return;
+    }
     this.hasMoved = true;
     if (this.rageCharges === 0) {
       await this.gc._proceedToNextPlayerTurn();
@@ -127,6 +131,7 @@ export class BarbarianController {
   }
 
   onLevelStart() {
+    this.hasMoved = false;
     this.uniqueNPCHitsThisThrow.clear();
   }
 
