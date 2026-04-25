@@ -199,7 +199,6 @@ export default class GameController {
     firstTimeEvents.addListener(key => this.notificationManager.push(key));
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
-      console.error("GameController: Action buttons container not found from UIManager.");
       // Depending on how critical this is, you might want to return or throw an error
     }
     // Initialize throw direction line helper for drag aim visualization
@@ -228,7 +227,6 @@ export default class GameController {
         this.discInfoHpElement = this.discInfoPopupElement.querySelector('.hp');
         this.discInfoDescriptionElement = this.discInfoPopupElement.querySelector('.description');
     } else {
-        console.error("Disc info popup element not found in DOM.");
     }
 
     // ── Character selection ────────────────────────────────────────────────
@@ -1584,8 +1582,7 @@ clamp(value, min, max) {
             foundInLavaThisFrame = true;
             if (!disc.isCurrentlyInLavaState) {
               // Disc just entered the lava
-              console.log(`${disc.discName} fell into lava!`);
-              disc.isCurrentlyInLavaState = true;
+disc.isCurrentlyInLavaState = true;
 
 
 
@@ -2327,8 +2324,7 @@ clamp(value, min, max) {
 
     for (const lavaPool of this.lavaPools) {
       if (lavaPool.isPointInside(disc.mesh.position.x, disc.mesh.position.z)) {
-        console.log(`${disc.discName} is starting turn in lava, takes 1 damage.`);
-        disc.takeHit(1, null); // Apply 1 damage
+disc.takeHit(1, null); // Apply 1 damage
 
         // Reward player for lava kills at start of turn
         if (disc.type === 'NPC' && disc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(disc.discName)) {

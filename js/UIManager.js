@@ -511,10 +511,8 @@ export default class UIManager {
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
                     this.updateMoveStatusChip(currentDisc);
                     if (typeof currentDisc.maxHitPoints !== 'number') {
-                         console.warn(`UIManager: Disc "${currentDisc.discName}" is missing or has invalid maxHitPoints property for heart display. Displaying fallback.`);
                     }
                     if (typeof currentDisc.hitPoints !== 'number') {
-                        console.warn(`UIManager: Disc "${currentDisc.discName}" has invalid hitPoints property for heart display. Displaying fallback.`);
                     }
                 }
             } else {

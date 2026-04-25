@@ -7,8 +7,6 @@ class FirstTimeEvents {
   constructor() {
     this._tracked = this._load();
     this._listeners = []; // Functions called with (key) whenever a new event is first recorded.
-    // TODO: remove this debug log
-    this._logState('initial load');
   }
 
   /** Subscribe to new first-time events. `fn` is called with the event key. */
@@ -33,14 +31,6 @@ class FirstTimeEvents {
     }
   }
 
-  // TODO: remove this debug helper
-  _logState(reason) {
-    const keys = Object.keys(this._tracked);
-    console.log(
-      `[FirstTimeEvents] (${reason}) — ${keys.length} event(s) recorded:`,
-      keys.length ? { ...this._tracked } : '(none)'
-    );
-  }
 
   /**
    * Records the event if it has never been recorded before.
@@ -50,8 +40,6 @@ class FirstTimeEvents {
     if (this._tracked[key]) return false;
     this._tracked[key] = Date.now();
     this._save();
-    // TODO: remove this debug log
-    this._logState(`new event: ${key}`);
     this._listeners.forEach(fn => fn(key));
     return true;
   }
@@ -74,8 +62,6 @@ class FirstTimeEvents {
     } catch {
       // ignore
     }
-    // TODO: remove this debug log
-    this._logState('after clear');
   }
 }
 

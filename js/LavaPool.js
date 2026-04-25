@@ -82,8 +82,7 @@ class LavaPool {
      */
     _createMesh() {
         if (this.relativeVertices2D.length < 3) {
-            console.warn('LavaPool: Not enough vertices to create a shape.');
-            return;
+return;
         }
 
         const shapePoints = this.relativeVertices2D.map(v => new THREE.Vector2(v.x, v.y));
@@ -92,7 +91,7 @@ class LavaPool {
 
         // Load the lava texture
         const textureLoader = new THREE.TextureLoader();
-        this.lavaTexture = textureLoader.load('images/lava-tile-1.png');
+        this.lavaTexture = textureLoader.load('images/lava-tile-1.jpg');
 
         // Configure texture wrapping and variety
         this.lavaTexture.wrapS = THREE.RepeatWrapping;

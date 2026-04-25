@@ -123,7 +123,7 @@ export default class Level {
 
   _getObstacleMaterial() {
     if (!this.obstacleMaterial) {
-      const tex = this.textureLoader.load("images/stacked-tile-light.png");
+      const tex = this.textureLoader.load("images/stacked-tile-light.jpg");
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       this.obstacleMaterial = new THREE.MeshStandardMaterial({
@@ -483,7 +483,7 @@ export default class Level {
     const OFFSET = 0.27; // distance in front of the wall face
 
     this._vineTileMeshes = [];
-    this._vineTileTexture = this.textureLoader.load("images/tile-stone-vines-1.png");
+    this._vineTileTexture = this.textureLoader.load("images/tile-stone-vines-1.jpg");
     this._vineMat = new THREE.MeshStandardMaterial({
       map: this._vineTileTexture,
       roughness: 0.6,

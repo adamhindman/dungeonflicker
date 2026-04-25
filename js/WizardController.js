@@ -470,7 +470,7 @@ export class WizardController {
     const STRIKE_RADIUS = 2.5;
     const BEAM_H = 60;
     const geo = new THREE.CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
-    const columnTex = new THREE.TextureLoader().load('images/fire-column-tile.png');
+    const columnTex = new THREE.TextureLoader().load('images/tile-fire-column.jpg');
     columnTex.wrapS = THREE.RepeatWrapping;
     columnTex.wrapT = THREE.RepeatWrapping;
     columnTex.repeat.set(4, 6);

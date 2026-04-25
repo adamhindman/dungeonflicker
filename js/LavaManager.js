@@ -19,8 +19,7 @@ export class LavaManager {
     const gc = this.gc;
 
     if (!gc.level || !gc.scene) {
-      console.error("Level or scene not initialized. Cannot generate lava pools.");
-      return;
+return;
     }
 
     // Remove any existing lava pool meshes and clear the list before regenerating.
@@ -174,7 +173,6 @@ export class LavaManager {
           gc.lavaPools.push(lavaPool);
         }
       } else {
-        console.warn(`Could not find a valid placement for lava pool ${i + 1} after several attempts.`);
       }
     }
   }

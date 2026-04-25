@@ -37,11 +37,11 @@ export function loadHexagon() {
   this._circularWalls = [];
 
   // ── Textures ──────────────────────────────────────────────────────────────
-  const tileTexture = this.textureLoader.load("images/tile-stone-1.png");
+  const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
   tileTexture.wrapS = THREE.RepeatWrapping;
   tileTexture.wrapT = THREE.RepeatWrapping;
 
-  const wallTex = this.textureLoader.load("images/tile-stone-1.png");
+  const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
   wallTex.wrapS = THREE.RepeatWrapping;
   wallTex.wrapT = THREE.RepeatWrapping;
   this.wallMaterial = new THREE.MeshStandardMaterial({
@@ -53,7 +53,7 @@ export function loadHexagon() {
   });
   this._hexFloorMat = floorMat; // stored for clean disposal in unload()
 
-  const redTileTex = this.textureLoader.load("images/tile-stone-red-1.png");
+  const redTileTex = this.textureLoader.load("images/tile-stone-red-1.jpg");
   redTileTex.wrapS = THREE.RepeatWrapping;
   redTileTex.wrapT = THREE.RepeatWrapping;
   const pitMat = new THREE.MeshStandardMaterial({

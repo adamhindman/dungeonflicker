@@ -15,7 +15,7 @@ export function loadCircular() {
   this.fieldDepth  = INNER_R * 4;
 
   // ── Floor ──────────────────────────────────────────────────────────────────
-  const tileTexture = this.textureLoader.load("images/tile-stone-1.png");
+  const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
   tileTexture.wrapS = THREE.RepeatWrapping;
   tileTexture.wrapT = THREE.RepeatWrapping;
   tileTexture.repeat.set((INNER_R * 2) / 6, (INNER_R * 2) / 6);
@@ -51,7 +51,7 @@ export function loadCircular() {
   this.scene.add(this.floor);
 
   // ── Wall material ──────────────────────────────────────────────────────────
-  const wallTex = this.textureLoader.load("images/tile-stone-1.png");
+  const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
   wallTex.wrapS = THREE.RepeatWrapping;
   wallTex.wrapT = THREE.RepeatWrapping;
   this.wallMaterial = new THREE.MeshStandardMaterial({

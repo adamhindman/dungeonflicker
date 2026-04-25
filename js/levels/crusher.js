@@ -36,7 +36,7 @@ export function loadCrusher() {
   this.obstacles = [];
   this._crusherMeshes = [];
 
-  const floorTex = this.textureLoader.load("images/tile-stone-1.png");
+  const floorTex = this.textureLoader.load("images/tile-stone-1.jpg");
   floorTex.wrapS = THREE.RepeatWrapping;
   floorTex.wrapT = THREE.RepeatWrapping;
   floorTex.repeat.set((OUTER_R * 2) / 6, (OUTER_R * 2) / 6);
@@ -66,7 +66,7 @@ export function loadCrusher() {
   this.floor.receiveShadow = true;
   this.scene.add(this.floor);
 
-  const wallTex = this.textureLoader.load("images/tile-stone-1.png");
+  const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
   wallTex.wrapS = THREE.RepeatWrapping;
   wallTex.wrapT = THREE.RepeatWrapping;
   this.wallMaterial = new THREE.MeshStandardMaterial({
@@ -190,7 +190,7 @@ export function loadCrusher() {
   this.doorSlab.rotation.y = doorEdge.rotY;
   this.scene.add(this.doorSlab);
 
-  const crusherTex = this.textureLoader.load("images/tile-stone-red-1.png");
+  const crusherTex = this.textureLoader.load("images/tile-stone-red-1.jpg");
   crusherTex.wrapS = THREE.RepeatWrapping;
   crusherTex.wrapT = THREE.RepeatWrapping;
   this._crusherMat = new THREE.MeshStandardMaterial({

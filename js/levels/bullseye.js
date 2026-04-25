@@ -24,7 +24,7 @@ export function loadBullseye() {
   this._bullseyeColumnMeshes = [];
 
   // ── Wall material ────────────────────────────────────────────────────────
-  const wallTex = this.textureLoader.load("images/tile-stone-1.png");
+  const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
   wallTex.wrapS = THREE.RepeatWrapping;
   wallTex.wrapT = THREE.RepeatWrapping;
   this.wallMaterial = new THREE.MeshStandardMaterial({
@@ -36,7 +36,7 @@ export function loadBullseye() {
   //    CircleGeometry(R) and RingGeometry(inner, outer) both map their bounding
   //    square (side = 2 * outerR) to UV [0,1], so repeat = 2*outerR / tileSize.
   const makeFloorMat = (outerR) => {
-    const tex = this.textureLoader.load("images/tile-stone-1.png");
+    const tex = this.textureLoader.load("images/tile-stone-1.jpg");
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set((outerR * 2) / 6, (outerR * 2) / 6);
@@ -63,7 +63,7 @@ export function loadBullseye() {
   innerGroup.add(innerFloor);
 
   const makeMidFloorMat = (outerR) => {
-    const tex = this.textureLoader.load("images/tile-stone-red-1.png");
+    const tex = this.textureLoader.load("images/tile-stone-red-1.jpg");
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set((outerR * 2) / 6, (outerR * 2) / 6);
