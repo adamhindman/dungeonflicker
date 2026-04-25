@@ -3,6 +3,8 @@ import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
 
+const FLAME_STRIKE_RADIUS = 3;
+
 export class WizardController {
   constructor(gc) {
     this.gc = gc;
@@ -232,7 +234,12 @@ export class WizardController {
     this._updateSummonHealingOrbsButtonVisibility();
     this._updateRadiusBlastButtonVisibility();
     this._updateFlameStrikeButtonVisibility();
-    if (this.gc.uiManager) this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
+    if (this.gc.uiManager) {
+      this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
+      if (this.gc.currentDisc && this.gc.currentDisc.kind === 'Wizard') {
+        this.gc.uiManager.updateCurrentTurnDiscName(this.gc.currentDisc);
+      }
+    }
   }
 
   _updateSummonOrbsButtonVisibility() {
@@ -454,7 +461,7 @@ export class WizardController {
     });
     this.flameStrikeTargetRing = new THREE.Mesh(geometry, material);
     this.flameStrikeTargetRing.rotation.x = Math.PI / 2;
-    this.flameStrikeTargetRing.scale.set(3, 3, 1);
+    this.flameStrikeTargetRing.scale.set(FLAME_STRIKE_RADIUS, FLAME_STRIKE_RADIUS, 1);
     this.flameStrikeTargetRing.position.copy(this.flameStrikeTargetPos);
     this.gc.scene.add(this.flameStrikeTargetRing);
 
@@ -467,7 +474,7 @@ export class WizardController {
     this.endFlameStrikeTargeting();
     this.mana -= 3;
 
-    const STRIKE_RADIUS = 2.5;
+    const STRIKE_RADIUS = FLAME_STRIKE_RADIUS;
     const BEAM_H = 60;
     const geo = new THREE.CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
     const columnTex = new THREE.TextureLoader().load('images/tile-fire-column.jpg');
@@ -636,7 +643,7 @@ export class WizardController {
     const FADE_DUR    = 0.35;
     const BEAM_H      = 60;
     const MAX_OPACITY = 0.9;
-    const STRIKE_RADIUS = 2.5;
+    const STRIKE_RADIUS = FLAME_STRIKE_RADIUS;
     const START_Y  = BEAM_H * 4;
     const END_Y    = BEAM_H / 2;
     const FINAL_Y  = -BEAM_H / 2; // fully underground by end of fade
@@ -729,26 +736,7 @@ export class WizardController {
   // ─── Post-throw disc-stopped logic ──────────────────────────────────────────
 
   async onDiscStopped(disc) {
-    if (disc.dead) {
-      await this.gc._proceedToNextPlayerTurn();
-      return;
-    }
-    if (disc.kind === 'Wizard') {
-      this.hasMovedThisTurn = true;
-      const activeOrbsCount = this.orbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-      const canSummonNewOrbs = this.mana > 0 && activeOrbsCount < 3;
-
-      if (activeOrbsCount === 0 && !canSummonNewOrbs) {
-        await this.gc._proceedToNextPlayerTurn();
-      } else {
-        this.gc.currentDisc = disc;
-        this.gc.logCurrentTurn();
-        this.gc._updateSpotlights();
-        this.gc.barbarianController.updateRageButtonVisibility();
-        this.updateActionButtons();
-        this.updateEndTurnButtonVisibility();
-      }
-    } else if (disc.kind === 'Orb' || disc.kind === 'HealingOrb') {
+    if (disc.kind === 'Orb' || disc.kind === 'HealingOrb') {
       this.removeOrb(disc);
       const wizardDisc = this.gc.discs.find(d => d.kind === 'Wizard' && d.type === 'player' && !d.dead);
 
@@ -762,15 +750,25 @@ export class WizardController {
         this.updateActionButtons();
         this.updateEndTurnButtonVisibility();
         this.gc.barbarianController.updateEndTurnButtonVisibility();
-
-        const activeOrbsAfter = this.orbs.filter(orb => orb && orb.hitPoints > 0 && !orb.dead).length;
-        const canSummonAfter = this.mana > 0 && activeOrbsAfter < 3;
-        if (activeOrbsAfter === 0 && this.hasMovedThisTurn && !canSummonAfter) {
-          await this.gc._proceedToNextPlayerTurn();
-        }
       } else {
         await this.gc._proceedToNextPlayerTurn();
       }
+      return;
+    }
+
+    if (disc.dead) {
+      await this.gc._proceedToNextPlayerTurn();
+      return;
+    }
+
+    if (disc.kind === 'Wizard') {
+      this.hasMovedThisTurn = true;
+      this.gc.currentDisc = disc;
+      this.gc.logCurrentTurn();
+      this.gc._updateSpotlights();
+      this.gc.barbarianController.updateRageButtonVisibility();
+      this.updateActionButtons();
+      this.updateEndTurnButtonVisibility();
     }
   }
 

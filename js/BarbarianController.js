@@ -104,6 +104,9 @@ export class BarbarianController {
       !currentDisc.rageIsActiveForNextThrow &&
       this.rageCharges >= 2);
     this.gc.uiManager.updateRageButtonVisibility(visible, visible);
+    if (currentDisc && currentDisc.kind === 'Barbarian') {
+      this.gc.uiManager.updateCurrentTurnDiscName(currentDisc);
+    }
   }
 
   async onDiscStopped(disc) {

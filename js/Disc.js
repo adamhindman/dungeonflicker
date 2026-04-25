@@ -135,7 +135,7 @@ export default class Disc {
     this.kind = kind;
     this.hitPoints = hitPoints;
     this.lastHitPoints = hitPoints;
-    this.maxHitPoints = kind === "Necromancer" ? Number.POSITIVE_INFINITY : hitPoints; // Store initial HP as max HP (uncapped for Necromancer)
+    this.maxHitPoints = hitPoints; // Store initial HP as max HP
     this.dead = false;
     this.skillLevel = skillLevel;
     this.scene = scene;

@@ -26,6 +26,8 @@ export class PhysicsEngine {
     // ── Per-disc movement ──────────────────────────────────────────────────
     for (const disc of [...gc.discs]) {
       if (disc.moving) {
+        const isBombDisc = disc.kind === 'Bomb';
+        const bounceDamping = isBombDisc ? 0.35 : 0.8;
         disc.updatePosition();
 
         // Apply gravity along ramp slope (hex and donut levels).
@@ -37,7 +39,7 @@ export class PhysicsEngine {
 
         // Check door entry BEFORE the boundary-bounce so a disc heading into
         // the open doorway isn't pushed back before the transition fires.
-        if (gc.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead") {
+        if (gc.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion") {
           if (gc.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
             await gc.startNextLevel(disc);
             return true; // signal animate() to exit early
@@ -47,17 +49,23 @@ export class PhysicsEngine {
         const hitBoundary = disc.handleWallCollision(
           gc.level.fieldWidth,
           gc.level.fieldDepth,
-          0.8,
+          bounceDamping,
         );
         if (hitBoundary && gc.soundManager && disc.velocity.length() > 0.05) {
           gc.soundManager.playBounce(disc.mesh.position.clone());
         }
+        if (hitBoundary && gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+          gc.rogueController.sneakAttackBonusCount++;
+        }
 
         const walls = gc.level.getAllWalls();
         walls.forEach((wall) => {
-          const hitWall = disc.handleCollisionWithBox(wall, 0.8);
+          const hitWall = disc.handleCollisionWithBox(wall, bounceDamping);
           if (hitWall && gc.soundManager && disc.velocity.length() > 0.05) {
             gc.soundManager.playBounce(disc.mesh.position.clone());
+          }
+          if (hitWall && gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+            gc.rogueController.sneakAttackBonusCount++;
           }
         });
 
@@ -84,10 +92,13 @@ export class PhysicsEngine {
             disc.mesh.position.z = obs.z + nz * minDist;
             const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
             if (vDotN < 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
+              }
+              if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+                gc.rogueController.sneakAttackBonusCount++;
               }
             }
           }
@@ -110,8 +121,8 @@ export class PhysicsEngine {
             disc.mesh.position.z = nz * maxR;
             const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
             if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
@@ -134,8 +145,8 @@ export class PhysicsEngine {
             disc.mesh.position.z = nz * maxR;
             const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
             if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * 0.8;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * 0.8;
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
@@ -144,7 +155,9 @@ export class PhysicsEngine {
         }
 
         // Apply friction (Wizards and Necromancers have more drag and slow down faster)
-        const currentFriction = (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
+        const currentFriction = isBombDisc
+          ? 0.888
+          : (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
         disc.applyFriction(currentFriction);
       }
     }
@@ -194,6 +207,20 @@ export class PhysicsEngine {
           continue;
         }
 
+        // Freshly-thrown Rogue Bomb should temporarily pass through the Rogue.
+        const bomb = d1.kind === 'Bomb' ? d1 : d2.kind === 'Bomb' ? d2 : null;
+        const other = bomb === d1 ? d2 : bomb === d2 ? d1 : null;
+        if (
+          bomb &&
+          other &&
+          other.kind === 'Rogue' &&
+          other.type === 'player' &&
+          typeof bomb.ignoreRogueCollisionUntil === 'number' &&
+          performance.now() < bomb.ignoreRogueCollisionUntil
+        ) {
+          continue;
+        }
+
         const diff = d1.mesh.position.clone().sub(d2.mesh.position.clone());
         const dist = diff.length();
         const minDist = d1.radius + d2.radius;
@@ -217,6 +244,19 @@ export class PhysicsEngine {
           if (blob && !blob.dead && blobIsActing && potentialCorpse && potentialCorpse.dead && !potentialCorpse.isDissolving) {
             blob.eatCorpse(potentialCorpse);
             continue; // Skip further collision processing for this corpse
+          }
+
+          // RoguePotion: heals the first non-full-health PC it touches, then is consumed; passes through NPCs
+          if ((d1.kind === 'RoguePotion' || d2.kind === 'RoguePotion') && !d1.dead && !d2.dead) {
+            const potion = d1.kind === 'RoguePotion' ? d1 : d2;
+            const target = d1.kind === 'RoguePotion' ? d2 : d1;
+            if (target.type === 'player' && !target.dead && target.hitPoints > 0 && target.hitPoints < target.maxHitPoints) {
+              target.restoreHealth(2);
+              gc.rogueController.removePotion(potion);
+              gc.updateDiscNames();
+              if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(gc.currentDisc);
+            }
+            continue; // always pass through
           }
 
           // Special Case: Wizard Healing Orb hitting anything (Heal and pass through)
@@ -245,7 +285,8 @@ export class PhysicsEngine {
           const velocityAlongNormal = relativeVelocity.dot(normal);
 
           if (velocityAlongNormal <= 0) {
-            const restitution      = 1;
+            const isBombCollision  = d1.kind === 'Bomb' || d2.kind === 'Bomb';
+            const restitution      = isBombCollision ? 0.1 : 1;
             const impulseMagnitude = (-(1 + restitution) * velocityAlongNormal) / (1 / d1.mass + 1 / d2.mass);
 
             d1.velocity.add(normal.clone().multiplyScalar(impulseMagnitude / d1.mass));
@@ -274,8 +315,13 @@ export class PhysicsEngine {
             d1.mesh.position.add(normal.clone().multiplyScalar(separationOverlap * (d2.mass / totalMass)));
             d2.mesh.position.sub(normal.clone().multiplyScalar(separationOverlap * (totalMass === 0 ? 0 : d1.mass / totalMass)));
 
-            // Apply damage rules — both discs must be alive
-            if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead) {
+            // Sneak Attack: count this disc-disc collision
+            if (gc.rogueController?.isSneakAttackThrow && (d1 === gc.thrownDisc || d2 === gc.thrownDisc)) {
+              gc.rogueController.sneakAttackBonusCount++;
+            }
+
+            // Apply damage rules — both discs must be alive (Bombs deal no disc-collision damage)
+            if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead && d1.kind !== 'Bomb' && d2.kind !== 'Bomb') {
               // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed)
               if ((d1.kind === 'AnimatedDead' && !d1.dead && d2.type === 'NPC' && !d2.dead) ||
                   (d2.kind === 'AnimatedDead' && !d2.dead && d1.type === 'NPC' && !d1.dead)) {
@@ -329,6 +375,8 @@ export class PhysicsEngine {
                     if (d1.kind === 'Barbarian') {
                       const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
                       damageToDeal = d1.rageWasUsedThisThrow ? (2 + bonusDamage) : (d1.attackDamage + bonusDamage);
+                    } else if (d1.kind === 'Rogue' && gc.rogueController?.isSneakAttackThrow) {
+                      damageToDeal = gc.rogueController.sneakAttackBonusCount;
                     }
                     d2.takeHit(damageToDeal, d1);
 
@@ -351,6 +399,9 @@ export class PhysicsEngine {
                         gc.wizardController.manaEarnedThisTurn += 1;
                       } else if (d1.kind === 'Necromancer') {
                         gc.necromancerController.manaEarnedThisTurn += 2;
+                      } else if (d1.kind === 'Rogue') {
+                        gc.rogueController.charges++;
+                        gc.rogueController.updateActionButtons();
                       }
                       gc.npcsKilledForRageCharge.add(d2.discName);
                       gc.barbarianController.updateRageButtonVisibility();
@@ -399,6 +450,8 @@ export class PhysicsEngine {
                     if (d2.kind === 'Barbarian') {
                       const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
                       damageToDeal = d2.rageWasUsedThisThrow ? (2 + bonusDamage) : (d2.attackDamage + bonusDamage);
+                    } else if (d2.kind === 'Rogue' && gc.rogueController?.isSneakAttackThrow) {
+                      damageToDeal = gc.rogueController.sneakAttackBonusCount;
                     }
                     d1.takeHit(damageToDeal, d2);
 
@@ -421,6 +474,9 @@ export class PhysicsEngine {
                         gc.wizardController.manaEarnedThisTurn += 1;
                       } else if (d2.kind === 'Necromancer') {
                         gc.necromancerController.manaEarnedThisTurn += 2;
+                      } else if (d2.kind === 'Rogue') {
+                        gc.rogueController.charges++;
+                        gc.rogueController.updateActionButtons();
                       }
                       gc.npcsKilledForRageCharge.add(d1.discName);
                       gc.barbarianController.updateRageButtonVisibility();
@@ -498,6 +554,9 @@ export class PhysicsEngine {
                         gc.wizardController.manaEarnedThisTurn += 1;
                       } else if (actor.kind === 'Necromancer') {
                         gc.necromancerController.manaEarnedThisTurn += 2;
+                      } else if (actor.kind === 'Rogue') {
+                        gc.rogueController.charges++;
+                        gc.rogueController.updateActionButtons();
                       }
                       gc.npcsKilledForRageCharge.add(npc.discName);
                     }
@@ -523,7 +582,7 @@ export class PhysicsEngine {
     const gc = this.gc;
     if (!disc || !disc.mesh || disc.dead || disc.hitPoints <= 0) return;
     if (disc.type !== 'player' && disc.type !== 'NPC') return;
-    if (disc.kind === 'Orb' || disc.kind === 'HealingOrb') return;
+    if (disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'RoguePotion') return;
 
     const dir = new THREE.Vector3(Math.cos(crusher.angle), 0, Math.sin(crusher.angle)).normalize();
     const sideDir = new THREE.Vector3(-dir.z, 0, dir.x);

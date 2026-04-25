@@ -5,12 +5,14 @@ import { tooltipManager } from './TooltipManager.js';
 const DRAIN_LIFE_RADIUS = 8;
 const DRAIN_LIFE_MANA_COST = 2;
 const CARRION_FEAST_MANA_COST = 2;
+const NECROMANCER_MAX_MANA = 6;
+const ANIMATED_DEAD_MAX_COUNT = 6;
 
 export class NecromancerController {
   constructor(gc) {
     this.gc = gc;
 
-    this.mana = 4;
+    this.mana = 3;
     this.manaEarnedThisTurn = 0;
     this.hasMovedThisTurn = false;
     this.animatedDeadDiscs = [];
@@ -80,7 +82,7 @@ export class NecromancerController {
       d.kind !== 'AnimatedDead' && d.kind !== 'Necromancer'
     );
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < 3) return true;
+    if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < ANIMATED_DEAD_MAX_COUNT) return true;
     if (this.mana >= 2 && deadPCs.length > 0) return true;
     if (this.mana >= DRAIN_LIFE_MANA_COST) return true; // can activate drain life
     if (this.mana >= CARRION_FEAST_MANA_COST && !this.hasMovedThisTurn) return true; // can activate carrion feast
@@ -199,7 +201,7 @@ export class NecromancerController {
     firstTimeEvents.track('animate_dead_button_clicked');
 
     const animatedCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    if (animatedCount >= 3) return;
+    if (animatedCount >= ANIMATED_DEAD_MAX_COUNT) return;
 
     const deadNPCs = this.gc.discs.filter(d => d.type === 'NPC' && d.dead);
     if (deadNPCs.length === 0) return;
@@ -402,7 +404,12 @@ export class NecromancerController {
     this._updateRaiseDeadButtonVisibility();
     this._updateDrainLifeButtonVisibility();
     this._updateCarrionFeastButtonVisibility();
-    if (this.gc.uiManager) this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
+    if (this.gc.uiManager) {
+      this.gc.uiManager.updateMoveStatusChip(this.gc.currentDisc);
+      if (this.gc.currentDisc && this.gc.currentDisc.kind === 'Necromancer') {
+        this.gc.uiManager.updateCurrentTurnDiscName(this.gc.currentDisc);
+      }
+    }
   }
 
   _updateAnimateDeadButtonVisibility() {
@@ -416,7 +423,7 @@ export class NecromancerController {
       !this.gc.gameOverState.active &&
       this.mana >= 1 &&
       deadNPCs.length > 0 &&
-      animatedCount < 3 &&
+      animatedCount < ANIMATED_DEAD_MAX_COUNT &&
       !this.selectingTarget);
     this.animateDeadButton.style.display = shouldBeVisible ? 'inline-block' : 'none';
     this.animateDeadButton.disabled = !shouldBeVisible;
@@ -701,7 +708,7 @@ export class NecromancerController {
     if (this.mana < 1) return false;
 
     const activeCount = this.animatedDeadDiscs.filter(d => d.hitPoints > 0 && !d.dead).length;
-    if (activeCount >= 3) return false;
+    if (activeCount >= ANIMATED_DEAD_MAX_COUNT) return false;
 
     this.mana--;
 
@@ -872,7 +879,7 @@ export class NecromancerController {
   // ─── Turn / level / game lifecycle ──────────────────────────────────────────
 
   applyEarnedMana() {
-    this.mana += this.manaEarnedThisTurn; // no passive gain for Necromancer
+    this.mana = Math.min(this.mana + this.manaEarnedThisTurn, NECROMANCER_MAX_MANA); // no passive gain for Necromancer
     this.manaEarnedThisTurn = 0;
   }
 
@@ -906,7 +913,7 @@ export class NecromancerController {
   }
 
   onGameRestart() {
-    this.mana = 4;
+    this.mana = 3;
     this.manaEarnedThisTurn = 0;
     this.hasMovedThisTurn = false;
     this.animatedDeadDiscs = [];

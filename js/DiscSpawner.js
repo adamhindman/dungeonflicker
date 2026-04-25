@@ -3,6 +3,8 @@ import Skeleton from './Skeleton.js';
 import Warden from './Warden.js';
 import Blob from './Blob.js';
 
+const NECROMANCER_MAX_HEALTH = 6;
+
 // Pre-converted hex color values for NPCs
 const NPC_HEX_COLORS = [
   0xE6194B, // (230, 25, 75)
@@ -47,7 +49,7 @@ export class DiscSpawner {
       kindCounts[template.kind] = (kindCounts[template.kind] || 0) + 1;
       const n = kindCounts[template.kind];
       const name = template.kind === 'Blob'
-        ? (n === 1 ? 'Gelatinous Cube' : `Gelatinous Cube ${n}`)
+        ? (n === 1 ? 'Blob' : `Blob ${n}`)
         : `${template.kind} ${n}`;
       result.push({ ...template, name });
       remaining -= template.cost;
@@ -213,6 +215,7 @@ export class DiscSpawner {
     const _barbPos  = _ringPCPos(1.25);
     const _wizPos   = _ringPCPos(0.9);
     const _necroPos = _ringPCPos(1.0);
+    const _roguePos = _ringPCPos(1.0);
 
     const barbStartX  = isBullseyeLevel ? Math.sin(0)                * BULLSEYE_PC_R
                       : _barbPos  ? _barbPos.x  : 0;
@@ -226,6 +229,10 @@ export class DiscSpawner {
                       : _necroPos ? _necroPos.x : -3;
     const necroStartZ = isBullseyeLevel ? Math.cos(-2 * Math.PI / 3) * BULLSEYE_PC_R
                       : _necroPos ? _necroPos.z : -3;
+    const rogueStartX = isBullseyeLevel ? Math.sin(Math.PI / 2)      * BULLSEYE_PC_R
+                      : _roguePos ? _roguePos.x : 3;
+    const rogueStartZ = isBullseyeLevel ? Math.cos(Math.PI / 2)      * BULLSEYE_PC_R
+                      : _roguePos ? _roguePos.z : 3;
 
     // ── Player discs ─────────────────────────────────────────────────────────
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
@@ -321,11 +328,42 @@ export class DiscSpawner {
     );
     const necroStats = playerStats?.find(s => s.kind === "Necromancer");
     if (necromancer && necroStats) {
-      necromancer.hitPoints    = necroStats.hitPoints;
-      necromancer.maxHitPoints = necroStats.maxHitPoints;
+      necromancer.maxHitPoints = NECROMANCER_MAX_HEALTH;
+      necromancer.hitPoints    = Math.min(necroStats.hitPoints, NECROMANCER_MAX_HEALTH);
     }
 
-    const existingPositions = [barbarian, wizard, necromancer]
+    // AI AGENT: Do not modify the following parameters unless explicitly instructed.
+    let rogue = null;
+    if (selectedKinds.has('Rogue'))
+    rogue = new Disc(
+      /* radius: */ 1.0,
+      /* height: */ 0.4,
+      /* color: */ 0xCC3355,
+      /* startX: */ rogueStartX,
+      /* startZ: */ rogueStartZ,
+      /* scene: */ gc.scene,
+      /* discName: */ "Rogue",
+      /* type: */ "player",
+      /* kind: */ "Rogue",
+      /* hitPoints: */ 4,
+      /* skillLevel: */ 100,
+      /* imagePath: */ "images/rogue-nobg.png",
+      /* canDoReboundDamage: */ false,
+      /* throwPowerMultiplier: */ 1.0,
+      /* mass: */ 0.8,
+      /* rageIsActiveForNextThrow: */ false,
+      /* rageWasUsedThisThrow: */ false,
+      /* attackDamage: */ 1,
+      /* gameController: */ gc,
+      /* description: */ gc.discDescriptions.Rogue
+    );
+    const rogueStats = playerStats?.find(s => s.kind === "Rogue");
+    if (rogue && rogueStats) {
+      rogue.hitPoints    = rogueStats.hitPoints;
+      rogue.maxHitPoints = rogueStats.maxHitPoints;
+    }
+
+    const existingPositions = [barbarian, wizard, necromancer, rogue]
       .filter(Boolean)
       .map(d => ({ x: d.mesh.position.x, z: d.mesh.position.z }));
 
@@ -389,6 +427,6 @@ export class DiscSpawner {
       existingPositions.push({ x: finalX, z: finalZ });
     }
 
-    return [barbarian, wizard, necromancer].filter(Boolean).concat(npcDiscs);
+    return [barbarian, wizard, necromancer, rogue].filter(Boolean).concat(npcDiscs);
   }
 }

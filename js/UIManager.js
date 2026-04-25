@@ -356,7 +356,14 @@ export default class UIManager {
         const currentDiscName = currentDisc ? currentDisc.discName : null;
 
         // Filter discs
-        const playerDiscs = discs.filter(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead');
+        const playerDiscs = discs.filter(d =>
+            d.type === 'player' &&
+            d.kind !== 'Orb' &&
+            d.kind !== 'HealingOrb' &&
+            d.kind !== 'AnimatedDead' &&
+            d.kind !== 'Bomb' &&
+            d.kind !== 'RoguePotion'
+        );
         const npcDiscs = discs.filter(d => d.type === 'NPC');
 
         // Helper function to create a disc list item
@@ -445,14 +452,17 @@ export default class UIManager {
     updateCurrentTurnDiscName(currentDisc) {
         if (this.currentTurnDiscNameElement) {
             if (currentDisc && currentDisc.discName) {
+                const isRogueSubDisc = currentDisc.kind === 'Bomb' || currentDisc.kind === 'RoguePotion';
+                if (isRogueSubDisc) {
+                    this.currentTurnDiscNameElement.textContent = currentDisc.discName;
+                    this.currentTurnDiscNameElement.classList.remove('element-hidden');
+                    this.updateMoveStatusChip(currentDisc);
+                    return;
+                }
+
                 if (typeof currentDisc.hitPoints === 'number' && typeof currentDisc.maxHitPoints === 'number') {
                     const currentHP = Math.max(0, currentDisc.hitPoints);
-                    const rawMaxHP = currentDisc.maxHitPoints;
-                    const maxHP = Number.isFinite(rawMaxHP) ? Math.max(0, rawMaxHP) : Number.POSITIVE_INFINITY;
-                    const lostHP = Number.isFinite(maxHP) ? Math.max(0, maxHP - currentHP) : 0;
-
                     const redHearts = '❤️'.repeat(currentHP);
-                    const grayHearts = lostHP > 0 ? '🩶'.repeat(lostHP) : '';
 
                     // Clear existing content
                     this.currentTurnDiscNameElement.innerHTML = '';
@@ -465,7 +475,7 @@ export default class UIManager {
                     const heartsDiv = document.createElement('div');
                     heartsDiv.classList.add('hearts-container'); // Add class for styling
                     heartsDiv.style.display = 'inline-block'; // Keep hearts on the same line as name
-                    heartsDiv.textContent = redHearts + grayHearts;
+                    heartsDiv.textContent = redHearts;
                     this.currentTurnDiscNameElement.appendChild(heartsDiv);
 
                     // Add Charges display for Barbarian
@@ -502,6 +512,18 @@ export default class UIManager {
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 
+                    // Add Charges display for Rogue
+                    if (currentDisc.kind === 'Rogue' && currentDisc.gameController) {
+                        const chargesDiv = document.createElement('div');
+                        chargesDiv.classList.add('mana-container');
+                        chargesDiv.style.display = 'block';
+                        chargesDiv.style.fontSize = '0.8em';
+                        chargesDiv.style.marginTop = '4px';
+                        const charges = currentDisc.gameController.rogueController.charges;
+                        chargesDiv.textContent = `Charges: ${'⚡'.repeat(charges)}`;
+                        this.currentTurnDiscNameElement.appendChild(chargesDiv);
+                    }
+
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
                     this.updateMoveStatusChip(currentDisc);
                 } else {
@@ -527,6 +549,10 @@ export default class UIManager {
         if (!this.moveStatusChipElement) return;
 
         if (!currentDisc || currentDisc.dead || currentDisc.type !== 'player') {
+            this.moveStatusChipElement.classList.add('element-hidden');
+            return;
+        }
+        if (currentDisc.kind === 'Bomb' || currentDisc.kind === 'RoguePotion' || currentDisc.kind === 'Orb' || currentDisc.kind === 'HealingOrb' || currentDisc.kind === 'AnimatedDead') {
             this.moveStatusChipElement.classList.add('element-hidden');
             return;
         }

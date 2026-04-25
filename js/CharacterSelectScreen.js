@@ -40,6 +40,20 @@ const CHARACTERS = [
       'Earn Mana from kills and clearing rooms.',
     ],
   },
+  {
+    kind: 'Rogue',
+    name: 'Rogue',
+    image: '/images/rogue-nobg.png',
+    color: '#CC3355',
+    hp: 4,
+    summary: 'A sneaky bomb-thrower who attacks with deceptive speed.',
+    skills: [
+      'Gets 2 throws per turn.',
+      'Bomb: lob a timed explosive that blasts everything nearby.',
+      'Sneak Attack: ricochet off walls to deal bonus damage.',
+      'Health Potion: throw a healing flask onto the field.',
+    ],
+  },
 ];
 
 export class CharacterSelectScreen {
