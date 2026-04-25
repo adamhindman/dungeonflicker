@@ -20,10 +20,10 @@ const CHARACTERS = [
     hp: 3,
     summary: 'A nimble spellcaster who bends magic to their will.',
     skills: [
-      'Summon Orb (1 Mana): launch a volatile magical projectile.',
-      'Healing Orb (1 Mana): a sphere that restores 2 HP to allies it touches.',
-      'Radius Blast (2 Mana): detonate all orbs in a shockwave.',
-      'Earn Mana from kills and clearing rooms.',
+      'Mystical Orb: launch a volatile magical projectile.',
+      'Healing Orb: a sphere that restores 2 HP to allies it touches.',
+      'Radius Blast: detonate all orbs in a shockwave.',
+      'Flame Strike: unleash a devastating column of flames',
     ],
   },
   {
@@ -34,9 +34,9 @@ const CHARACTERS = [
     hp: 3,
     summary: 'A dark sorcerer who commands the dead.',
     skills: [
-      'Animate Dead (1 Mana): raise a fallen enemy as a minion.',
-      'Drain Life (2 Mana): sap HP from all nearby enemies at turn\'s end.',
-      'Resurrect Ally (2 Mana): revive a fallen ally at half HP.',
+      'Animate Dead: raise a fallen enemy as a minion.',
+      'Drain Life: sap HP from all nearby enemies at turn\'s end.',
+      'Resurrect Ally: revive a fallen ally at half HP.',
       'Earn Mana from kills and clearing rooms.',
     ],
   },
