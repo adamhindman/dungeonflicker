@@ -24,6 +24,7 @@ export class WizardController {
     this.flameStrikeTargetRing = null;
     this.flameStrikeTargetPos = new THREE.Vector3();
     this._flameStrikeCones = [];
+    this._cinderParticles = [];
   }
 
   init(actionButtonsContainer) {
@@ -58,7 +59,7 @@ export class WizardController {
     tooltipManager.register(
       this.flameStrikeButton,
       'wizard_flame_strike_used',
-      'Spend 4 mana to strike a 3-unit radius with flames, dealing 3 damage and knockback.'
+      'Spend 3 mana to conjure an artillery barrage that deals 3 damage and knockback.'
     );
   }
 
@@ -103,7 +104,7 @@ export class WizardController {
       button = document.createElement('button');
       button.id = 'radius-blast-button';
       button.dataset.shortcut = '3';
-      button.innerHTML = '<kbd>3</kbd> Radius Blast (2 Mana)';
+      button.innerHTML = '<kbd>3</kbd> Radius Blast';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -117,7 +118,7 @@ export class WizardController {
       button = document.createElement('button');
       button.id = 'flame-strike-button';
       button.dataset.shortcut = '4';
-      button.innerHTML = '<kbd>4</kbd> Flame Strike (1 Mana)';
+      button.innerHTML = '<kbd>4</kbd> Flame Strike';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -211,7 +212,7 @@ export class WizardController {
   _handleFlameStrikeButtonClick() {
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (!currentDisc || currentDisc.kind !== 'Wizard' || currentDisc.dead) return;
-    if (this.mana >= 1) {
+    if (this.mana >= 3) {
       firstTimeEvents.track('wizard_flame_strike_used');
       this.startFlameStrikeTargeting(currentDisc);
     }
@@ -285,7 +286,8 @@ export class WizardController {
       currentDisc.type === 'player' &&
       !currentDisc.dead &&
       !this.gc.gameOverState.active &&
-      this.mana >= 1);
+      this.mana >= 3 &&
+      this._flameStrikeCones.length === 0);
     this.flameStrikeButton.style.display = shouldBeVisible ? 'inline-block' : 'none';
     this.flameStrikeButton.disabled = !shouldBeVisible;
   }
@@ -441,7 +443,8 @@ export class WizardController {
   }
 
   startFlameStrikeTargeting(wizardDisc) {
-    if (!wizardDisc || wizardDisc.dead || this.mana < 1) return;
+    if (!wizardDisc || wizardDisc.dead || this.mana < 3) return;
+    if (this.flameStrikeTargetingActive || this._flameStrikeCones.length > 0) return;
     this.flameStrikeTargetingActive = true;
     this.flameStrikeTargetPos.copy(wizardDisc.mesh.position);
 
@@ -460,37 +463,60 @@ export class WizardController {
   }
 
   castFlameStrike(targetX, targetZ, wizardDisc) {
-    if (!wizardDisc || wizardDisc.dead || this.mana < 1) return;
+    if (!wizardDisc || wizardDisc.dead || this.mana < 3) return;
     this.endFlameStrikeTargeting();
-
-    this.mana -= 1;
+    this.mana -= 3;
 
     const STRIKE_RADIUS = 2.5;
     const BEAM_H = 60;
     const geo = new THREE.CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
-    const tex = new THREE.TextureLoader().load('images/fire-column-tile.png');
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(3, 6);
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
-      opacity: 0.9,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-    });
+    const columnTex = new THREE.TextureLoader().load('images/fire-column-tile.png');
+    columnTex.wrapS = THREE.RepeatWrapping;
+    columnTex.wrapT = THREE.RepeatWrapping;
+    columnTex.repeat.set(4, 6);
+    const mat = new THREE.MeshBasicMaterial({ map: columnTex, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(targetX, BEAM_H * 1.5, targetZ);
     this.gc.scene.add(mesh);
 
+    const imageFiles = [
+      'fireball-streak-1.png', 'fireball-streak-2.png', 'fireball-streak-3.png', 'fireball-streak-4.png',
+    ];
+    const loader = new THREE.TextureLoader();
+    const sprites = [];
+    for (let i = 0; i < 70; i++) {
+      const file = imageFiles[Math.floor(Math.random() * imageFiles.length)];
+      const height = 9 + Math.random() * 4.5;
+      const angle = Math.random() * Math.PI * 2;
+      const yOffset = Math.random() * 180 - 30; // range: -30 (cylinder bottom) to +150
+
+      const planeGeo = new THREE.PlaneGeometry(height, height);
+      const planeMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
+      const plane = new THREE.Mesh(planeGeo, planeMat);
+      plane.position.set(STRIKE_RADIUS * Math.cos(angle), yOffset, STRIKE_RADIUS * Math.sin(angle));
+      plane.rotation.y = -angle;
+      mesh.add(plane);
+
+      const spriteTex = loader.load(`images/${file}`, (tex) => {
+        const aspect = tex.image.width / tex.image.height;
+        plane.scale.set(aspect, 1, 1);
+        planeMat.map = tex;
+        planeMat.needsUpdate = true;
+      });
+      sprites.push({ geometry: planeGeo, material: planeMat, texture: spriteTex });
+    }
+
     this._flameStrikeCones.push({
-      mesh, geometry: geo, material: mat, texture: tex,
+      mesh, geometry: geo, material: mat,
+      sprites,
       elapsed: 0,
+      startDelay: 0.25,
       targetX, targetZ,
       wizardDisc,
       shockwaveSpawned: false,
     });
 
+    if (this.gc.soundManager) this.gc.soundManager.playWizardFlameStrike({ x: targetX, y: 0, z: targetZ });
     if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(wizardDisc);
     this.updateActionButtons();
 
@@ -515,6 +541,7 @@ export class WizardController {
     this._updateRadiusBlastRings(deltaTime);
     this._updateFlameStrikeTargeting();
     this._updateFlameStrikeCones(deltaTime);
+    this._updateCinderParticles(deltaTime);
   }
 
   _updateOrbFollowing() {
@@ -563,6 +590,28 @@ export class WizardController {
     }
   }
 
+  _updateCinderParticles(deltaTime) {
+    const GRAVITY = 9.8;
+    for (let i = this._cinderParticles.length - 1; i >= 0; i--) {
+      const p = this._cinderParticles[i];
+      p.elapsed += deltaTime;
+      const t = p.elapsed / p.duration;
+
+      p.vy -= GRAVITY * deltaTime;
+      p.mesh.position.x += p.vx * deltaTime;
+      p.mesh.position.y += p.vy * deltaTime;
+      p.mesh.position.z += p.vz * deltaTime;
+      if (p.mesh.position.y < 0.05) p.mesh.position.y = 0.05;
+      p.material.opacity = Math.max(0, 1 - t);
+
+      if (t >= 1) {
+        this.gc.scene.remove(p.mesh);
+        p.material.dispose();
+        this._cinderParticles.splice(i, 1);
+      }
+    }
+  }
+
   _updateFlameStrikeTargeting() {
     if (!this.flameStrikeTargetingActive || !this.flameStrikeTargetRing) return;
 
@@ -583,31 +632,35 @@ export class WizardController {
   }
 
   _updateFlameStrikeCones(deltaTime) {
-    const DESCEND_DUR = 0.18;
-    const FADE_DUR    = 0.22;
+    const DESCEND_DUR = 0.30;
+    const FADE_DUR    = 0.35;
     const BEAM_H      = 60;
     const MAX_OPACITY = 0.9;
     const STRIKE_RADIUS = 2.5;
-    const START_Y = BEAM_H * 1.5;
-    const END_Y   = BEAM_H / 2;
+    const START_Y  = BEAM_H * 4;
+    const END_Y    = BEAM_H / 2;
+    const FINAL_Y  = -BEAM_H / 2; // fully underground by end of fade
 
     for (let i = this._flameStrikeCones.length - 1; i >= 0; i--) {
       const cone = this._flameStrikeCones[i];
       cone.elapsed += deltaTime;
+      const animElapsed = cone.elapsed - cone.startDelay;
+      if (animElapsed <= 0) continue;
 
-      cone.texture.offset.y -= deltaTime * 3;
-
-      if (cone.elapsed < DESCEND_DUR) {
-        const t = cone.elapsed / DESCEND_DUR;
+      if (animElapsed < DESCEND_DUR) {
+        const t = animElapsed / DESCEND_DUR;
         cone.mesh.position.y = START_Y + (END_Y - START_Y) * t;
-        cone.material.opacity = MAX_OPACITY;
+        cone.material.opacity = 0.85;
+        cone.sprites.forEach(s => { s.material.opacity = MAX_OPACITY; });
       } else {
-        cone.mesh.position.y = END_Y;
-        const t = (cone.elapsed - DESCEND_DUR) / FADE_DUR;
-        cone.material.opacity = MAX_OPACITY * Math.max(0, 1 - t);
+        const t = (animElapsed - DESCEND_DUR) / FADE_DUR;
+        cone.mesh.position.y = END_Y + (FINAL_Y - END_Y) * t;
+        const opacity = MAX_OPACITY * Math.max(0, 1 - t);
+        cone.material.opacity = 0.85 * Math.max(0, 1 - t);
+        cone.sprites.forEach(s => { s.material.opacity = opacity; });
       }
 
-      if (!cone.shockwaveSpawned && cone.elapsed >= DESCEND_DUR) {
+      if (!cone.shockwaveSpawned && animElapsed >= DESCEND_DUR) {
         cone.shockwaveSpawned = true;
 
         const { targetX, targetZ, wizardDisc } = cone;
@@ -628,6 +681,26 @@ export class WizardController {
         this.gc.updateAllDiscDeadStates();
         this.gc.checkGameOverConditions();
 
+        const cinderColors = [0xFF6600, 0xFF4400, 0xFF8800, 0xFFAA00, 0xFFFFFF, 0xFF2200];
+        const cinderGeo = new THREE.SphereGeometry(0.12, 4, 4);
+        for (let c = 0; c < 60; c++) {
+          const color = cinderColors[Math.floor(Math.random() * cinderColors.length)];
+          const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+          const mesh = new THREE.Mesh(cinderGeo, mat);
+          const angle = Math.random() * Math.PI * 2;
+          const speed = 3 + Math.random() * 8;
+          mesh.position.set(targetX, 0.1, targetZ);
+          this.gc.scene.add(mesh);
+          this._cinderParticles.push({
+            mesh, material: mat,
+            vx: Math.cos(angle) * speed,
+            vy: 2 + Math.random() * 6,
+            vz: Math.sin(angle) * speed,
+            elapsed: 0,
+            duration: 0.5 + Math.random() * 0.5,
+          });
+        }
+
         const ringY = 0.1;
         for (let j = 0; j < 2; j++) {
           const geometry = new THREE.TorusGeometry(1, 0.05, 8, 64);
@@ -642,12 +715,13 @@ export class WizardController {
         }
       }
 
-      if (cone.elapsed >= DESCEND_DUR + FADE_DUR) {
+      if (animElapsed >= DESCEND_DUR + FADE_DUR) {
         this.gc.scene.remove(cone.mesh);
         cone.geometry.dispose();
-        cone.texture.dispose();
         cone.material.dispose();
+        cone.sprites.forEach(s => { s.geometry.dispose(); s.texture.dispose(); s.material.dispose(); });
         this._flameStrikeCones.splice(i, 1);
+        this.updateActionButtons();
       }
     }
   }
@@ -723,9 +797,14 @@ export class WizardController {
     for (const cone of this._flameStrikeCones) {
       this.gc.scene.remove(cone.mesh);
       cone.geometry.dispose();
-      if (cone.texture) cone.texture.dispose();
       cone.material.dispose();
+      if (cone.sprites) cone.sprites.forEach(s => { s.geometry.dispose(); s.texture.dispose(); s.material.dispose(); });
     }
     this._flameStrikeCones = [];
+    for (const p of this._cinderParticles) {
+      this.gc.scene.remove(p.mesh);
+      p.material.dispose();
+    }
+    this._cinderParticles = [];
   }
 }

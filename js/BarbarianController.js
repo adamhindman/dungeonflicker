@@ -24,7 +24,7 @@ export class BarbarianController {
     tooltipManager.register(
       this.gc.uiManager && this.gc.uiManager.rageButtonElement,
       'barbarian_rage_used',
-      'Spend a Rage charge to throw with extra force. Earn charges by hitting enemies.'
+      'Spend 1 charge to throw with extra force. Earn charges by hitting enemies.'
     );
   }
 

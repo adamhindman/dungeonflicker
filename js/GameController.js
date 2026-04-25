@@ -105,12 +105,12 @@ export default class GameController {
     this.discInfoPopupSelectedDisc = null;
 
     this.discDescriptions = {
-        Barbarian: "Deals 2 damage per hit, plus 1 extra per enemy hit on the same throw. Kills grant Rage, boosting base damage and adding rebound damage.",
-        Wizard: "Summon orbs with Mana. Costs 1 Mana per orb. Kills with orbs or bumps earn Mana back. Clearing rooms grants Mana.",
-        Necromancer: "Spend Mana to Animate Dead NPCs (1 mana) — they deal 1 damage and have 1 HP. Resurrect Ally for 2 mana, reviving a fallen ally at half HP. Activate Carrion Feast for 2 mana to consume corpses for healing and keep it active each turn. Earn mana from kills and clearing rooms.",
+        Barbarian: "Deals heavy damage, plus extra damage per enemy hit on the same throw. Unleash your Rage to do even more damage and gain multiple attacks.",
+        Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
+        Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
-        Warden: "Hard to move, and hard to kill. Hits for 2 base damage.",
-        Blob: "A gelatinous cube that evolves with each kill. Starts small and agile (2 dmg, 4 HP), grows stronger and slower with each victim. Cannot be revived when killed.",
+        Warden: "A massive metal bully. Hard to move, and hard to kill.",
+        Blob: "A gelatinous cube that consumes dead bodies. Starts small and agile, grows stronger and slower with each victim.",
         Orb: "A volatile sphere of magical energy, summoned by the Wizard.",
         HealingOrb: "A red sphere of restorative energy. Heals 1 HP to every living disc it passes through.",
         AnimatedDead: "A reanimated corpse under the Necromancer's command. 1 HP, 1 damage."
@@ -1000,10 +1000,9 @@ clamp(value, min, max) {
           this.necromancerController.cancelCarrionFeast();
         }
 
-        // Necromancer earns 2 mana for clearing a room
         const necromancer = this.necromancerController.getDisc();
         if (necromancer && !necromancer.dead) {
-            this.necromancerController.mana += 2;
+            this.necromancerController.mana += 1;
             if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
         }
 

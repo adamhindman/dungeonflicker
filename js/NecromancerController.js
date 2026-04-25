@@ -96,7 +96,7 @@ export class NecromancerController {
       button = document.createElement('button');
       button.id = 'animate-dead-button';
       button.dataset.shortcut = '1';
-      button.innerHTML = '<kbd>1</kbd> Animate Dead (1💀)';
+      button.innerHTML = '<kbd>1</kbd> Animate Dead';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -110,7 +110,7 @@ export class NecromancerController {
       button = document.createElement('button');
       button.id = 'raise-dead-button';
       button.dataset.shortcut = '3';
-      button.innerHTML = '<kbd>3</kbd> Resurrect Ally (2💀)';
+      button.innerHTML = '<kbd>3</kbd> Resurrect Ally';
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -138,7 +138,7 @@ export class NecromancerController {
       button = document.createElement('button');
       button.id = 'carrion-feast-button';
       button.dataset.shortcut = '4';
-      button.innerHTML = `<kbd>4</kbd> Carrion Feast (${CARRION_FEAST_MANA_COST}\u{1F480})`;
+      button.innerHTML = `<kbd>4</kbd> Carrion Feast`;
       this._actionButtonsContainer.appendChild(button);
     }
     button.style.display = 'none';
@@ -446,7 +446,7 @@ export class NecromancerController {
     if (this.drainLifeActive) {
       this.drainLifeButton.innerHTML = '<kbd>2</kbd> Drain Life: ON';
     } else {
-      this.drainLifeButton.innerHTML = `<kbd>2</kbd> Drain Life (${DRAIN_LIFE_MANA_COST}\u{1F480})`;
+      this.drainLifeButton.innerHTML = `<kbd>2</kbd> Drain Life`;
     }
   }
 

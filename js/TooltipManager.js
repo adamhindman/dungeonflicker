@@ -37,13 +37,23 @@ class TooltipManager {
   register(button, eventKey, text) {
     if (!button) return;
 
+    let hoverTimer = null;
+
     button.addEventListener('mouseenter', () => {
       if (this._completing) return;
-      if (firstTimeEvents.has(eventKey)) return;
+      if (firstTimeEvents.has(eventKey)) {
+        // Post-tutorial: show reminder after 1 second of hovering
+        hoverTimer = setTimeout(() => {
+          if (!this._completing) this._show(button, text, eventKey);
+        }, 1000);
+        return;
+      }
       this._show(button, text, eventKey);
     });
 
     button.addEventListener('mouseleave', () => {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
       if (this._completing) return; // don't interrupt the completion sequence
       this._hide();
     });
