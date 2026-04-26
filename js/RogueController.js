@@ -216,7 +216,7 @@ export class RogueController {
   _explodeBomb() {
     if (!this.bomb) return;
     const EXPLODE_RADIUS = 4;
-    const EXPLODE_FORCE = 4.0;
+    const EXPLODE_FORCE = 2.8;
     const EXPLODE_DAMAGE = 2;
     const bombPos = this.bomb.mesh.position.clone();
     let chargesEarnedFromBombKills = 0;

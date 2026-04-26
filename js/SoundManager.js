@@ -14,6 +14,10 @@ const JELLY_SQUEEZE_URLS = Object.values(
   import.meta.glob('../public/sounds/jelly/jelly-squeeze-*.mp3', { eager: true, query: '?url', import: 'default' })
 );
 
+const DEATH_CRY_URLS = Object.values(
+  import.meta.glob('../public/sounds/cries/*.mp3', { eager: true, query: '?url', import: 'default' })
+);
+
 const BREATH_FILES = [
   'magic-elements-vocal-breath-inhale-01.mp3',
   'magic-elements-vocal-breath-inhale-02.mp3',
@@ -70,6 +74,8 @@ export class SoundManager {
     this.wizardRadiusBlastBuffer = null;
     this.menuOpenBuffer = null;
     this.rogueGrenadeExplodeBuffer = null;
+    this.deathCryBuffers = [];
+    this.gameOverBuffer = null;
     this.musicBuffer = null;
     this._musicAudio = null;
     this._musicPending = false;
@@ -106,10 +112,11 @@ export class SoundManager {
     const wizardFlameStrikePromise = load('/sounds/fire/wizard-flame-strike.mp3');
     const menuOpenPromise          = load('/sounds/menu/menu open.mp3');
     const rogueGrenadeExplodePromise = load('/sounds/rogue/rogue-grenade-explode.mp3');
+    const gameOverPromise            = load('/sounds/menu/game over.mp3');
 
     // Gameplay sounds load together; music loads independently so a large file
     // doesn't block sfx from becoming ready.
-    Promise.all([Promise.all(woodPromises), Promise.all(wardenPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise, wizardFlameStrikePromise, rogueGrenadeExplodePromise]).then(([wood, warden, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen, wizardFlameStrike, rogueGrenadeExplode]) => {
+    Promise.all([Promise.all(woodPromises), Promise.all(wardenPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise, wizardFlameStrikePromise, rogueGrenadeExplodePromise, gameOverPromise]).then(([wood, warden, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen, wizardFlameStrike, rogueGrenadeExplode, gameOver]) => {
       this.woodHitBuffers    = wood.filter(Boolean);
       this.wardenHitBuffers  = warden.filter(Boolean);
       this.bounceBuffers     = bounce.filter(Boolean);
@@ -123,14 +130,18 @@ export class SoundManager {
       this.menuOpenBuffer            = menuOpen || null;
       this.wizardFlameStrikeBuffer   = wizardFlameStrike || null;
       this.rogueGrenadeExplodeBuffer = rogueGrenadeExplode || null;
+      this.gameOverBuffer            = gameOver || null;
       this._loaded = true;
       this._onReadyCallbacks.forEach(fn => fn());
       this._onReadyCallbacks = [];
     });
 
-    // Load drain/jelly sounds independently — don't block gameplay sounds from being ready
+    // Load drain/jelly/cry sounds independently — don't block gameplay sounds from being ready
     Promise.all(DRAIN_SOUND_URLS.map(url => load(url))).then(buffers => {
       this.drainBuffers = buffers.filter(Boolean);
+    });
+    Promise.all(DEATH_CRY_URLS.map(url => load(url))).then(buffers => {
+      this.deathCryBuffers = buffers.filter(Boolean);
     });
     Promise.all(JELLY_IMPACT_URLS.map(url => load(url))).then(buffers => {
       this.jellyImpactBuffers = buffers.filter(Boolean);
@@ -345,6 +356,38 @@ export class SoundManager {
 
     sound.play();
     sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playDeathCry(position) {
+    if (!this._loaded || this.deathCryBuffers.length === 0) {
+      this._lastDeathCryPromise = Promise.resolve();
+      return;
+    }
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+    const buffer = this.deathCryBuffers[Math.floor(Math.random() * this.deathCryBuffers.length)];
+    const obj = new THREE.Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+    const sound = new THREE.PositionalAudio(this.listener);
+    sound.setBuffer(buffer);
+    sound.setRefDistance(20);
+    sound.setVolume(0.75);
+    obj.add(sound);
+    this._lastDeathCryPromise = new Promise(resolve => {
+      sound.onEnded = () => { this.gc.scene.remove(obj); resolve(); };
+    });
+    sound.play();
+  }
+
+  playGameOver() {
+    if (!this._loaded || !this.gameOverBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+    const sound = new THREE.Audio(this.listener);
+    sound.setBuffer(this.gameOverBuffer);
+    sound.setVolume(0.25);
+    sound.play();
   }
 
   playBlobHit(position) {

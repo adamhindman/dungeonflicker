@@ -515,6 +515,13 @@ export default class Disc {
     this.hideDrainLifeAura();
     // Update spotlight to dead configuration when disc dies
     this.updateSpotlightConfig('dead');
+
+    const isPC = this.type === 'player' &&
+      this.kind !== 'Orb' && this.kind !== 'HealingOrb' &&
+      this.kind !== 'AnimatedDead' && this.kind !== 'Bomb' && this.kind !== 'RoguePotion';
+    if (isPC && this.gameController && this.gameController.soundManager) {
+      this.gameController.soundManager.playDeathCry(this.mesh.position.clone());
+    }
   }
 
   // Set spotlight parameters based on active/inactive state

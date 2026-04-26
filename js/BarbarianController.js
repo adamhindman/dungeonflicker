@@ -121,6 +121,7 @@ export class BarbarianController {
       disc.hasThrown = false;
       this.updateRageButtonVisibility();
       this.updateEndTurnButtonVisibility();
+      this.gc.updateDiscNames();
       if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(disc);
     }
   }

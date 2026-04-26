@@ -817,7 +817,7 @@ export default class GameController {
         const discBeingThrown = this.currentDisc;
 
 
-        const throwForceMagnitude = effectiveWorldDrag * WORLD_THROW_SENSITIVITY;
+        const dragBeyondThreshold = effectiveWorldDrag - WORLD_DRAG_THRESHOLD;
         const normX = deltaX / screenDragLength;
         const normY = deltaY / screenDragLength;
 
@@ -839,6 +839,22 @@ export default class GameController {
         const directionX = direction.x;
         const directionZ = direction.z;
 
+        let adjustedWorldDrag = effectiveWorldDrag;
+        if (discBeingThrown.kind === 'Rogue') {
+          // Rogue-only low-end response curve:
+          // make short drags much easier to control, while preserving normal
+          // long-drag behavior so full-strength throws remain available.
+          const ROGUE_CURVE_RANGE = 220;
+          const clamped = Math.min(ROGUE_CURVE_RANGE, Math.max(0, dragBeyondThreshold));
+          const normalized = clamped / ROGUE_CURVE_RANGE;
+          const curved = normalized * normalized;
+          const curvedDrag = curved * ROGUE_CURVE_RANGE;
+          const linearRemainder = Math.max(0, dragBeyondThreshold - ROGUE_CURVE_RANGE);
+          adjustedWorldDrag = WORLD_DRAG_THRESHOLD + curvedDrag + linearRemainder;
+        }
+
+        const throwForceMagnitude = adjustedWorldDrag * WORLD_THROW_SENSITIVITY;
+
         let actualThrowPowerMultiplier = discBeingThrown.throwPowerMultiplier;
 
         if (discBeingThrown.rageIsActiveForNextThrow) {
@@ -855,11 +871,7 @@ export default class GameController {
           this.barbarianController.updateRageButtonVisibility();
         }
 
-        const maxSpeed = discBeingThrown.kind === 'Bomb'
-          ? 1.8
-          : discBeingThrown.kind === 'Rogue'
-            ? 0.7
-            : 1;
+        const maxSpeed = discBeingThrown.kind === 'Bomb' ? 1.8 : 1;
         // const normLength = Math.min(adjustedLength / 10, 1); // Old logic, adjustedLength is not defined in this scope with new logic
         // const scaledLength = normLength * normLength; // Old logic
         let speed = (throwForceMagnitude * actualThrowPowerMultiplier) / discBeingThrown.mass;
@@ -1067,9 +1079,17 @@ clamp(value, min, max) {
     this.gameOverState.active = true;
     this.gameOverState.playerWon = playerWon;
 
-    if (this.uiManager) {
-      this.uiManager.showGameOver(playerWon);
+    if (playerWon) {
+      if (this.uiManager) this.uiManager.showGameOver(true);
+      return;
     }
+
+    // Player lost: wait for the last death cry to finish, then pause 500ms before showing UI/sound
+    const deathCryDone = this.soundManager?._lastDeathCryPromise ?? Promise.resolve();
+    deathCryDone.then(() => setTimeout(() => {
+      if (this.uiManager) this.uiManager.showGameOver(false);
+      if (this.soundManager) this.soundManager.playGameOver();
+    }, 1000));
     // Further actions like stopping game loop, disabling controls, etc.,
     // will be handled by checks in other methods (e.g., advanceTurn, onPointerDown)
   }
@@ -1994,6 +2014,8 @@ disc.isCurrentlyInLavaState = true;
       return; // Important to stop further processing for the dead disc's turn
     }
 
+    this.updateDiscNames();
+    if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     this.logCurrentTurn();
     this._updateSpotlights();
     this.barbarianController.updateRageButtonVisibility();
@@ -2149,15 +2171,18 @@ disc.isCurrentlyInLavaState = true;
     }
 
     this.discInfoNameElement.innerText = disc.discName;
-    const currentHp = Number(disc.hitPoints) || 0;
+    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead'];
+    const showHp = !noHpKinds.includes(disc.kind);
+    const currentHp = showHp ? (Number(disc.hitPoints) || 0) : 0;
     const rawMaxHp = disc.maxHitPoints;
     const maxHp = Number.isFinite(rawMaxHp) ? Math.max(0, rawMaxHp) : Number.POSITIVE_INFINITY;
-    const filledHearts = currentHp > 0 ? '❤️'.repeat(currentHp) : '';
-    const emptyHearts = Number.isFinite(maxHp) && maxHp > currentHp ? '🩶'.repeat(maxHp - currentHp) : '';
+    const filledHearts = showHp && currentHp > 0 ? '❤️'.repeat(currentHp) : '';
+    const emptyHearts = showHp && Number.isFinite(maxHp) && maxHp > currentHp ? '🩶'.repeat(maxHp - currentHp) : '';
     const attackPower = Number.isFinite(disc.attackDamage) ? disc.attackDamage : 'N/A';
     const descriptionText = disc.description || "No description available.";
     this.discInfoHpElement.innerText = '';
-    this.discInfoDescriptionElement.innerText = `${filledHearts}${emptyHearts}\nAttack: ${attackPower}\n\n${descriptionText}`;
+    const heartsLine = (filledHearts || emptyHearts) ? `${filledHearts}${emptyHearts}\n` : '';
+    this.discInfoDescriptionElement.innerText = `${heartsLine}Attack: ${attackPower}\n\n${descriptionText}`;
 
     // Reset classes and apply new ones
     this.discInfoPopupElement.className = 'popup'; // Base class
