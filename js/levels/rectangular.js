@@ -12,7 +12,7 @@ export function loadRectangular() {
   );
 
   // Load tile texture and set repeating
-  const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
+  const tileTexture = this.textureLoader.load("images/tile-stone-1.webp");
   tileTexture.wrapS = RepeatWrapping;
   tileTexture.wrapT = RepeatWrapping;
 
@@ -28,7 +28,7 @@ export function loadRectangular() {
   });
 
   // Create wall texture
-  const wallTileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
+  const wallTileTexture = this.textureLoader.load("images/tile-stone-1.webp");
   wallTileTexture.wrapS = RepeatWrapping;
   wallTileTexture.wrapT = RepeatWrapping;
 

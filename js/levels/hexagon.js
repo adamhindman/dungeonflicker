@@ -37,11 +37,11 @@ export function loadHexagon() {
   this._circularWalls = [];
 
   // ── Textures ──────────────────────────────────────────────────────────────
-  const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
+  const tileTexture = this.textureLoader.load("images/tile-stone-1.webp");
   tileTexture.wrapS = RepeatWrapping;
   tileTexture.wrapT = RepeatWrapping;
 
-  const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
+  const wallTex = this.textureLoader.load("images/tile-stone-1.webp");
   wallTex.wrapS = RepeatWrapping;
   wallTex.wrapT = RepeatWrapping;
   this.wallMaterial = new MeshStandardMaterial({
@@ -53,7 +53,7 @@ export function loadHexagon() {
   });
   this._hexFloorMat = floorMat; // stored for clean disposal in unload()
 
-  const redTileTex = this.textureLoader.load("images/tile-stone-red-1.jpg");
+  const redTileTex = this.textureLoader.load("images/tile-stone-red-1.webp");
   redTileTex.wrapS = RepeatWrapping;
   redTileTex.wrapT = RepeatWrapping;
   const pitMat = new MeshStandardMaterial({

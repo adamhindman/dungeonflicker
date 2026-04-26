@@ -480,7 +480,7 @@ export class WizardController {
     const STRIKE_RADIUS = FLAME_STRIKE_RADIUS;
     const BEAM_H = 60;
     const geo = new CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
-    const columnTex = new TextureLoader().load('images/tile-fire-column.jpg');
+    const columnTex = new TextureLoader().load('images/tile-fire-column.webp');
     columnTex.wrapS = RepeatWrapping;
     columnTex.wrapT = RepeatWrapping;
     columnTex.repeat.set(4, 6);

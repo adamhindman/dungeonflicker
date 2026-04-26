@@ -32,14 +32,14 @@ export function loadDonut() {
   this.obstacles        = [];
 
   // ── Textures ──────────────────────────────────────────────────────────────
-  const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
+  const wallTex = this.textureLoader.load("images/tile-stone-1.webp");
   wallTex.wrapS = RepeatWrapping;
   wallTex.wrapT = RepeatWrapping;
   this.wallMaterial = new MeshStandardMaterial({
     map: wallTex, roughness: 0.6, metalness: 0.2,
   });
 
-  const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
+  const tileTexture = this.textureLoader.load("images/tile-stone-1.webp");
   tileTexture.wrapS = RepeatWrapping;
   tileTexture.wrapT = RepeatWrapping;
   const floorMat = new MeshStandardMaterial({
@@ -47,7 +47,7 @@ export function loadDonut() {
   });
   this._hexFloorMat = floorMat;
 
-  const redTileTex = this.textureLoader.load("images/tile-stone-red-1.jpg");
+  const redTileTex = this.textureLoader.load("images/tile-stone-red-1.webp");
   redTileTex.wrapS = RepeatWrapping;
   redTileTex.wrapT = RepeatWrapping;
   const pitMat = new MeshStandardMaterial({

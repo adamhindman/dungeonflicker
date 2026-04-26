@@ -91,7 +91,7 @@ return;
 
         // Load the lava texture
         const textureLoader = new TextureLoader();
-        this.lavaTexture = textureLoader.load('images/lava-tile-1.jpg');
+        this.lavaTexture = textureLoader.load('images/lava-tile-1.webp');
 
         // Configure texture wrapping and variety
         this.lavaTexture.wrapS = RepeatWrapping;

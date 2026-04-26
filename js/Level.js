@@ -127,7 +127,7 @@ export default class Level {
 
   _getObstacleMaterial() {
     if (!this.obstacleMaterial) {
-      const tex = this.textureLoader.load("images/stacked-tile-light.jpg");
+      const tex = this.textureLoader.load("images/stacked-tile-light.webp");
       tex.wrapS = RepeatWrapping;
       tex.wrapT = RepeatWrapping;
       this.obstacleMaterial = new MeshStandardMaterial({
@@ -487,7 +487,7 @@ export default class Level {
     const OFFSET = 0.27; // distance in front of the wall face
 
     this._vineTileMeshes = [];
-    this._vineTileTexture = this.textureLoader.load("images/tile-stone-vines-1.jpg");
+    this._vineTileTexture = this.textureLoader.load("images/tile-stone-vines-1.webp");
     this._vineMat = new MeshStandardMaterial({
       map: this._vineTileTexture,
       roughness: 0.6,
