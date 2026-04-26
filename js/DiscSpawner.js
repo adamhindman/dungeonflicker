@@ -2,6 +2,7 @@ import Disc from './Disc.js';
 import Skeleton from './Skeleton.js';
 import Warden from './Warden.js';
 import Blob from './Blob.js';
+import FireElemental from './FireElemental.js';
 
 const NECROMANCER_MAX_HEALTH = 6;
 
@@ -50,6 +51,8 @@ export class DiscSpawner {
       const n = kindCounts[template.kind];
       const name = template.kind === 'Blob'
         ? (n === 1 ? 'Blob' : `Blob ${n}`)
+        : template.kind === 'FireElemental'
+        ? (n === 1 ? 'Fire Elemental' : `Fire Elemental ${n}`)
         : `${template.kind} ${n}`;
       result.push({ ...template, name });
       remaining -= template.cost;
@@ -59,6 +62,7 @@ export class DiscSpawner {
     const pickTemplate = () => {
       const options = [];
       if (remaining >= 1) options.push({ kind: 'Skeleton', cost: 1, skillLevel: 80 });
+      if (remaining >= 3) options.push({ kind: 'FireElemental', cost: 3, skillLevel: 85 });
       if (remaining >= 3) options.push({ kind: 'Warden', cost: 3, skillLevel: 85 });
       if (remaining >= 3) {
         const maxLevel = Math.min(Math.max(1, budget - 2), remaining - 2);
@@ -418,6 +422,8 @@ export class DiscSpawner {
         disc = new Warden(...commonArgs, gc.discDescriptions.Warden);
       } else if (npc.kind === "Blob") {
         disc = new Blob(...commonArgs, gc.discDescriptions.Blob, npc.startingLevel ?? 1);
+      } else if (npc.kind === "FireElemental") {
+        disc = new FireElemental(...commonArgs, gc.discDescriptions.FireElemental);
       }
       // Future: Add else if for other NPC kinds here
 

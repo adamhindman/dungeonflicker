@@ -2,6 +2,7 @@ import * as THREE from "three";
 import Level from "./Level.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
+import Disc from './Disc.js';
 import { BarbarianController } from './BarbarianController.js';
 import { WizardController } from './WizardController.js';
 import { NecromancerController } from './NecromancerController.js';
@@ -111,6 +112,7 @@ export default class GameController {
         Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
         Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
+        FireElemental: "A creature of living flame. Hurls fireballs at players it can see, and deals heavy damage when it throws itself into one.",
         Warden: "A massive metal bully. Hard to move, and hard to kill.",
         Blob: "A gelatinous cube that consumes dead bodies. Starts small and agile, grows stronger and slower with each victim.",
         Rogue: "A man with a criminal record and a bag of grenades.",
@@ -325,7 +327,7 @@ export default class GameController {
 
     // Immediately mark any player discs that carried over as dead (hitPoints=0 from playerStats)
     // so they appear in the Resurrect Ally target list without waiting for the animation loop.
-    this.updateAllDiscDeadStates();
+    this.updateAllDiscDeadStates(true);
 
     // Initialize all spotlight intensities to inactive state
     this.discs.forEach(disc => {
@@ -808,7 +810,7 @@ export default class GameController {
       const cameraDistance = this.controls.getDistance();
       const effectiveWorldDrag = screenDragLength * cameraDistance;
 
-      const WORLD_DRAG_THRESHOLD = 10; // Tune this value
+      const WORLD_DRAG_THRESHOLD = 2; // Tune this value
       const WORLD_THROW_SENSITIVITY = .004; // Tune this value
       // const dragThreshold = 3; // Old pixel-based threshold, now replaced by WORLD_DRAG_THRESHOLD
       const minSpeed = 0.05; // This might still be relevant for disc stopping
@@ -958,7 +960,7 @@ clamp(value, min, max) {
 
 // --- Game Over Logic ---
 // Ensure all dead discs have their visual state updated correctly
-  updateAllDiscDeadStates() {
+  updateAllDiscDeadStates(silent = false) {
     if (!this.discs || this.discs.length === 0) {
       return;
     }
@@ -974,7 +976,7 @@ clamp(value, min, max) {
         if (disc.type !== 'player' && this.thrownDisc && this.thrownDisc.kind === 'AnimatedDead') {
           firstTimeEvents.track('animated_dead_kill');
         }
-        disc.die();
+        disc.die(silent);
         // When an AnimatedDead disc dies here (e.g. from lava while stationary),
         // clean up its state so it reverts to a plain dead NPC and can be re-animated.
         if (disc.kind === 'AnimatedDead' && this.necromancerController) {
@@ -1025,7 +1027,7 @@ clamp(value, min, max) {
         if (!disc.dead) {
           alivePlayerDiscs++;
         }
-      } else if (disc.type === "NPC") {
+      } else if (disc.type === "NPC" && disc.kind !== 'Fireball') {
         npcDiscsExist = true;
         // Animated dead discs under Necromancer control don't count as alive NPCs
         if (!disc.dead && !disc.isAnimatedDead) {
@@ -1663,7 +1665,7 @@ disc.isCurrentlyInLavaState = true;
               }
 
               // Reward player for lava kills
-              if (disc.type === 'NPC' && disc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(disc.discName)) {
+              if (disc.type === 'NPC' && disc.kind !== 'Fireball' && disc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(disc.discName)) {
                   const actor = this.currentDisc;
                   if (actor && actor.type === 'player') {
                       if (actor.kind === 'Barbarian') {
@@ -1714,8 +1716,10 @@ disc.isCurrentlyInLavaState = true;
       const isConsumedAnimatedDead = this.thrownDisc.kind === 'AnimatedDead' && (this.thrownDisc.hitPoints <= 0 || this.thrownDisc.dead);
       // RoguePotion is consumed when it heals a PC (hitPoints set to 0)
       const isConsumedPotion = this.thrownDisc.kind === 'RoguePotion' && this.thrownDisc.hitPoints <= 0;
+      // Fireball is consumed when it hits a player or stops moving
+      const isConsumedFireball = this.thrownDisc.kind === 'Fireball' && (this.thrownDisc.hitPoints <= 0 || this.thrownDisc.dead);
 
-      if ((velocityLength < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead || isConsumedPotion) {
+      if ((velocityLength < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead || isConsumedPotion || isConsumedFireball) {
         this.waitingForDiscToStop = false;
         const justMovedDisc = this.thrownDisc;
         this.thrownDisc = null; // Clear tracking
@@ -1733,6 +1737,9 @@ disc.isCurrentlyInLavaState = true;
             await this.barbarianController.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Rogue' || justMovedDisc.kind === 'Bomb' || justMovedDisc.kind === 'RoguePotion') {
             await this.rogueController.onDiscStopped(justMovedDisc);
+        } else if (justMovedDisc.kind === 'Fireball') {
+            this.removeFireball(justMovedDisc);
+            await this._proceedToNextPlayerTurn();
         } else {
             // NPC or any other disc
             await this._proceedToNextPlayerTurn();
@@ -1754,6 +1761,16 @@ disc.isCurrentlyInLavaState = true;
     }
   }
 
+  removeFireball(fireball) {
+    const idx = this.discs.indexOf(fireball);
+    if (idx > -1) this.discs.splice(idx, 1);
+    this.soundManager.playFireballHit(fireball.mesh.position);
+    fireball.velocity.set(0, 0, 0);
+    fireball.moving = false;
+    fireball.dispose();
+    this.updateDiscNames();
+  }
+
   _applyCrusherImpacts(crusher, impactLength = crusher ? crusher.currentLength : 0) {
     if (!crusher || !crusher.mesh) return;
     const flingDir = new THREE.Vector3(
@@ -1766,7 +1783,7 @@ disc.isCurrentlyInLavaState = true;
     for (const disc of this.discs) {
       if (!disc || !disc.mesh || disc.dead || disc.hitPoints <= 0) continue;
       if (disc.type !== 'player' && disc.type !== 'NPC') continue;
-      if (disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'RoguePotion') continue;
+      if (disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'RoguePotion' || disc.kind === 'Fireball') continue;
       const center = disc.mesh.position.clone();
       const rel = new THREE.Vector3(center.x - crusher.anchorX, 0, center.z - crusher.anchorZ);
       const along = rel.dot(flingDir);
@@ -1858,6 +1875,7 @@ disc.isCurrentlyInLavaState = true;
         if (potentialDisc.kind === 'Orb' || potentialDisc.kind === 'HealingOrb') continue; // Orbs do not get independent turns
         if (potentialDisc.kind === 'AnimatedDead') continue; // Animated dead do not get independent turns
         if (potentialDisc.kind === 'Bomb' || potentialDisc.kind === 'RoguePotion') continue; // Rogue sub-discs do not get independent turns
+        if (potentialDisc.kind === 'Fireball') continue; // Fireballs do not get independent turns
         if (potentialDisc.hitPoints > 0 && !potentialDisc.dead) {
             nextAvailableDiscFound = true;
             break;
@@ -1868,13 +1886,13 @@ disc.isCurrentlyInLavaState = true;
         // No valid disc found to advance to, might be game over or only orbs left.
         // This case should ideally be handled by checkGameOverConditions.
         // For safety, set currentDisc to null or a sensible default if no one can act.
-        const firstAlivePlayer = this.discs.find(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && d.kind !== 'Bomb' && d.kind !== 'RoguePotion' && !d.dead);
+        const firstAlivePlayer = this.discs.find(d => d.type === 'player' && d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' && d.kind !== 'Bomb' && d.kind !== 'RoguePotion' && d.kind !== 'Fireball' && !d.dead);
         if (firstAlivePlayer) {
             this.currentDisc = firstAlivePlayer;
             this.currentTurnIndex = this.discs.indexOf(firstAlivePlayer);
         } else {
             // No player can act, perhaps let an AI act if any are left, or it's truly game over.
-            const firstAliveNPC = this.discs.find(d => d.type === 'NPC' && !d.dead);
+            const firstAliveNPC = this.discs.find(d => d.type === 'NPC' && d.kind !== 'Fireball' && !d.dead);
             if (firstAliveNPC) {
                 this.currentDisc = firstAliveNPC;
                 this.currentTurnIndex = this.discs.indexOf(firstAliveNPC);
@@ -1896,7 +1914,7 @@ disc.isCurrentlyInLavaState = true;
     const firstAliveIndex = this.discs.findIndex(d =>
       !d.dead && (d.type === 'player' || d.type === 'NPC') &&
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' &&
-      d.kind !== 'Bomb' && d.kind !== 'RoguePotion'
+      d.kind !== 'Bomb' && d.kind !== 'RoguePotion' && d.kind !== 'Fireball'
     );
     if (this.level && !this.roundWon && !this.level.doorIsOpen && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
       // End of round: grant bonus charge to Rogue
@@ -1973,7 +1991,7 @@ disc.isCurrentlyInLavaState = true;
         const candidate = this.discs[candidateIndex];
         if (!candidate || candidate.dead || candidate.hitPoints <= 0) continue;
         if (candidate.type !== 'player' && candidate.type !== 'NPC') continue;
-        if (candidate.kind === 'Orb' || candidate.kind === 'HealingOrb' || candidate.kind === 'AnimatedDead' || candidate.kind === 'Bomb' || candidate.kind === 'RoguePotion') continue;
+        if (candidate.kind === 'Orb' || candidate.kind === 'HealingOrb' || candidate.kind === 'AnimatedDead' || candidate.kind === 'Bomb' || candidate.kind === 'RoguePotion' || candidate.kind === 'Fireball') continue;
         nextIndex = candidateIndex;
         nextAvailableDiscFound = true;
         break;
@@ -2212,6 +2230,85 @@ disc.isCurrentlyInLavaState = true;
   async aiThrow(disc) {
     if (!disc || disc.dead) return;
 
+    // Special targeting for FireElemental:
+    //   - Within SELF_THROW_RANGE of a PC → throw itself (fall through)
+    //   - Outside range + LOS → throw a fireball
+    //   - Outside range + no LOS → fall through to move closer
+    if (disc.kind === 'FireElemental') {
+      const SELF_THROW_RANGE = 10;
+
+      const alivePlayers = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead);
+      if (alivePlayers.length === 0) return;
+
+      let target = alivePlayers[0];
+      let minDist = disc.mesh.position.distanceTo(target.mesh.position);
+      for (let i = 1; i < alivePlayers.length; i++) {
+        const d = disc.mesh.position.distanceTo(alivePlayers[i].mesh.position);
+        if (d < minDist) { minDist = d; target = alivePlayers[i]; }
+      }
+
+      if (minDist > SELF_THROW_RANGE) {
+        const fromPos = disc.mesh.position.clone();
+        const toPos = target.mesh.position.clone();
+
+        const checkLOS = (start, end) => {
+          const walls = this.level.getAllWalls();
+          const direction = end.clone().sub(start).normalize();
+          const length = start.distanceTo(end);
+          const steps = Math.ceil(length * 10);
+          for (const wall of walls) {
+            const box = new THREE.Box3().setFromObject(wall);
+            for (let i = 0; i <= steps; i++) {
+              const point = start.clone().add(direction.clone().multiplyScalar((length / steps) * i));
+              if (box.containsPoint(point)) return false;
+            }
+          }
+          return true;
+        };
+
+        if (checkLOS(fromPos, toPos)) {
+          const dir = toPos.clone().sub(fromPos);
+          dir.y = 0;
+          dir.normalize();
+
+          const spawnOffset = disc.radius + 0.5;
+          const fireball = new Disc(
+            /* radius: */ 0.4,
+            /* height: */ 0.2,
+            /* color: */ 0xFF6600,
+            /* startX: */ fromPos.x + dir.x * spawnOffset,
+            /* startZ: */ fromPos.z + dir.z * spawnOffset,
+            /* scene: */ this.scene,
+            /* discName: */ 'Fireball',
+            /* type: */ 'NPC',
+            /* kind: */ 'Fireball',
+            /* hitPoints: */ 1,
+            /* skillLevel: */ 0,
+            /* imagePath: */ null,
+            /* canDoReboundDamage: */ false,
+            /* throwPowerMultiplier: */ 1.0,
+            /* mass: */ 0.5,
+            /* rageIsActiveForNextThrow: */ false,
+            /* rageWasUsedThisThrow: */ false,
+            /* attackDamage: */ 1,
+            /* gameController: */ this,
+            /* description: */ null
+          );
+
+          const FIREBALL_SPEED = 0.6;
+          fireball.velocity.set(dir.x * FIREBALL_SPEED, 0, dir.z * FIREBALL_SPEED);
+          fireball.moving = true;
+          this.soundManager.playFireballCast(disc.mesh.position);
+          this.discs.push(fireball);
+          this.thrownDisc = fireball;
+          this.waitingForDiscToStop = true;
+          return;
+        }
+        // No LOS: fall through to standard throw to move closer
+      }
+      // Within SELF_THROW_RANGE: fall through to standard throw to hurl itself
+    }
+
     // Special targeting for Blob: always target nearest corpse or any disc
     if (disc.kind === 'Blob') {
       let target = null;
@@ -2412,8 +2509,8 @@ disc.isCurrentlyInLavaState = true;
   }
 
   _applyStartOfTurnLavaDamage(disc) {
-    if (!disc || !this.lavaPools || this.lavaPools.length === 0 || disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb') {
-      return; // No disc, or disc is dead, or no lava pools to check against, or it's an Orb/Bomb (immune)
+    if (!disc || !this.lavaPools || this.lavaPools.length === 0 || disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'Fireball') {
+      return; // No disc, or disc is dead, or no lava pools to check against, or it's an Orb/Bomb/Fireball (immune)
     }
 
     for (const lavaPool of this.lavaPools) {

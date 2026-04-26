@@ -39,7 +39,7 @@ export class PhysicsEngine {
 
         // Check door entry BEFORE the boundary-bounce so a disc heading into
         // the open doorway isn't pushed back before the transition fires.
-        if (gc.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion") {
+        if (gc.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion" && disc.kind !== "Fireball") {
           if (gc.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
             await gc.startNextLevel(disc);
             return true; // signal animate() to exit early
@@ -207,6 +207,12 @@ export class PhysicsEngine {
           continue;
         }
 
+        // Fireballs pass through NPCs (including their caster), AnimatedDead, and dead discs
+        if ((d1.kind === 'Fireball' && (d2.type === 'NPC' || d2.kind === 'AnimatedDead' || d2.dead)) ||
+            (d2.kind === 'Fireball' && (d1.type === 'NPC' || d1.kind === 'AnimatedDead' || d1.dead))) {
+          continue;
+        }
+
         // Freshly-thrown Rogue Bomb should temporarily pass through the Rogue.
         const bomb = d1.kind === 'Bomb' ? d1 : d2.kind === 'Bomb' ? d2 : null;
         const other = bomb === d1 ? d2 : bomb === d2 ? d1 : null;
@@ -360,6 +366,13 @@ export class PhysicsEngine {
                 if (actor && (d1 === actor || d2 === actor)) {
                   actor.hasCausedDamage = true;
                 }
+              }
+              // Special Case: Fire Elemental Fireball hitting a player
+              else if (gc.thrownDisc !== null && ((d1.kind === 'Fireball' && d2.type === 'player') || (d2.kind === 'Fireball' && d1.type === 'player'))) {
+                const fireball = d1.kind === 'Fireball' ? d1 : d2;
+                const player   = d1.kind === 'Fireball' ? d2 : d1;
+                player.takeHit(fireball.attackDamage, fireball);
+                fireball.takeHit(999, player); // Fireball is consumed on impact
               }
               // Case 1: d1 is the current acting disc
               else if (gc.thrownDisc !== null && d1 === gc.currentDisc) {

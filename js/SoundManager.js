@@ -76,6 +76,8 @@ export class SoundManager {
     this.rogueGrenadeExplodeBuffer = null;
     this.deathCryBuffers = [];
     this.gameOverBuffer = null;
+    this.fireballCastBuffer = null;
+    this.fireballHitBuffer = null;
     this.musicBuffer = null;
     this._musicAudio = null;
     this._musicPending = false;
@@ -113,10 +115,12 @@ export class SoundManager {
     const menuOpenPromise          = load('/sounds/menu/menu open.mp3');
     const rogueGrenadeExplodePromise = load('/sounds/rogue/rogue-grenade-explode.mp3');
     const gameOverPromise            = load('/sounds/menu/game over.mp3');
+    const fireballCastPromise        = load('/sounds/fire/fireball-cast.mp3');
+    const fireballHitPromise         = load('/sounds/fire/fireball-hit.mp3');
 
     // Gameplay sounds load together; music loads independently so a large file
     // doesn't block sfx from becoming ready.
-    Promise.all([Promise.all(woodPromises), Promise.all(wardenPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise, wizardFlameStrikePromise, rogueGrenadeExplodePromise, gameOverPromise]).then(([wood, warden, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen, wizardFlameStrike, rogueGrenadeExplode, gameOver]) => {
+    Promise.all([Promise.all(woodPromises), Promise.all(wardenPromises), Promise.all(bouncePromises), Promise.all(breathPromises), buzzPromise, ragePromise, tensionPromise, doorUnlockPromise, stoneSlidePromise, wizardRadiusBlastPromise, menuOpenPromise, wizardFlameStrikePromise, rogueGrenadeExplodePromise, gameOverPromise, fireballCastPromise, fireballHitPromise]).then(([wood, warden, bounce, breath, buzz, rage, tension, doorUnlock, stoneSlide, wizardRadiusBlast, menuOpen, wizardFlameStrike, rogueGrenadeExplode, gameOver, fireballCast, fireballHit]) => {
       this.woodHitBuffers    = wood.filter(Boolean);
       this.wardenHitBuffers  = warden.filter(Boolean);
       this.bounceBuffers     = bounce.filter(Boolean);
@@ -131,6 +135,8 @@ export class SoundManager {
       this.wizardFlameStrikeBuffer   = wizardFlameStrike || null;
       this.rogueGrenadeExplodeBuffer = rogueGrenadeExplode || null;
       this.gameOverBuffer            = gameOver || null;
+      this.fireballCastBuffer        = fireballCast || null;
+      this.fireballHitBuffer         = fireballHit || null;
       this._loaded = true;
       this._onReadyCallbacks.forEach(fn => fn());
       this._onReadyCallbacks = [];
@@ -388,6 +394,44 @@ export class SoundManager {
     sound.setBuffer(this.gameOverBuffer);
     sound.setVolume(0.25);
     sound.play();
+  }
+
+  playFireballCast(position) {
+    if (!this._loaded || !this.fireballCastBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const obj = new THREE.Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+
+    const sound = new THREE.PositionalAudio(this.listener);
+    sound.setBuffer(this.fireballCastBuffer);
+    sound.setRefDistance(20);
+    sound.setVolume(1.0);
+    obj.add(sound);
+
+    sound.play();
+    sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  playFireballHit(position) {
+    if (!this._loaded || !this.fireballHitBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const obj = new THREE.Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+
+    const sound = new THREE.PositionalAudio(this.listener);
+    sound.setBuffer(this.fireballHitBuffer);
+    sound.setRefDistance(20);
+    sound.setVolume(1.0);
+    obj.add(sound);
+
+    sound.play();
+    sound.onEnded = () => { this.gc.scene.remove(obj); };
   }
 
   playBlobHit(position) {

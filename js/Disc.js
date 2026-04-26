@@ -356,8 +356,8 @@ export default class Disc {
         this.canDoReboundDamage = false;
         this.rageWasUsedThisThrow = false;
       }
-      // If this disc is an Orb, it's consumed (HP set to 0) when it stops moving
-      if (this.kind === 'Orb' || this.kind === 'HealingOrb') {
+      // If this disc is an Orb or Fireball, it's consumed (HP set to 0) when it stops moving
+      if (this.kind === 'Orb' || this.kind === 'HealingOrb' || this.kind === 'Fireball') {
         this.hitPoints = 0;
         this.lastHitPoints = 0;
       }
@@ -448,7 +448,7 @@ export default class Disc {
     this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
     const actualDamage = oldHP - this.hitPoints;
 
-    if (actualDamage > 0 && this.gameController && this.gameController.uiManager && this.kind !== 'Orb' && this.kind !== 'HealingOrb') {
+    if (actualDamage > 0 && this.gameController && this.gameController.uiManager && this.kind !== 'Orb' && this.kind !== 'HealingOrb' && this.kind !== 'Fireball') {
       this.gameController.uiManager.showFloatingText(this, actualDamage, false);
     }
     this.lastHitPoints = this.hitPoints;
@@ -457,7 +457,7 @@ export default class Disc {
     if ((this.kind === 'Orb' || this.kind === 'HealingOrb') && this.hitPoints <= 0 && oldHP > 0) {
       this.die();
       if (this.gameController) {
-        this.gameController.removeOrb(this);
+        this.gameController.wizardController.removeOrb(this);
       }
     }
   }
@@ -480,7 +480,7 @@ export default class Disc {
   }
 
   // Handle disc death: disable further throws, make disc gray and opaque
-  die() {
+  die(silent = false) {
     if (this.dead) {
       return;
     }
@@ -519,7 +519,7 @@ export default class Disc {
     const isPC = this.type === 'player' &&
       this.kind !== 'Orb' && this.kind !== 'HealingOrb' &&
       this.kind !== 'AnimatedDead' && this.kind !== 'Bomb' && this.kind !== 'RoguePotion';
-    if (isPC && this.gameController && this.gameController.soundManager) {
+    if (!silent && isPC && this.gameController && this.gameController.soundManager) {
       this.gameController.soundManager.playDeathCry(this.mesh.position.clone());
     }
   }

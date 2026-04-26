@@ -196,7 +196,7 @@ export class RogueController {
       const pz = roguePos.z + distance * Math.sin(angle);
       if (this.gc.isPositionValid(px, pz, 0.4, true, [rogueDisc])) {
         const potion = new Disc(
-          0.4, 0.3, 0x44FF88, px, pz,
+          0.4, 0.3, 0xFF0000, px, pz,
           this.gc.scene, 'Health Potion', 'player', 'RoguePotion',
           1, 0, null, false, 0.5, 1.0, false, false, 0,
           this.gc, this.gc.discDescriptions.RoguePotion
@@ -236,7 +236,7 @@ export class RogueController {
           chargesEarnedFromBombKills++;
         }
         if (dist > 0) {
-          const force = EXPLODE_FORCE * (1 - dist / EXPLODE_RADIUS);
+          const force = EXPLODE_FORCE * Math.max(0, 1 - dist / effectiveBlastRadius);
           disc.velocity.x += (dx / dist) * force;
           disc.velocity.z += (dz / dist) * force;
           disc.moving = true;
