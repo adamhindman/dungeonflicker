@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { AudioListener, AudioLoader, Audio, PositionalAudio, Object3D } from 'three';
 
 // Dynamically discover all drain sound MP3s — adding/removing files in
 // public/sounds/drain/ is enough; no code changes needed.
@@ -92,10 +92,10 @@ export class SoundManager {
   }
 
   init() {
-    this.listener = new THREE.AudioListener();
+    this.listener = new AudioListener();
     this.gc.camera.add(this.listener);
 
-    const loader = new THREE.AudioLoader();
+    const loader = new AudioLoader();
 
     const load = (path) => new Promise(resolve => {
       loader.load(path, buffer => resolve(buffer), undefined, () => resolve(null));
@@ -168,11 +168,11 @@ export class SoundManager {
     if (ctx.state === 'suspended') ctx.resume();
 
     const buffer = buffers[Math.floor(Math.random() * buffers.length)];
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(buffer);
     sound.setRefDistance(20);
     sound.setVolume(volume);
@@ -203,11 +203,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.rageBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -226,11 +226,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.tensionBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -245,11 +245,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.buzzBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -264,11 +264,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.doorUnlockBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -283,11 +283,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.stoneSlideBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -301,7 +301,7 @@ export class SoundManager {
     if (!this._loaded || !this.menuOpenBuffer) return;
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
-    const sound = new THREE.Audio(this.listener);
+    const sound = new Audio(this.listener);
     sound.setBuffer(this.menuOpenBuffer);
     sound.setVolume(1.0);
     sound.play();
@@ -312,11 +312,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.wizardRadiusBlastBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -331,11 +331,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.wizardFlameStrikeBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -350,11 +350,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.rogueGrenadeExplodeBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -372,10 +372,10 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
     const buffer = this.deathCryBuffers[Math.floor(Math.random() * this.deathCryBuffers.length)];
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(buffer);
     sound.setRefDistance(20);
     sound.setVolume(0.75);
@@ -390,7 +390,7 @@ export class SoundManager {
     if (!this._loaded || !this.gameOverBuffer) return;
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
-    const sound = new THREE.Audio(this.listener);
+    const sound = new Audio(this.listener);
     sound.setBuffer(this.gameOverBuffer);
     sound.setVolume(0.25);
     sound.play();
@@ -401,11 +401,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.fireballCastBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -420,11 +420,11 @@ export class SoundManager {
     const ctx = this.listener.context;
     if (ctx.state === 'suspended') ctx.resume();
 
-    const obj = new THREE.Object3D();
+    const obj = new Object3D();
     obj.position.copy(position);
     this.gc.scene.add(obj);
 
-    const sound = new THREE.PositionalAudio(this.listener);
+    const sound = new PositionalAudio(this.listener);
     sound.setBuffer(this.fireballHitBuffer);
     sound.setRefDistance(20);
     sound.setVolume(1.0);
@@ -465,7 +465,7 @@ export class SoundManager {
     if (this._musicAudio && this._musicAudio.isPlaying) return;
 
     if (!this._musicAudio) {
-      this._musicAudio = new THREE.Audio(this.listener);
+      this._musicAudio = new Audio(this.listener);
     }
 
     this._musicAudio.setBuffer(this.musicBuffer);

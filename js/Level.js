@@ -1,4 +1,8 @@
-import * as THREE from "three";
+import {
+  TextureLoader, RepeatWrapping, MeshStandardMaterial, AmbientLight,
+  DirectionalLight, Plane, Vector3, Color, BoxGeometry, Mesh,
+  MeshBasicMaterial, DoubleSide, PointLight, PlaneGeometry, CylinderGeometry,
+} from "three";
 import { loadRectangular } from "./levels/rectangular.js";
 import { loadCircular, resetCircularState } from "./levels/circular.js";
 import { loadHexagon, getHexTerrainHeight, getHexTerrainSlopeForce, disposeHexagon } from "./levels/hexagon.js";
@@ -14,7 +18,7 @@ export default class Level {
     this.wallHeight = 8;
     this.walls = {};
     this.floor = null;
-    this.textureLoader = new THREE.TextureLoader();
+    this.textureLoader = new TextureLoader();
     this.wallMaterial = null;
     this.obstacleMaterial = null;
     this.obstacles = [];
@@ -124,9 +128,9 @@ export default class Level {
   _getObstacleMaterial() {
     if (!this.obstacleMaterial) {
       const tex = this.textureLoader.load("images/stacked-tile-light.jpg");
-      tex.wrapS = THREE.RepeatWrapping;
-      tex.wrapT = THREE.RepeatWrapping;
-      this.obstacleMaterial = new THREE.MeshStandardMaterial({
+      tex.wrapS = RepeatWrapping;
+      tex.wrapT = RepeatWrapping;
+      this.obstacleMaterial = new MeshStandardMaterial({
         map: tex,
         roughness: 0.6,
         metalness: 0.2,
@@ -167,30 +171,30 @@ export default class Level {
   getVisualWalls() {
     const meshes = [];
     for (const wall of Object.values(this.walls)) {
-      if (wall && wall.material instanceof THREE.MeshStandardMaterial) {
+      if (wall && wall.material instanceof MeshStandardMaterial) {
         meshes.push(wall);
       }
     }
     for (const mesh of this.doorFrameMeshes) {
-      if (mesh.material instanceof THREE.MeshStandardMaterial) {
+      if (mesh.material instanceof MeshStandardMaterial) {
         meshes.push(mesh);
       }
     }
     if (this.doorSlab) meshes.push(this.doorSlab);
     // Hex outer boundary walls — visual only (not in getAllWalls)
     for (const mesh of (this._hexOuterWalls || [])) {
-      if (mesh.material instanceof THREE.MeshStandardMaterial) {
+      if (mesh.material instanceof MeshStandardMaterial) {
         meshes.push(mesh);
       }
     }
     // Bullseye columns can occlude the camera view
     for (const mesh of (this._bullseyeColumnMeshes || [])) {
-      if (mesh.material instanceof THREE.MeshStandardMaterial) {
+      if (mesh.material instanceof MeshStandardMaterial) {
         meshes.push(mesh);
       }
     }
     for (const mesh of (this._crusherMeshes || [])) {
-      if (mesh.material instanceof THREE.MeshStandardMaterial) {
+      if (mesh.material instanceof MeshStandardMaterial) {
         meshes.push(mesh);
       }
     }
@@ -261,10 +265,10 @@ export default class Level {
 
   /** Shared lighting setup used by both room shapes. */
   _addLighting() {
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0);
+    const ambientLight = new AmbientLight(0xffffff, 0);
     this.scene.add(ambientLight);
 
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);
+    const directionalLight = new DirectionalLight(0xffffff, 0.2);
     directionalLight.position.set(10, 20, 10);
     directionalLight.castShadow = true;
     directionalLight.shadow.mapSize.width = 512;
@@ -328,7 +332,7 @@ export default class Level {
     // Emissive channel will be activated when the door opens.
     this._frameMat = this.wallMaterial.clone();
     this._frameMat.color.setHex(0x999999);
-    this._frameMat.emissive = new THREE.Color(0x000000);
+    this._frameMat.emissive = new Color(0x000000);
     this._frameMat.emissiveIntensity = 0;
 
     // Slab material: same color as the frame, with a horizontal clip plane at
@@ -336,13 +340,13 @@ export default class Level {
     this._slabMat = this.wallMaterial.clone();
     this._slabMat.color.setHex(0x999999);
     this._slabMat.clippingPlanes = [
-      new THREE.Plane(new THREE.Vector3(0, -1, 0), wallH),
+      new Plane(new Vector3(0, -1, 0), wallH),
     ];
     this._slabMat.clipShadows = true;
 
     // Helper: build + add a wall-material mesh to the scene
     const addWallMesh = (geo, x, y, z) => {
-      const mesh = new THREE.Mesh(geo, this.wallMaterial);
+      const mesh = new Mesh(geo, this.wallMaterial);
       mesh.position.set(x, y, z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -352,7 +356,7 @@ export default class Level {
 
     // Helper: build + add a frame-material mesh to doorFrameMeshes
     const addFrameMesh = (geo, x, y, z) => {
-      const mesh = new THREE.Mesh(geo, this._frameMat);
+      const mesh = new Mesh(geo, this._frameMat);
       mesh.position.set(x, y, z);
       this.scene.add(mesh);
       this.doorFrameMeshes.push(mesh);
@@ -366,7 +370,7 @@ export default class Level {
     if (isNS) {
       // ── Two horizontal wall segments ──────────────────────────────────────
       for (const sign of [-1, 1]) {
-        const geo = new THREE.BoxGeometry(segLen, wallH, wallThick);
+        const geo = new BoxGeometry(segLen, wallH, wallThick);
         this.applyWallUVs(geo, segLen, wallH, wallThick);
         const mesh = addWallMesh(geo, sign * segOffset, wallH / 2, wallPos.z);
         this.walls[`${this.doorWall}_${sign > 0 ? 'right' : 'left'}`] = mesh;
@@ -374,29 +378,29 @@ export default class Level {
 
       // ── Frame: left and right posts ────────────────────────────────────────
       for (const sign of [-1, 1]) {
-        const geo = new THREE.BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
+        const geo = new BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
         this.applyWallUVs(geo, postWidth, DOOR_HEIGHT, frameThick);
         addFrameMesh(geo, sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, wallPos.z);
       }
 
       // ── Frame: lintel (top beam, same thickness as side posts) ───────────────
       const lintelW = DOOR_WIDTH + postWidth * 2;
-      const lintelGeo = new THREE.BoxGeometry(lintelW, lintelH, frameThick);
+      const lintelGeo = new BoxGeometry(lintelW, lintelH, frameThick);
       this.applyWallUVs(lintelGeo, lintelW, lintelH, frameThick);
       addFrameMesh(lintelGeo, 0, DOOR_HEIGHT + lintelH / 2, wallPos.z);
 
       // ── Plain stone wall above the frame ──────────────────────────────────
       if (overDoorH > 0) {
-        const overGeo = new THREE.BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
+        const overGeo = new BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
         this.applyWallUVs(overGeo, DOOR_WIDTH, overDoorH, wallThick);
         const overMesh = addWallMesh(overGeo, 0, DOOR_HEIGHT + lintelH + overDoorH / 2, wallPos.z);
         this.walls[`${this.doorWall}_above`] = overMesh;
       }
 
       // ── Black void (revealed when slab rises; turns purple when door opens) ─
-      const voidGeo = new THREE.PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
-      const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-      const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+      const voidGeo = new PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
+      const voidMat = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
+      const voidMesh = new Mesh(voidGeo, voidMat);
       // Place slightly outside the wall so it sits behind the slab
       const voidSign = this.doorWall === 'north' ? -1 : 1;
       voidMesh.position.set(0, DOOR_HEIGHT / 2, wallPos.z + voidSign * 0.4);
@@ -406,16 +410,16 @@ export default class Level {
   
 
       // ── Stone slab (blocks the opening until door opens) ───────────────────
-      const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
+      const slabGeo = new BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
       this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
-      this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+      this.doorSlab = new Mesh(slabGeo, this._slabMat);
       this.doorSlab.position.set(0, DOOR_HEIGHT / 2, wallPos.z);
       this.scene.add(this.doorSlab);
 
     } else {
       // ── East / West wall: two segments along Z ─────────────────────────────
       for (const sign of [-1, 1]) {
-        const geo = new THREE.BoxGeometry(wallThick, wallH, segLen);
+        const geo = new BoxGeometry(wallThick, wallH, segLen);
         this.applyWallUVs(geo, wallThick, wallH, segLen);
         const mesh = addWallMesh(geo, wallPos.x, wallH / 2, sign * segOffset);
         this.walls[`${this.doorWall}_${sign > 0 ? 'pos' : 'neg'}`] = mesh;
@@ -423,29 +427,29 @@ export default class Level {
 
       // ── Frame: left and right posts (along Z) ─────────────────────────────
       for (const sign of [-1, 1]) {
-        const geo = new THREE.BoxGeometry(frameThick, DOOR_HEIGHT, postWidth);
+        const geo = new BoxGeometry(frameThick, DOOR_HEIGHT, postWidth);
         this.applyWallUVs(geo, frameThick, DOOR_HEIGHT, postWidth);
         addFrameMesh(geo, wallPos.x, DOOR_HEIGHT / 2, sign * (DOOR_WIDTH / 2 + postWidth / 2));
       }
 
       // ── Frame: lintel (same thickness as side posts) ──────────────────────
       const lintelD = DOOR_WIDTH + postWidth * 2;
-      const lintelGeo = new THREE.BoxGeometry(frameThick, lintelH, lintelD);
+      const lintelGeo = new BoxGeometry(frameThick, lintelH, lintelD);
       this.applyWallUVs(lintelGeo, frameThick, lintelH, lintelD);
       addFrameMesh(lintelGeo, wallPos.x, DOOR_HEIGHT + lintelH / 2, 0);
 
       // ── Plain stone wall above the frame ──────────────────────────────────
       if (overDoorH > 0) {
-        const overGeo = new THREE.BoxGeometry(wallThick, overDoorH, DOOR_WIDTH);
+        const overGeo = new BoxGeometry(wallThick, overDoorH, DOOR_WIDTH);
         this.applyWallUVs(overGeo, wallThick, overDoorH, DOOR_WIDTH);
         const overMesh = addWallMesh(overGeo, wallPos.x, DOOR_HEIGHT + lintelH + overDoorH / 2, 0);
         this.walls[`${this.doorWall}_above`] = overMesh;
       }
 
       // ── Black void (turns purple when door opens) ─────────────────────────
-      const voidGeo = new THREE.PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
-      const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-      const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+      const voidGeo = new PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
+      const voidMat = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
+      const voidMesh = new Mesh(voidGeo, voidMat);
       voidMesh.rotation.y = Math.PI / 2;
       const voidSign = this.doorWall === 'east' ? 1 : -1;
       voidMesh.position.set(wallPos.x + voidSign * 0.4, DOOR_HEIGHT / 2, 0);
@@ -455,9 +459,9 @@ export default class Level {
   
 
       // ── Stone slab ─────────────────────────────────────────────────────────
-      const slabGeo = new THREE.BoxGeometry(wallThick, DOOR_HEIGHT, DOOR_WIDTH);
+      const slabGeo = new BoxGeometry(wallThick, DOOR_HEIGHT, DOOR_WIDTH);
       this.applyWallUVs(slabGeo, wallThick, DOOR_HEIGHT, DOOR_WIDTH);
-      this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+      this.doorSlab = new Mesh(slabGeo, this._slabMat);
       this.doorSlab.position.set(wallPos.x, DOOR_HEIGHT / 2, 0);
       this.scene.add(this.doorSlab);
     }
@@ -484,15 +488,15 @@ export default class Level {
 
     this._vineTileMeshes = [];
     this._vineTileTexture = this.textureLoader.load("images/tile-stone-vines-1.jpg");
-    this._vineMat = new THREE.MeshStandardMaterial({
+    this._vineMat = new MeshStandardMaterial({
       map: this._vineTileTexture,
       roughness: 0.6,
       metalness: 0.2,
     });
 
     const addTile = (x, y, z, rotY) => {
-      const geo  = new THREE.PlaneGeometry(TILE, TILE);
-      const mesh = new THREE.Mesh(geo, this._vineMat);
+      const geo  = new PlaneGeometry(TILE, TILE);
+      const mesh = new Mesh(geo, this._vineMat);
       mesh.position.set(x, y, z);
       mesh.rotation.y = rotY;
       mesh.receiveShadow = true;
@@ -590,7 +594,7 @@ export default class Level {
       lx += (this.doorWall === 'east') ? -INSET : INSET;
     }
 
-    this._doorLight = new THREE.PointLight(0xff6600, 60, 12, 2);
+    this._doorLight = new PointLight(0xff6600, 60, 12, 2);
     this._doorLight.position.set(lx, this.DOOR_HEIGHT * 0.5, lz);
     this.scene.add(this._doorLight);
     this._doorLightTime = 0;
@@ -772,7 +776,7 @@ export default class Level {
     let geometry;
     if (obstacle.type === "pillar") {
       // Pillars are cylindrical
-      geometry = new THREE.CylinderGeometry(
+      geometry = new CylinderGeometry(
         obstacle.width / 2, // top radius
         obstacle.width / 2, // bottom radius
         this.wallHeight,
@@ -781,7 +785,7 @@ export default class Level {
       this.applyCylinderUVs(geometry, obstacle.width / 2, this.wallHeight);
     } else if (obstacle.type === "triangle") {
       // Equilateral triangular prism — 3-segment cylinder, randomly rotated
-      geometry = new THREE.CylinderGeometry(
+      geometry = new CylinderGeometry(
         obstacle.width / 2,
         obstacle.width / 2,
         this.wallHeight,
@@ -789,7 +793,7 @@ export default class Level {
       );
       this.applyCylinderUVs(geometry, obstacle.width / 2, this.wallHeight);
     } else {
-      geometry = new THREE.BoxGeometry(
+      geometry = new BoxGeometry(
         obstacle.width,
         this.wallHeight,
         obstacle.depth,
@@ -797,7 +801,7 @@ export default class Level {
       this.applyWallUVs(geometry, obstacle.width, this.wallHeight, obstacle.depth);
     }
 
-    const mesh = new THREE.Mesh(geometry, this._getObstacleMaterial());
+    const mesh = new Mesh(geometry, this._getObstacleMaterial());
     mesh.position.set(obstacle.x, this.wallHeight / 2, obstacle.z);
     if (obstacle.type === "triangle") {
       mesh.rotation.y = obstacle.rotY ?? 0;

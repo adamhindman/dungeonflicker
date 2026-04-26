@@ -1,4 +1,8 @@
-import * as THREE from "three";
+import {
+  Vector3, Vector2, Scene, Raycaster, Quaternion, Line, LineBasicMaterial,
+  BufferGeometry, BufferAttribute, RingGeometry, Mesh, MeshBasicMaterial,
+  Box3, CylinderGeometry, BackSide, DoubleSide,
+} from "three";
 import Level from "./Level.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
@@ -50,7 +54,7 @@ export default class GameController {
 
     // Input and interaction state
     this.raycaster = null;
-    this.mouse = new THREE.Vector2();
+    this.mouse = new Vector2();
     this.controlsEnabled = true;
     // this.isPointerDown and this.pointerDownPos are now managed by InputHandler
     this.pointerDisc = null; // Still needed to track which disc is under pointer
@@ -112,7 +116,7 @@ export default class GameController {
         Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
         Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
-        FireElemental: "A creature of living flame. Hurls fireballs at players it can see, and deals heavy damage when it throws itself into one.",
+        FireElemental: "A creature of living flame that can hurls fireballs a distance.",
         Warden: "A massive metal bully. Hard to move, and hard to kill.",
         Blob: "A gelatinous cube that consumes dead bodies. Starts small and agile, grows stronger and slower with each victim.",
         Rogue: "A man with a criminal record and a bag of grenades.",
@@ -164,7 +168,7 @@ export default class GameController {
 
   async init() {
     // Initialize scene and rendering
-    this.scene = new THREE.Scene();
+    this.scene = new Scene();
 
     // Camera, renderer, and OrbitControls are owned by CameraController.
     // After init(), gc.camera / gc.renderer / gc.controls point at those same objects
@@ -189,8 +193,8 @@ export default class GameController {
     this.discs = [];
     this.currentTurnIndex = 0;
 
-    this.raycaster = new THREE.Raycaster();
-    this.mouse = new THREE.Vector2();
+    this.raycaster = new Raycaster();
+    this.mouse = new Vector2();
 
     this.controlsEnabled = true;
     // this.isPointerDown and this.pointerDownPos are now managed by InputHandler
@@ -209,16 +213,16 @@ export default class GameController {
       // Depending on how critical this is, you might want to return or throw an error
     }
     // Initialize throw direction line helper for drag aim visualization
-    const material = new THREE.LineBasicMaterial({
+    const material = new LineBasicMaterial({
       color: 0xffffff,
       linewidth: 2,
       depthTest: false,
     });
     const vertices = new Float32Array(6); // 2 vertices * 3 coords each
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    const geometry = new BufferGeometry();
+    geometry.setAttribute("position", new BufferAttribute(vertices, 3));
     geometry.setDrawRange(0, 2);
-    this.throwDirectionLine = new THREE.Line(geometry, material);
+    this.throwDirectionLine = new Line(geometry, material);
     this.throwDirectionLine.renderOrder = 999;
     this.throwDirectionLine.frustumCulled = false;
     this.throwDirectionLine.visible = false;
@@ -547,7 +551,7 @@ export default class GameController {
         }
         // Initialize throw direction line previous positions to the current disc's position
         if (this.throwDirectionLine) {
-            this._prevLineStart = new THREE.Vector3(
+            this._prevLineStart = new Vector3(
                 this.currentDisc.mesh.position.x,
                 this.currentDisc.mesh.position.y + this.currentDisc.height / 2,
                 this.currentDisc.mesh.position.z,
@@ -588,16 +592,16 @@ export default class GameController {
         const normX = deltaX / dragLength;
         const normY = deltaY / dragLength;
 
-        const forward = new THREE.Vector3();
+        const forward = new Vector3();
         this.camera.getWorldDirection(forward);
         forward.y = 0;
         forward.normalize();
 
-        const up = new THREE.Vector3(0, 1, 0);
-        const cameraRight = new THREE.Vector3();
+        const up = new Vector3(0, 1, 0);
+        const cameraRight = new Vector3();
         cameraRight.crossVectors(forward, up).normalize();
 
-        let direction = new THREE.Vector3();
+        let direction = new Vector3();
         direction.add(cameraRight.multiplyScalar(normX));
         direction.add(forward.multiplyScalar(-normY));
         direction.normalize();
@@ -615,14 +619,14 @@ export default class GameController {
 
         // Initialize previous positions if not set
         if (!this._prevLineStart) {
-          this._prevLineStart = new THREE.Vector3(
+          this._prevLineStart = new Vector3(
             startPos.x,
             startPos.y + this.currentDisc.height / 2,
             startPos.z,
           );
         }
         if (!this._prevLineEnd) {
-          this._prevLineEnd = new THREE.Vector3(
+          this._prevLineEnd = new Vector3(
             endPos.x,
             endPos.y + this.currentDisc.height / 2,
             endPos.z,
@@ -631,7 +635,7 @@ export default class GameController {
 
         // Lerp previous positions for smooth motion
         this._prevLineStart.lerp(
-          new THREE.Vector3(
+          new Vector3(
             startPos.x,
             startPos.y + this.currentDisc.height / 2,
             startPos.z,
@@ -639,7 +643,7 @@ export default class GameController {
           0.2,
         );
         this._prevLineEnd.lerp(
-          new THREE.Vector3(
+          new Vector3(
             endPos.x,
             endPos.y + this.currentDisc.height / 2,
             endPos.z,
@@ -823,16 +827,16 @@ export default class GameController {
         const normX = deltaX / screenDragLength;
         const normY = deltaY / screenDragLength;
 
-        const forward = new THREE.Vector3();
+        const forward = new Vector3();
         this.camera.getWorldDirection(forward);
         forward.y = 0;
         forward.normalize();
 
-        const up = new THREE.Vector3(0, 1, 0);
-        const cameraRight = new THREE.Vector3();
+        const up = new Vector3(0, 1, 0);
+        const cameraRight = new Vector3();
         cameraRight.crossVectors(forward, up).normalize();
 
-        let direction = new THREE.Vector3();
+        let direction = new Vector3();
         direction.add(cameraRight.multiplyScalar(normX));
         direction.add(forward.multiplyScalar(-normY));
         direction.normalize();
@@ -1061,7 +1065,7 @@ clamp(value, min, max) {
           setTimeout(() => {
             if (this.soundManager) {
               const dc = this.level._doorOpeningCenter;
-              const pos = dc ? new THREE.Vector3(dc.x, 0, dc.z) : new THREE.Vector3();
+              const pos = dc ? new Vector3(dc.x, 0, dc.z) : new Vector3();
               this.soundManager.playDoorUnlock(pos);
             }
             firstTimeEvents.track('portal_door_opened');
@@ -1773,19 +1777,19 @@ disc.isCurrentlyInLavaState = true;
 
   _applyCrusherImpacts(crusher, impactLength = crusher ? crusher.currentLength : 0) {
     if (!crusher || !crusher.mesh) return;
-    const flingDir = new THREE.Vector3(
+    const flingDir = new Vector3(
       Math.cos(crusher.angle),
       0,
       Math.sin(crusher.angle),
     ).normalize();
-    const sideDir = new THREE.Vector3(-flingDir.z, 0, flingDir.x);
+    const sideDir = new Vector3(-flingDir.z, 0, flingDir.x);
 
     for (const disc of this.discs) {
       if (!disc || !disc.mesh || disc.dead || disc.hitPoints <= 0) continue;
       if (disc.type !== 'player' && disc.type !== 'NPC') continue;
       if (disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'RoguePotion' || disc.kind === 'Fireball') continue;
       const center = disc.mesh.position.clone();
-      const rel = new THREE.Vector3(center.x - crusher.anchorX, 0, center.z - crusher.anchorZ);
+      const rel = new Vector3(center.x - crusher.anchorX, 0, center.z - crusher.anchorZ);
       const along = rel.dot(flingDir);
       const side = rel.dot(sideDir);
       if (along < -disc.radius || along > impactLength + disc.radius) continue;
@@ -1794,7 +1798,7 @@ disc.isCurrentlyInLavaState = true;
 
       if (crusher.hitDiscs) crusher.hitDiscs.add(disc);
       disc.takeHit(2, null);
-      const awayFromAnchor = new THREE.Vector3(
+      const awayFromAnchor = new Vector3(
         center.x - crusher.anchorX,
         0,
         center.z - crusher.anchorZ,
@@ -1921,7 +1925,7 @@ disc.isCurrentlyInLavaState = true;
       this.rogueController.onRoundEnd();
       const ringData = this.level.stepRings();
       if (ringData) {
-        this.soundManager.playStoneSlide(new THREE.Vector3(0, 0, 0));
+        this.soundManager.playStoneSlide(new Vector3(0, 0, 0));
         const { RING_R1, RING_R2 } = ringData;
         const { inner, middle, outer } = this.level.bullseyeRings;
 
@@ -1952,7 +1956,7 @@ disc.isCurrentlyInLavaState = true;
 
       const crusherData = this.level.stepCrushers();
       if (crusherData) {
-        this.soundManager.playStoneSlide(new THREE.Vector3(0, 0, 0));
+        this.soundManager.playStoneSlide(new Vector3(0, 0, 0));
         await new Promise(resolve => {
           const poll = setInterval(() => {
             if (!this.level._crusherAnim || this.level._crusherAnim.impactReady) {
@@ -2067,15 +2071,15 @@ disc.isCurrentlyInLavaState = true;
   _spawnTurnStartBeam(disc) {
     if (!disc || !disc.mesh || !this.scene) return;
     const BEAM_H = 200;
-    const geo = new THREE.CylinderGeometry(1.0, 1.0, BEAM_H, 16, 1, true);
-    const mat = new THREE.MeshBasicMaterial({
+    const geo = new CylinderGeometry(1.0, 1.0, BEAM_H, 16, 1, true);
+    const mat = new MeshBasicMaterial({
       color: disc.initialColor,
       transparent: true,
       opacity: 0.18,
-      side: THREE.BackSide,
+      side: BackSide,
       depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new Mesh(geo, mat);
     // Start with the bottom of the beam far above the scene; it descends into place.
     mesh.position.set(disc.mesh.position.x, BEAM_H * 1.5, disc.mesh.position.z);
     this.scene.add(mesh);
@@ -2129,15 +2133,15 @@ disc.isCurrentlyInLavaState = true;
     const RING_COUNT = 3;
     const STAGGER = 0.12; // seconds between each ring
     for (let i = 0; i < RING_COUNT; i++) {
-      const geo = new THREE.RingGeometry(disc.radius * 1.1, disc.radius * 1.6, 48);
-      const mat = new THREE.MeshBasicMaterial({
+      const geo = new RingGeometry(disc.radius * 1.1, disc.radius * 1.6, 48);
+      const mat = new MeshBasicMaterial({
         color: disc.initialColor,
         transparent: true,
         opacity: 0,
-        side: THREE.DoubleSide,
+        side: DoubleSide,
         depthWrite: false,
       });
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new Mesh(geo, mat);
       mesh.rotation.x = -Math.PI / 2; // lay flat on the arena floor
       mesh.position.set(disc.mesh.position.x, disc.mesh.position.y + 0.5, disc.mesh.position.z);
       this.scene.add(mesh);
@@ -2257,7 +2261,7 @@ disc.isCurrentlyInLavaState = true;
           const length = start.distanceTo(end);
           const steps = Math.ceil(length * 10);
           for (const wall of walls) {
-            const box = new THREE.Box3().setFromObject(wall);
+            const box = new Box3().setFromObject(wall);
             for (let i = 0; i <= steps; i++) {
               const point = start.clone().add(direction.clone().multiplyScalar((length / steps) * i));
               if (box.containsPoint(point)) return false;
@@ -2338,7 +2342,7 @@ disc.isCurrentlyInLavaState = true;
       const intersectsAnyWall = (start, end) => {
         const walls = this.level.getAllWalls();
         for (const wall of walls) {
-          const box = new THREE.Box3().setFromObject(wall);
+          const box = new Box3().setFromObject(wall);
 
           // Calculate the closest point on box to the line segment
           const direction = end.clone().sub(start).normalize();
@@ -2370,8 +2374,8 @@ disc.isCurrentlyInLavaState = true;
 
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         fuzzAngleRad = (Math.random() * 2 - 1) * fuzzFactor * maxFuzzDegrees * (Math.PI / 180);
-        const quat = new THREE.Quaternion();
-        quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+        const quat = new Quaternion();
+        quat.setFromAxisAngle(new Vector3(0, 1, 0), fuzzAngleRad);
         const fuzzedDir = idealDir.clone().applyQuaternion(quat).normalize();
 
         const endPos = disc.mesh.position
@@ -2386,8 +2390,8 @@ disc.isCurrentlyInLavaState = true;
       }
 
       if (!foundClearPath) {
-        const quat = new THREE.Quaternion();
-        quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+        const quat = new Quaternion();
+        quat.setFromAxisAngle(new Vector3(0, 1, 0), fuzzAngleRad);
         bestDir = idealDir.clone().applyQuaternion(quat).normalize();
       }
 
@@ -2429,7 +2433,7 @@ disc.isCurrentlyInLavaState = true;
     const intersectsAnyWall = (start, end) => {
       const walls = this.level.getAllWalls();
       for (const wall of walls) {
-        const box = new THREE.Box3().setFromObject(wall);
+        const box = new Box3().setFromObject(wall);
 
         // Calculate the closest point on box to the line segment
         const direction = end.clone().sub(start).normalize();
@@ -2469,8 +2473,8 @@ disc.isCurrentlyInLavaState = true;
       // Apply fuzz rotation around Y axis
       fuzzAngleRad =
         (Math.random() * 2 - 1) * fuzzFactor * maxFuzzDegrees * (Math.PI / 180);
-      const quat = new THREE.Quaternion();
-      quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+      const quat = new Quaternion();
+      quat.setFromAxisAngle(new Vector3(0, 1, 0), fuzzAngleRad);
       const fuzzedDir = idealDir.clone().applyQuaternion(quat).normalize();
 
       // Evaluate end position for this direction with speed
@@ -2488,8 +2492,8 @@ disc.isCurrentlyInLavaState = true;
 
     if (!foundClearPath) {
       // No clear path found, proceed with fuzzedDir anyway (first attempt)
-      const quat = new THREE.Quaternion();
-      quat.setFromAxisAngle(new THREE.Vector3(0, 1, 0), fuzzAngleRad);
+      const quat = new Quaternion();
+      quat.setFromAxisAngle(new Vector3(0, 1, 0), fuzzAngleRad);
       bestDir = idealDir.clone().applyQuaternion(quat).normalize();
     }
 
@@ -2509,8 +2513,8 @@ disc.isCurrentlyInLavaState = true;
   }
 
   _applyStartOfTurnLavaDamage(disc) {
-    if (!disc || !this.lavaPools || this.lavaPools.length === 0 || disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'Fireball') {
-      return; // No disc, or disc is dead, or no lava pools to check against, or it's an Orb/Bomb/Fireball (immune)
+    if (!disc || !this.lavaPools || this.lavaPools.length === 0 || disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'Fireball' || disc.kind === 'FireElemental') {
+      return; // No disc, or disc is dead, or no lava pools to check against, or it's an Orb/Bomb/Fireball/FireElemental (immune)
     }
 
     for (const lavaPool of this.lavaPools) {

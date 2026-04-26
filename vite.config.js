@@ -1,6 +1,11 @@
 import { defineConfig } from 'vite'
+import compression from 'vite-plugin-compression'
 
 export default defineConfig({
+  plugins: [
+    compression({ algorithm: 'brotliCompress', ext: '.br' }),
+    compression({ algorithm: 'gzip', ext: '.gz' }),
+  ],
   base: './',
   build: {
     outDir: 'dist',

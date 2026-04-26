@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { BoxGeometry, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, PlaneGeometry, RepeatWrapping, Vector3 } from "three";
 
 export function loadCircular() {
   const N          = 12;
@@ -16,8 +16,8 @@ export function loadCircular() {
 
   // ── Floor ──────────────────────────────────────────────────────────────────
   const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
-  tileTexture.wrapS = THREE.RepeatWrapping;
-  tileTexture.wrapT = THREE.RepeatWrapping;
+  tileTexture.wrapS = RepeatWrapping;
+  tileTexture.wrapT = RepeatWrapping;
   tileTexture.repeat.set((INNER_R * 2) / 6, (INNER_R * 2) / 6);
 
   const floorOuterR = INNER_R / Math.cos(Math.PI / N);
@@ -32,19 +32,19 @@ export function loadCircular() {
     floorUvs.push([(x / floorOuterR + 1) / 2, (z / floorOuterR + 1) / 2]);
     floorIndices.push(0, i + 1, i === N - 1 ? 1 : i + 2);
   }
-  const floorGeo = new THREE.BufferGeometry();
-  floorGeo.setAttribute('position', new THREE.Float32BufferAttribute(floorPositions.flat(), 3));
-  floorGeo.setAttribute('uv', new THREE.Float32BufferAttribute(floorUvs.flat(), 2));
+  const floorGeo = new BufferGeometry();
+  floorGeo.setAttribute('position', new Float32BufferAttribute(floorPositions.flat(), 3));
+  floorGeo.setAttribute('uv', new Float32BufferAttribute(floorUvs.flat(), 2));
   floorGeo.setIndex(floorIndices);
   floorGeo.computeVertexNormals();
 
-  this.floor = new THREE.Mesh(
+  this.floor = new Mesh(
     floorGeo,
-    new THREE.MeshStandardMaterial({
+    new MeshStandardMaterial({
       map: tileTexture,
       roughness: 0.6,
       metalness: 0.2,
-      side: THREE.DoubleSide,
+      side: DoubleSide,
     })
   );
   this.floor.receiveShadow = true;
@@ -52,9 +52,9 @@ export function loadCircular() {
 
   // ── Wall material ──────────────────────────────────────────────────────────
   const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
-  wallTex.wrapS = THREE.RepeatWrapping;
-  wallTex.wrapT = THREE.RepeatWrapping;
-  this.wallMaterial = new THREE.MeshStandardMaterial({
+  wallTex.wrapS = RepeatWrapping;
+  wallTex.wrapT = RepeatWrapping;
+  this.wallMaterial = new MeshStandardMaterial({
     map: wallTex, roughness: 0.6, metalness: 0.2,
   });
 
@@ -64,7 +64,7 @@ export function loadCircular() {
 
   // Helper: add a wall-material mesh
   const addWallMesh = (geo, x, y, z, rotY = 0) => {
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(x, y, z);
     if (rotY !== 0) mesh.rotation.y = rotY;
     mesh.castShadow = true;
@@ -88,18 +88,18 @@ export function loadCircular() {
 
   this._frameMat = this.wallMaterial.clone();
   this._frameMat.color.setHex(0x999999);
-  this._frameMat.emissive = new THREE.Color(0x000000);
+  this._frameMat.emissive = new Color(0x000000);
   this._frameMat.emissiveIntensity = 0;
 
   this._slabMat = this.wallMaterial.clone();
   this._slabMat.color.setHex(0x999999);
   this._slabMat.clippingPlanes = [
-    new THREE.Plane(new THREE.Vector3(0, -1, 0), wallH),
+    new Plane(new Vector3(0, -1, 0), wallH),
   ];
   this._slabMat.clipShadows = true;
 
   const addFrameMesh = (geo, x, y, z) => {
-    const mesh = new THREE.Mesh(geo, this._frameMat);
+    const mesh = new Mesh(geo, this._frameMat);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.doorFrameMeshes.push(mesh);
@@ -115,32 +115,32 @@ export function loadCircular() {
   const segOff     = segLen / 2 + DOOR_WIDTH / 2;
 
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(segLen, wallH, wallThick);
+    const geo = new BoxGeometry(segLen, wallH, wallThick);
     this.applyWallUVs(geo, segLen, wallH, wallThick);
     const mesh = addWallMesh(geo, sign * segOff, wallH / 2, doorZ);
     this.walls[`north_${sign > 0 ? 'right' : 'left'}`] = mesh;
   }
 
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
+    const geo = new BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
     this.applyWallUVs(geo, postWidth, DOOR_HEIGHT, frameThick);
     addFrameMesh(geo, sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, doorZ);
   }
 
   const lintelW   = DOOR_WIDTH + postWidth * 2;
-  const lintelGeo = new THREE.BoxGeometry(lintelW, lintelH, frameThick);
+  const lintelGeo = new BoxGeometry(lintelW, lintelH, frameThick);
   this.applyWallUVs(lintelGeo, lintelW, lintelH, frameThick);
   addFrameMesh(lintelGeo, 0, DOOR_HEIGHT + lintelH / 2, doorZ);
 
   if (overDoorH > 0) {
-    const overGeo = new THREE.BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
+    const overGeo = new BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
     this.applyWallUVs(overGeo, DOOR_WIDTH, overDoorH, wallThick);
     this.walls['north_above'] = addWallMesh(overGeo, 0, DOOR_HEIGHT + lintelH + overDoorH / 2, doorZ);
   }
 
-  const voidGeo = new THREE.PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
-  const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+  const voidGeo = new PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
+  const voidMat = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
+  const voidMesh = new Mesh(voidGeo, voidMat);
   // Place just outside the wall (north/-Z side)
   voidMesh.position.set(0, DOOR_HEIGHT / 2, doorZ - 0.4);
   this.scene.add(voidMesh);
@@ -148,9 +148,9 @@ export function loadCircular() {
   this._voidMesh = voidMesh;
 
 
-  const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
+  const slabGeo = new BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
   this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
-  this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+  this.doorSlab = new Mesh(slabGeo, this._slabMat);
   this.doorSlab.position.set(0, DOOR_HEIGHT / 2, doorZ);
   this.scene.add(this.doorSlab);
 
@@ -164,9 +164,9 @@ export function loadCircular() {
     const cx    = Math.sin(theta) * INNER_R;
     const cz    = Math.cos(theta) * INNER_R;
 
-    const geo = new THREE.BoxGeometry(sideLen, wallH, wallThick);
+    const geo = new BoxGeometry(sideLen, wallH, wallThick);
     this.applyWallUVs(geo, sideLen, wallH, wallThick);
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(cx, wallH / 2, cz);
     mesh.rotation.y = theta;
     mesh.castShadow = true;

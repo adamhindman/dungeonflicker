@@ -12,7 +12,7 @@ export default class FireElemental extends Disc {
             /* discName: */ discName,
             /* type: */ "NPC",
             /* kind: */ "FireElemental",
-            /* hitPoints: */ 3,
+            /* hitPoints: */ 4,
             /* skillLevel: */ skillLevel,
             /* imagePath: */ "images/fire-elemental-nobg.png",
             /* canDoReboundDamage: */ false,

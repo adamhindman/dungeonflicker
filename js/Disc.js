@@ -1,4 +1,8 @@
-import * as THREE from "three";
+import {
+  Vector3, CylinderGeometry, TextureLoader, SRGBColorSpace, Group, Mesh,
+  MeshPhongMaterial, PlaneGeometry, SpotLight, TorusGeometry, Box3,
+  CircleGeometry, MeshBasicMaterial, DoubleSide, Scene,
+} from "three";
 
 export default class Disc {
   // Configurable spotlight parameters for different disc states
@@ -147,7 +151,7 @@ export default class Disc {
     this.attackDamage = attackDamage;
     this.gameController = gameController;
     this.description = description;
-    this.relativeOffset = new THREE.Vector3(); // Used for orbs to follow the wizard
+    this.relativeOffset = new Vector3(); // Used for orbs to follow the wizard
     this.healedDiscs = new Set(); // Track discs healed by this disc (e.g., Healing Orb) this throw
     this.drainLifeActive = false; // Whether Drain Life aura is active (Necromancer only)
     this.drainLifeAura = null; // Three.js Group for the Drain Life floor aura
@@ -158,20 +162,20 @@ export default class Disc {
     this.killedByBlob = false; // Whether this disc was killed by a Blob (prevents revival)
 
     // Create the main disc geometry
-    const discGeometry = new THREE.CylinderGeometry(radius, radius, height, 64);
+    const discGeometry = new CylinderGeometry(radius, radius, height, 64);
 
     // Create material with optional texture
     let discMaterial;
     if (imagePath) {
-      const textureLoader = new THREE.TextureLoader();
+      const textureLoader = new TextureLoader();
 
       // Create a group to hold both the base disc and the top texture
-      this.mesh = new THREE.Group();
+      this.mesh = new Group();
 
       // Base disc with original color
-      const baseMesh = new THREE.Mesh(
+      const baseMesh = new Mesh(
         discGeometry,
-        new THREE.MeshPhongMaterial({
+        new MeshPhongMaterial({
           color: color,
           opacity: 0.9,
           transparent: true,
@@ -186,7 +190,7 @@ export default class Disc {
         imagePath,
         // onLoad
         (loadedTexture) => {
-          loadedTexture.colorSpace = THREE.SRGBColorSpace;
+          loadedTexture.colorSpace = SRGBColorSpace;
         },
         // onProgress
         undefined,
@@ -196,23 +200,23 @@ export default class Disc {
       );
 
       // Top plane with texture (slightly above the disc)
-      const topGeometry = new THREE.PlaneGeometry(radius * 1.8, radius * 1.8);
-      const topMaterial = new THREE.MeshPhongMaterial({
+      const topGeometry = new PlaneGeometry(radius * 1.8, radius * 1.8);
+      const topMaterial = new MeshPhongMaterial({
         map: texture,
         transparent: true,
         alphaTest: 0.1,
         opacity: 1,
       });
-      const topMesh = new THREE.Mesh(topGeometry, topMaterial);
+      const topMesh = new Mesh(topGeometry, topMaterial);
       topMesh.rotation.x = -Math.PI / 2; // Rotate to face up
       topMesh.position.y = height / 2 + 0.01; // Position slightly above disc top
       topMesh.castShadow = true;
       this.mesh.add(topMesh);
     } else {
       // Original disc without texture
-      this.mesh = new THREE.Mesh(
+      this.mesh = new Mesh(
         discGeometry,
-        new THREE.MeshPhongMaterial({
+        new MeshPhongMaterial({
           color: color,
           opacity: 0.9,
           transparent: true,
@@ -229,7 +233,7 @@ export default class Disc {
 
     // Create spotlight that follows the disc using inactive config by default
     const config = Disc.spotlightConfig.inactive;
-    this.spotlight = new THREE.SpotLight(
+    this.spotlight = new SpotLight(
       config.color,
       config.intensity,
       config.distance,
@@ -246,7 +250,7 @@ export default class Disc {
     scene.add(this.spotlight);
     scene.add(this.spotlight.target);
 
-    this.velocity = new THREE.Vector3(0, 0, 0);
+    this.velocity = new Vector3(0, 0, 0);
     this.moving = false;
     this.hasThrown = false;
     this.hasCausedDamage = false;
@@ -302,7 +306,7 @@ export default class Disc {
   handleCollisionWithBox(boxMesh, bounceDamping) {
     // Compute bounding box of the boxMesh in world coordinates
     boxMesh.updateMatrixWorld();
-    const box = new THREE.Box3().setFromObject(boxMesh);
+    const box = new Box3().setFromObject(boxMesh);
 
     // Get disc center and radius for bounding sphere collision
     const discCenter = this.mesh.position.clone();
@@ -310,7 +314,7 @@ export default class Disc {
 
     // Check if disc is intersecting the box (AABB vs Sphere)
     // Find closest point on box to disc center
-    const closestPoint = new THREE.Vector3(
+    const closestPoint = new Vector3(
       Math.max(box.min.x, Math.min(discCenter.x, box.max.x)),
       Math.max(box.min.y, Math.min(discCenter.y, box.max.y)),
       Math.max(box.min.z, Math.min(discCenter.z, box.max.z)),
@@ -552,12 +556,12 @@ export default class Disc {
 
   showAnimatedDeadRing() {
     if (this.animatedDeadRing) return;
-    const geometry = new THREE.TorusGeometry(this.radius, 0.3, 8, 48);
-    const material = new THREE.MeshPhongMaterial({
+    const geometry = new TorusGeometry(this.radius, 0.3, 8, 48);
+    const material = new MeshPhongMaterial({
       color: 0x8833CC,
       emissive: 0x441166,
     });
-    this.animatedDeadRing = new THREE.Mesh(geometry, material);
+    this.animatedDeadRing = new Mesh(geometry, material);
     this.animatedDeadRing.rotation.x = Math.PI / 2;
     this.animatedDeadRing.position.set(this.mesh.position.x, this.mesh.position.y + 0.06, this.mesh.position.z);
     this.scene.add(this.animatedDeadRing);
@@ -573,30 +577,30 @@ export default class Disc {
 
   showDrainLifeAura(radius) {
     if (this.drainLifeAura) return;
-    const group = new THREE.Group();
+    const group = new Group();
 
     // Boundary ring showing the drain radius
-    const ringGeo = new THREE.TorusGeometry(radius, 0.22, 8, 64);
-    const ringMat = new THREE.MeshBasicMaterial({
+    const ringGeo = new TorusGeometry(radius, 0.22, 8, 64);
+    const ringMat = new MeshBasicMaterial({
       color: 0x8833CC,
       transparent: true,
       opacity: 0.85,
       depthWrite: false,
     });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
+    const ring = new Mesh(ringGeo, ringMat);
     ring.rotation.x = Math.PI / 2;
     group.add(ring);
 
     // Semi-transparent fill showing the affected area
-    const fillGeo = new THREE.CircleGeometry(radius, 48);
-    const fillMat = new THREE.MeshBasicMaterial({
+    const fillGeo = new CircleGeometry(radius, 48);
+    const fillMat = new MeshBasicMaterial({
       color: 0x6600AA,
       transparent: true,
       opacity: 0.07,
       depthWrite: false,
-      side: THREE.DoubleSide,
+      side: DoubleSide,
     });
-    const fill = new THREE.Mesh(fillGeo, fillMat);
+    const fill = new Mesh(fillGeo, fillMat);
     fill.rotation.x = -Math.PI / 2;
     group.add(fill);
 

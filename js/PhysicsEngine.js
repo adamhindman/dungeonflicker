@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { Vector3 } from 'three';
 
 /**
  * Handles all per-frame physics: disc movement, wall/obstacle/boundary
@@ -597,9 +597,9 @@ export class PhysicsEngine {
     if (disc.type !== 'player' && disc.type !== 'NPC') return;
     if (disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'RoguePotion') return;
 
-    const dir = new THREE.Vector3(Math.cos(crusher.angle), 0, Math.sin(crusher.angle)).normalize();
-    const sideDir = new THREE.Vector3(-dir.z, 0, dir.x);
-    const rel = new THREE.Vector3(
+    const dir = new Vector3(Math.cos(crusher.angle), 0, Math.sin(crusher.angle)).normalize();
+    const sideDir = new Vector3(-dir.z, 0, dir.x);
+    const rel = new Vector3(
       disc.mesh.position.x - crusher.anchorX,
       0,
       disc.mesh.position.z - crusher.anchorZ,

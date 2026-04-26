@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { Vector2, Shape, ShapeGeometry, TextureLoader, RepeatWrapping, Color, MeshStandardMaterial, DoubleSide, Mesh } from 'three';
 
 /**
  * Represents an irregular, blobby lava pool on the game field.
@@ -85,17 +85,17 @@ class LavaPool {
 return;
         }
 
-        const shapePoints = this.relativeVertices2D.map(v => new THREE.Vector2(v.x, v.y));
-        const shape = new THREE.Shape(shapePoints);
-        const geometry = new THREE.ShapeGeometry(shape);
+        const shapePoints = this.relativeVertices2D.map(v => new Vector2(v.x, v.y));
+        const shape = new Shape(shapePoints);
+        const geometry = new ShapeGeometry(shape);
 
         // Load the lava texture
-        const textureLoader = new THREE.TextureLoader();
+        const textureLoader = new TextureLoader();
         this.lavaTexture = textureLoader.load('images/lava-tile-1.jpg');
 
         // Configure texture wrapping and variety
-        this.lavaTexture.wrapS = THREE.RepeatWrapping;
-        this.lavaTexture.wrapT = THREE.RepeatWrapping;
+        this.lavaTexture.wrapS = RepeatWrapping;
+        this.lavaTexture.wrapT = RepeatWrapping;
 
         // Randomize texture transform for variety between pools
         this.lavaTexture.offset.set(Math.random(), Math.random());
@@ -106,17 +106,17 @@ return;
         this.lavaTexture.repeat.set(this.baseRadius * uvScale, this.baseRadius * uvScale);
 
         // Use MeshStandardMaterial with emissive properties for a "glowing" effect
-        const material = new THREE.MeshStandardMaterial({
+        const material = new MeshStandardMaterial({
             map: this.lavaTexture,
-            emissive: new THREE.Color(0xff4500),
+            emissive: new Color(0xff4500),
             emissiveMap: this.lavaTexture,
             emissiveIntensity: 0.5,
-            side: THREE.DoubleSide,
+            side: DoubleSide,
             transparent: true,
             opacity: 0.95
         });
 
-        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh = new Mesh(geometry, material);
         this.mesh.position.set(this.centerX, this.yPosition, this.centerZ);
         this.mesh.rotation.x = -Math.PI / 2;
         this.mesh.name = "LavaPool";

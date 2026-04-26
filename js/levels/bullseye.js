@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { BoxGeometry, CircleGeometry, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, PlaneGeometry, RepeatWrapping, RingGeometry, Vector3 } from "three";
 
 export function loadBullseye() {
   const OUTER_R    = 22;   // inradius of outer polygon wall
@@ -25,9 +25,9 @@ export function loadBullseye() {
 
   // ── Wall material ────────────────────────────────────────────────────────
   const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
-  wallTex.wrapS = THREE.RepeatWrapping;
-  wallTex.wrapT = THREE.RepeatWrapping;
-  this.wallMaterial = new THREE.MeshStandardMaterial({
+  wallTex.wrapS = RepeatWrapping;
+  wallTex.wrapT = RepeatWrapping;
+  this.wallMaterial = new MeshStandardMaterial({
     map: wallTex, roughness: 0.6, metalness: 0.2,
   });
 
@@ -37,25 +37,25 @@ export function loadBullseye() {
   //    square (side = 2 * outerR) to UV [0,1], so repeat = 2*outerR / tileSize.
   const makeFloorMat = (outerR) => {
     const tex = this.textureLoader.load("images/tile-stone-1.jpg");
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
+    tex.wrapS = RepeatWrapping;
+    tex.wrapT = RepeatWrapping;
     tex.repeat.set((outerR * 2) / 6, (outerR * 2) / 6);
-    return new THREE.MeshStandardMaterial({
+    return new MeshStandardMaterial({
       map:       tex,
       roughness: 0.6,
       metalness: 0.2,
-      side:      THREE.DoubleSide,
+      side:      DoubleSide,
     });
   };
 
   // ── Ring groups ──────────────────────────────────────────────────────────
-  const innerGroup  = new THREE.Group();
-  const middleGroup = new THREE.Group();
-  const outerGroup  = new THREE.Group();
+  const innerGroup  = new Group();
+  const middleGroup = new Group();
+  const outerGroup  = new Group();
   this.scene.add(innerGroup, middleGroup, outerGroup);
 
-  const innerFloor = new THREE.Mesh(
-    new THREE.CircleGeometry(RING_R1, 64),
+  const innerFloor = new Mesh(
+    new CircleGeometry(RING_R1, 64),
     makeFloorMat(RING_R1)     // bounding box = 2*RING_R1
   );
   innerFloor.rotation.x = -Math.PI / 2;
@@ -64,27 +64,27 @@ export function loadBullseye() {
 
   const makeMidFloorMat = (outerR) => {
     const tex = this.textureLoader.load("images/tile-stone-red-1.jpg");
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
+    tex.wrapS = RepeatWrapping;
+    tex.wrapT = RepeatWrapping;
     tex.repeat.set((outerR * 2) / 6, (outerR * 2) / 6);
-    return new THREE.MeshStandardMaterial({
+    return new MeshStandardMaterial({
       map:       tex,
       roughness: 0.6,
       metalness: 0.2,
-      side:      THREE.DoubleSide,
+      side:      DoubleSide,
     });
   };
 
-  const midFloor = new THREE.Mesh(
-    new THREE.RingGeometry(RING_R1, RING_R2, 64),
+  const midFloor = new Mesh(
+    new RingGeometry(RING_R1, RING_R2, 64),
     makeMidFloorMat(RING_R2)
   );
   midFloor.rotation.x = -Math.PI / 2;
   midFloor.receiveShadow = true;
   middleGroup.add(midFloor);
 
-  const outerFloor = new THREE.Mesh(
-    new THREE.RingGeometry(RING_R2, OUTER_R, 64),
+  const outerFloor = new Mesh(
+    new RingGeometry(RING_R2, OUTER_R, 64),
     makeFloorMat(OUTER_R)     // bounding box = 2*OUTER_R
   );
   outerFloor.rotation.x = -Math.PI / 2;
@@ -100,9 +100,9 @@ export function loadBullseye() {
       const cx    = Math.sin(angle) * r;
       const cz    = Math.cos(angle) * r;
 
-      const geo  = new THREE.CylinderGeometry(COL_RAD, COL_RAD, wallH, 16);
+      const geo  = new CylinderGeometry(COL_RAD, COL_RAD, wallH, 16);
       this.applyCylinderUVs(geo, COL_RAD, wallH);
-      const mesh = new THREE.Mesh(geo, this._getObstacleMaterial());
+      const mesh = new Mesh(geo, this._getObstacleMaterial());
       mesh.position.set(cx, wallH / 2, cz);
       mesh.castShadow    = true;
       mesh.receiveShadow = true;
@@ -137,18 +137,18 @@ export function loadBullseye() {
 
   this._frameMat = this.wallMaterial.clone();
   this._frameMat.color.setHex(0x999999);
-  this._frameMat.emissive          = new THREE.Color(0x000000);
+  this._frameMat.emissive          = new Color(0x000000);
   this._frameMat.emissiveIntensity = 0;
 
   this._slabMat = this.wallMaterial.clone();
   this._slabMat.color.setHex(0x999999);
   this._slabMat.clippingPlanes = [
-    new THREE.Plane(new THREE.Vector3(0, -1, 0), wallH),
+    new Plane(new Vector3(0, -1, 0), wallH),
   ];
   this._slabMat.clipShadows = true;
 
   const addWallMesh = (geo, x, y, z, rotY = 0) => {
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(x, y, z);
     if (rotY !== 0) mesh.rotation.y = rotY;
     mesh.castShadow    = true;
@@ -158,7 +158,7 @@ export function loadBullseye() {
   };
 
   const addFrameMesh = (geo, x, y, z) => {
-    const mesh = new THREE.Mesh(geo, this._frameMat);
+    const mesh = new Mesh(geo, this._frameMat);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.doorFrameMeshes.push(mesh);
@@ -173,40 +173,40 @@ export function loadBullseye() {
   const segOff     = segLen / 2 + this.DOOR_WIDTH / 2;
 
   for (const sign of [-1, 1]) {
-    const geo  = new THREE.BoxGeometry(segLen, wallH, wallThick);
+    const geo  = new BoxGeometry(segLen, wallH, wallThick);
     this.applyWallUVs(geo, segLen, wallH, wallThick);
     const mesh = addWallMesh(geo, sign * segOff, wallH / 2, doorZ);
     this.walls[`north_${sign > 0 ? 'right' : 'left'}`] = mesh;
   }
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(postWidth, this.DOOR_HEIGHT, frameThick);
+    const geo = new BoxGeometry(postWidth, this.DOOR_HEIGHT, frameThick);
     this.applyWallUVs(geo, postWidth, this.DOOR_HEIGHT, frameThick);
     addFrameMesh(geo, sign * (this.DOOR_WIDTH / 2 + postWidth / 2), this.DOOR_HEIGHT / 2, doorZ);
   }
-  const lintelGeo = new THREE.BoxGeometry(this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
+  const lintelGeo = new BoxGeometry(this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
   this.applyWallUVs(lintelGeo, this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
   addFrameMesh(lintelGeo, 0, this.DOOR_HEIGHT + lintelH / 2, doorZ);
 
   if (overDoorH > 0) {
-    const overGeo = new THREE.BoxGeometry(this.DOOR_WIDTH, overDoorH, wallThick);
+    const overGeo = new BoxGeometry(this.DOOR_WIDTH, overDoorH, wallThick);
     this.applyWallUVs(overGeo, this.DOOR_WIDTH, overDoorH, wallThick);
     this.walls['north_above'] = addWallMesh(
       overGeo, 0, this.DOOR_HEIGHT + lintelH + overDoorH / 2, doorZ
     );
   }
 
-  const voidGeo  = new THREE.PlaneGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT);
-  const voidMat  = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+  const voidGeo  = new PlaneGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT);
+  const voidMat  = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
+  const voidMesh = new Mesh(voidGeo, voidMat);
   voidMesh.position.set(0, this.DOOR_HEIGHT / 2, doorZ - 0.4);
   this.scene.add(voidMesh);
   this.doorFrameMeshes.push(voidMesh);
   this._voidMesh = voidMesh;
 
 
-  const slabGeo = new THREE.BoxGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
+  const slabGeo = new BoxGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
   this.applyWallUVs(slabGeo, this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
-  this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+  this.doorSlab = new Mesh(slabGeo, this._slabMat);
   this.doorSlab.position.set(0, this.DOOR_HEIGHT / 2, doorZ);
   this.scene.add(this.doorSlab);
 
@@ -217,9 +217,9 @@ export function loadBullseye() {
     const theta = i * (2 * Math.PI / N_WALL);
     const cx    = Math.sin(theta) * OUTER_R;
     const cz    = Math.cos(theta) * OUTER_R;
-    const geo   = new THREE.BoxGeometry(sideLen, wallH, wallThick);
+    const geo   = new BoxGeometry(sideLen, wallH, wallThick);
     this.applyWallUVs(geo, sideLen, wallH, wallThick);
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(cx, wallH / 2, cz);
     mesh.rotation.y    = theta;
     mesh.castShadow    = true;

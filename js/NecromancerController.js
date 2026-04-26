@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { Vector2, CylinderGeometry, MeshBasicMaterial, Mesh, BackSide } from 'three';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
 
@@ -566,7 +566,7 @@ export class NecromancerController {
   handlePointerHover(event) {
     if (!this.selectingTarget) return;
 
-    const mouse = new THREE.Vector2(
+    const mouse = new Vector2(
       (event.clientX / window.innerWidth) * 2 - 1,
       -(event.clientY / window.innerHeight) * 2 + 1
     );
@@ -680,13 +680,13 @@ export class NecromancerController {
     this._clearTargetBeams();
     if (!discs.length) return;
     const beamH = 200;
-    this._beamGeo = new THREE.CylinderGeometry(1.0, 1.0, beamH, 16, 1, true);
-    this._beamMat = new THREE.MeshBasicMaterial({
+    this._beamGeo = new CylinderGeometry(1.0, 1.0, beamH, 16, 1, true);
+    this._beamMat = new MeshBasicMaterial({
       color, transparent: true, opacity,
-      side: THREE.BackSide, depthWrite: false,
+      side: BackSide, depthWrite: false,
     });
     discs.forEach(d => {
-      const beam = new THREE.Mesh(this._beamGeo, this._beamMat);
+      const beam = new Mesh(this._beamGeo, this._beamMat);
       beam.position.set(d.mesh.position.x, beamH / 2, d.mesh.position.z);
       this.gc.scene.add(beam);
       this._targetBeams.push(beam);

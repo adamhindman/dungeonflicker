@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { PerspectiveCamera, WebGLRenderer, Vector3, Raycaster, Spherical, MathUtils } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 /**
@@ -40,7 +40,7 @@ export class CameraController {
   init() {
     // ── Camera ──────────────────────────────────────────────────────────────
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
-    this.camera = new THREE.PerspectiveCamera(
+    this.camera = new PerspectiveCamera(
       60,
       window.innerWidth / window.innerHeight,
       0.1,
@@ -58,17 +58,17 @@ export class CameraController {
     // Store initial values so recenterCamera() can restore them
     this.initialCameraPosition = this.camera.position.clone();
     this.initialCameraZoom     = this.camera.zoom;
-    this.initialControlsTarget = new THREE.Vector3(0, 0, 0);
+    this.initialControlsTarget = new Vector3(0, 0, 0);
 
     // ── Renderer ────────────────────────────────────────────────────────────
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.localClippingEnabled = true; // Required for per-material clip planes (door slab)
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(this.renderer.domElement);
 
     // Wall-fade helpers (reused each frame to avoid allocation)
-    this._wallFadeRaycaster = new THREE.Raycaster();
-    this._wallFadeDir       = new THREE.Vector3();
+    this._wallFadeRaycaster = new Raycaster();
+    this._wallFadeDir       = new Vector3();
 
     // ── OrbitControls ────────────────────────────────────────────────────────
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -93,11 +93,11 @@ export class CameraController {
 
     // ── Smooth rotation from Q/E keys ────────────────────────────────────────
     if (this.cameraRotationDirection !== 0 && this.controls && this.controls.enabled) {
-      const offset = new THREE.Vector3().subVectors(
+      const offset = new Vector3().subVectors(
         this.controls.object.position,
         this.controls.target,
       );
-      const spherical = new THREE.Spherical().setFromVector3(offset);
+      const spherical = new Spherical().setFromVector3(offset);
       spherical.theta += this.cameraRotationDirection * this.cameraRotationSpeed;
       spherical.makeSafe();
       offset.setFromSpherical(spherical);
@@ -107,17 +107,17 @@ export class CameraController {
 
     // ── WASD / arrow-key panning ──────────────────────────────────────────────
     if (this.panningKeys.up || this.panningKeys.down || this.panningKeys.left || this.panningKeys.right) {
-      const forward = new THREE.Vector3();
-      const right   = new THREE.Vector3();
+      const forward = new Vector3();
+      const right   = new Vector3();
 
       this.camera.getWorldDirection(forward);
       forward.y = 0;
       forward.normalize();
 
-      right.crossVectors(forward, new THREE.Vector3(0, 1, 0));
+      right.crossVectors(forward, new Vector3(0, 1, 0));
       right.normalize();
 
-      const panVector = new THREE.Vector3();
+      const panVector = new Vector3();
       if (this.panningKeys.up)    panVector.add(forward.clone().multiplyScalar(this.panSpeed));
       if (this.panningKeys.down)  panVector.add(forward.clone().multiplyScalar(-this.panSpeed));
       if (this.panningKeys.left)  panVector.add(right.clone().multiplyScalar(-this.panSpeed));
@@ -134,8 +134,8 @@ export class CameraController {
       const halfFieldWidth = level.fieldWidth  / 2;
       const halfFieldDepth = level.fieldDepth  / 2;
       const panMargin      = 0; // The allowed panning margin
-      target.x = THREE.MathUtils.clamp(target.x, -halfFieldWidth - panMargin, halfFieldWidth + panMargin);
-      target.z = THREE.MathUtils.clamp(target.z, -halfFieldDepth - panMargin, halfFieldDepth + panMargin);
+      target.x = MathUtils.clamp(target.x, -halfFieldWidth - panMargin, halfFieldWidth + panMargin);
+      target.z = MathUtils.clamp(target.z, -halfFieldDepth - panMargin, halfFieldDepth + panMargin);
     }
 
     // ── Wall fade ────────────────────────────────────────────────────────────

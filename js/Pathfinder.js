@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { Vector3 } from "three";
 
 export default class Pathfinder {
   /**
@@ -33,7 +33,7 @@ export default class Pathfinder {
   cellToWorldPos(cell) {
     const x = (cell.x - this.gridWidth / 2 + 0.5) * this.cellSize;
     const z = (cell.z - this.gridDepth / 2 + 0.5) * this.cellSize;
-    return new THREE.Vector3(x, 0, z);
+    return new Vector3(x, 0, z);
   }
 
   /**

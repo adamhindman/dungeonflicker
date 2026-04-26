@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { BoxGeometry, BufferGeometry, Color, DoubleSide, Float32BufferAttribute, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, PlaneGeometry, PointLight, RepeatWrapping, SphereGeometry, Vector2, Vector3 } from "three";
 
 export function loadCrusher() {
   const OUTER_R = 22;
@@ -7,7 +7,7 @@ export function loadCrusher() {
   const wallThick = 0.5;
   const vertices = Array.from({ length: N }, (_, i) => {
     const a = -Math.PI / 2 + Math.PI / N + i * (2 * Math.PI / N);
-    return new THREE.Vector2(Math.cos(a) * OUTER_R, Math.sin(a) * OUTER_R);
+    return new Vector2(Math.cos(a) * OUTER_R, Math.sin(a) * OUTER_R);
   });
   const edges = vertices.map((start, i) => {
     const end = vertices[(i + 1) % vertices.length];
@@ -37,14 +37,14 @@ export function loadCrusher() {
   this._crusherMeshes = [];
 
   const floorTex = this.textureLoader.load("images/tile-stone-1.jpg");
-  floorTex.wrapS = THREE.RepeatWrapping;
-  floorTex.wrapT = THREE.RepeatWrapping;
+  floorTex.wrapS = RepeatWrapping;
+  floorTex.wrapT = RepeatWrapping;
   floorTex.repeat.set((OUTER_R * 2) / 6, (OUTER_R * 2) / 6);
-  const floorMat = new THREE.MeshStandardMaterial({
+  const floorMat = new MeshStandardMaterial({
     map: floorTex,
     roughness: 0.6,
     metalness: 0.2,
-    side: THREE.DoubleSide,
+    side: DoubleSide,
   });
 
   const floorPositions = [[0, 0, 0]];
@@ -57,19 +57,19 @@ export function loadCrusher() {
   for (let i = 1; i <= N; i++) {
     floorIndices.push(0, i, i === N ? 1 : i + 1);
   }
-  const floorGeo = new THREE.BufferGeometry();
-  floorGeo.setAttribute('position', new THREE.Float32BufferAttribute(floorPositions.flat(), 3));
-  floorGeo.setAttribute('uv', new THREE.Float32BufferAttribute(floorUvs.flat(), 2));
+  const floorGeo = new BufferGeometry();
+  floorGeo.setAttribute('position', new Float32BufferAttribute(floorPositions.flat(), 3));
+  floorGeo.setAttribute('uv', new Float32BufferAttribute(floorUvs.flat(), 2));
   floorGeo.setIndex(floorIndices);
   floorGeo.computeVertexNormals();
-  this.floor = new THREE.Mesh(floorGeo, floorMat);
+  this.floor = new Mesh(floorGeo, floorMat);
   this.floor.receiveShadow = true;
   this.scene.add(this.floor);
 
   const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
-  wallTex.wrapS = THREE.RepeatWrapping;
-  wallTex.wrapT = THREE.RepeatWrapping;
-  this.wallMaterial = new THREE.MeshStandardMaterial({
+  wallTex.wrapS = RepeatWrapping;
+  wallTex.wrapT = RepeatWrapping;
+  this.wallMaterial = new MeshStandardMaterial({
     map: wallTex,
     roughness: 0.6,
     metalness: 0.2,
@@ -87,18 +87,18 @@ export function loadCrusher() {
 
   this._frameMat = this.wallMaterial.clone();
   this._frameMat.color.setHex(0x999999);
-  this._frameMat.emissive = new THREE.Color(0x000000);
+  this._frameMat.emissive = new Color(0x000000);
   this._frameMat.emissiveIntensity = 0;
 
   this._slabMat = this.wallMaterial.clone();
   this._slabMat.color.setHex(0x999999);
   this._slabMat.clippingPlanes = [
-    new THREE.Plane(new THREE.Vector3(0, -1, 0), wallH),
+    new Plane(new Vector3(0, -1, 0), wallH),
   ];
   this._slabMat.clipShadows = true;
 
   const addWallMesh = (geo, x, y, z, rotY = 0, key = null) => {
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(x, y, z);
     if (rotY !== 0) mesh.rotation.y = rotY;
     mesh.castShadow = true;
@@ -109,7 +109,7 @@ export function loadCrusher() {
   };
 
   const addFrameMesh = (geo, x, y, z, rotY = 0) => {
-    const mesh = new THREE.Mesh(geo, this._frameMat);
+    const mesh = new Mesh(geo, this._frameMat);
     mesh.position.set(x, y, z);
     if (rotY !== 0) mesh.rotation.y = rotY;
     this.scene.add(mesh);
@@ -125,7 +125,7 @@ export function loadCrusher() {
   const segOff = segLen / 2 + this.DOOR_WIDTH / 2;
 
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(segLen, wallH, wallThick);
+    const geo = new BoxGeometry(segLen, wallH, wallThick);
     this.applyWallUVs(geo, segLen, wallH, wallThick);
     const x = doorEdge.mid.x + doorEdge.dir.x * sign * segOff;
     const z = doorEdge.mid.y + doorEdge.dir.y * sign * segOff;
@@ -141,7 +141,7 @@ export function loadCrusher() {
   }
 
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(postWidth, this.DOOR_HEIGHT, frameThick);
+    const geo = new BoxGeometry(postWidth, this.DOOR_HEIGHT, frameThick);
     this.applyWallUVs(geo, postWidth, this.DOOR_HEIGHT, frameThick);
     const off = sign * (this.DOOR_WIDTH / 2 + postWidth / 2);
     addFrameMesh(
@@ -153,12 +153,12 @@ export function loadCrusher() {
     );
   }
 
-  const lintelGeo = new THREE.BoxGeometry(this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
+  const lintelGeo = new BoxGeometry(this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
   this.applyWallUVs(lintelGeo, this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
   addFrameMesh(lintelGeo, doorEdge.mid.x, this.DOOR_HEIGHT + lintelH / 2, doorEdge.mid.y, doorEdge.rotY);
 
   if (overDoorH > 0) {
-    const overGeo = new THREE.BoxGeometry(this.DOOR_WIDTH, overDoorH, wallThick);
+    const overGeo = new BoxGeometry(this.DOOR_WIDTH, overDoorH, wallThick);
     this.applyWallUVs(overGeo, this.DOOR_WIDTH, overDoorH, wallThick);
     addWallMesh(
       overGeo,
@@ -170,9 +170,9 @@ export function loadCrusher() {
     );
   }
 
-  const voidGeo = new THREE.PlaneGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT);
-  const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+  const voidGeo = new PlaneGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT);
+  const voidMat = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
+  const voidMesh = new Mesh(voidGeo, voidMat);
   voidMesh.position.set(
     doorEdge.mid.x + doorEdge.inward.x * 0.4,
     this.DOOR_HEIGHT / 2,
@@ -183,17 +183,17 @@ export function loadCrusher() {
   this.doorFrameMeshes.push(voidMesh);
   this._voidMesh = voidMesh;
 
-  const slabGeo = new THREE.BoxGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
+  const slabGeo = new BoxGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
   this.applyWallUVs(slabGeo, this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
-  this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+  this.doorSlab = new Mesh(slabGeo, this._slabMat);
   this.doorSlab.position.set(doorEdge.mid.x, this.DOOR_HEIGHT / 2, doorEdge.mid.y);
   this.doorSlab.rotation.y = doorEdge.rotY;
   this.scene.add(this.doorSlab);
 
   const crusherTex = this.textureLoader.load("images/tile-stone-red-1.jpg");
-  crusherTex.wrapS = THREE.RepeatWrapping;
-  crusherTex.wrapT = THREE.RepeatWrapping;
-  this._crusherMat = new THREE.MeshStandardMaterial({
+  crusherTex.wrapS = RepeatWrapping;
+  crusherTex.wrapT = RepeatWrapping;
+  this._crusherMat = new MeshStandardMaterial({
     map: crusherTex,
     roughness: 0.6,
     metalness: 0.2,
@@ -209,19 +209,19 @@ export function loadCrusher() {
     const inwardAngle = Math.atan2(edge.inward.y, edge.inward.x);
     const anchorX = edge.mid.x + edge.inward.x * wallInset;
     const anchorZ = edge.mid.y + edge.inward.y * wallInset;
-    const geo = new THREE.BoxGeometry(crusherLength, wallH, crusherWidth);
+    const geo = new BoxGeometry(crusherLength, wallH, crusherWidth);
     this.applyWallUVs(geo, crusherLength, wallH, crusherWidth);
-    const mesh = new THREE.Mesh(geo, this._crusherMat.clone());
+    const mesh = new Mesh(geo, this._crusherMat.clone());
     mesh.rotation.y = -inwardAngle;
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);
-    const warningLight = new THREE.PointLight(0xff3300, 0, 6, 2);
+    const warningLight = new PointLight(0xff3300, 0, 6, 2);
     warningLight.visible = false;
     this.scene.add(warningLight);
-    const warningMarker = new THREE.Mesh(
-      new THREE.SphereGeometry(0.22, 12, 8),
-      new THREE.MeshBasicMaterial({ color: 0xff3300 }),
+    const warningMarker = new Mesh(
+      new SphereGeometry(0.22, 12, 8),
+      new MeshBasicMaterial({ color: 0xff3300 }),
     );
     warningMarker.visible = false;
     this.scene.add(warningMarker);
@@ -251,7 +251,7 @@ export function loadCrusher() {
     const edge = edges[i];
     if (i !== farEdgeIndex) {
       const theta = Math.atan2(edge.mid.x, edge.mid.y);
-      const geo = new THREE.BoxGeometry(edge.length, wallH, wallThick);
+      const geo = new BoxGeometry(edge.length, wallH, wallThick);
       this.applyWallUVs(geo, edge.length, wallH, wallThick);
       addWallMesh(geo, edge.mid.x, wallH / 2, edge.mid.y, edge.rotY, `poly_${i}`);
       this._circularWalls.push({ theta, sideLen: edge.length, isDoor: false });

@@ -1,4 +1,4 @@
-import * as THREE from "three";
+import { BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, PlaneGeometry, RepeatWrapping, Vector3 } from "three";
 
 export function loadDonut() {
   // All polygon rings share vertex angles at multiples of 2π/N so every edge aligns.
@@ -33,25 +33,25 @@ export function loadDonut() {
 
   // ── Textures ──────────────────────────────────────────────────────────────
   const wallTex = this.textureLoader.load("images/tile-stone-1.jpg");
-  wallTex.wrapS = THREE.RepeatWrapping;
-  wallTex.wrapT = THREE.RepeatWrapping;
-  this.wallMaterial = new THREE.MeshStandardMaterial({
+  wallTex.wrapS = RepeatWrapping;
+  wallTex.wrapT = RepeatWrapping;
+  this.wallMaterial = new MeshStandardMaterial({
     map: wallTex, roughness: 0.6, metalness: 0.2,
   });
 
   const tileTexture = this.textureLoader.load("images/tile-stone-1.jpg");
-  tileTexture.wrapS = THREE.RepeatWrapping;
-  tileTexture.wrapT = THREE.RepeatWrapping;
-  const floorMat = new THREE.MeshStandardMaterial({
-    map: tileTexture, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide,
+  tileTexture.wrapS = RepeatWrapping;
+  tileTexture.wrapT = RepeatWrapping;
+  const floorMat = new MeshStandardMaterial({
+    map: tileTexture, roughness: 0.6, metalness: 0.2, side: DoubleSide,
   });
   this._hexFloorMat = floorMat;
 
   const redTileTex = this.textureLoader.load("images/tile-stone-red-1.jpg");
-  redTileTex.wrapS = THREE.RepeatWrapping;
-  redTileTex.wrapT = THREE.RepeatWrapping;
-  const pitMat = new THREE.MeshStandardMaterial({
-    map: redTileTex, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide,
+  redTileTex.wrapS = RepeatWrapping;
+  redTileTex.wrapT = RepeatWrapping;
+  const pitMat = new MeshStandardMaterial({
+    map: redTileTex, roughness: 0.6, metalness: 0.2, side: DoubleSide,
   });
   this._hexPitMat = pitMat;
 
@@ -67,12 +67,12 @@ export function loadDonut() {
       v0.x / 6, v0.z / 6,  v1.x / 6, v1.z / 6,
       v2.x / 6, v2.z / 6,  v3.x / 6, v3.z / 6,
     ]);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(pos, 3));
+    geo.setAttribute('uv',       new BufferAttribute(uvs, 2));
     geo.setIndex([0, 1, 2, 0, 2, 3]);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new Mesh(geo, mat);
     mesh.receiveShadow = true;
     this.scene.add(mesh);
     this._hexFloorMeshes.push(mesh);
@@ -85,12 +85,12 @@ export function loadDonut() {
     const uvs = new Float32Array([
       v0.x / 6, v0.z / 6,  v1.x / 6, v1.z / 6,  v2.x / 6, v2.z / 6,
     ]);
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute('uv',       new THREE.BufferAttribute(uvs, 2));
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(pos, 3));
+    geo.setAttribute('uv',       new BufferAttribute(uvs, 2));
     geo.setIndex([0, 1, 2]);
     geo.computeVertexNormals();
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new Mesh(geo, mat);
     mesh.receiveShadow = true;
     this.scene.add(mesh);
     this._hexFloorMeshes.push(mesh);
@@ -115,27 +115,27 @@ export function loadDonut() {
 
     // 1. Flat ring (grey stone): outer wall edge → inner hole, all at MED_Y
     addFloorQuad(
-      new THREE.Vector3(outerX0, MED_Y, outerZ0),
-      new THREE.Vector3(outerX1, MED_Y, outerZ1),
-      new THREE.Vector3(holeX1,  MED_Y, holeZ1),
-      new THREE.Vector3(holeX0,  MED_Y, holeZ0),
+      new Vector3(outerX0, MED_Y, outerZ0),
+      new Vector3(outerX1, MED_Y, outerZ1),
+      new Vector3(holeX1,  MED_Y, holeZ1),
+      new Vector3(holeX0,  MED_Y, holeZ0),
       floorMat,
     );
 
     // 2. Pit slope (red stone): inner hole at MED_Y → pit base at PIT_Y
     addFloorQuad(
-      new THREE.Vector3(holeX0, MED_Y, holeZ0),
-      new THREE.Vector3(holeX1, MED_Y, holeZ1),
-      new THREE.Vector3(pitX1,  PIT_Y, pitZ1),
-      new THREE.Vector3(pitX0,  PIT_Y, pitZ0),
+      new Vector3(holeX0, MED_Y, holeZ0),
+      new Vector3(holeX1, MED_Y, holeZ1),
+      new Vector3(pitX1,  PIT_Y, pitZ1),
+      new Vector3(pitX0,  PIT_Y, pitZ0),
       pitMat,
     );
 
     // 3. Pit floor (red stone): fan triangle to centre
     addFloorTri(
-      new THREE.Vector3(0,     PIT_Y, 0),
-      new THREE.Vector3(pitX0, PIT_Y, pitZ0),
-      new THREE.Vector3(pitX1, PIT_Y, pitZ1),
+      new Vector3(0,     PIT_Y, 0),
+      new Vector3(pitX0, PIT_Y, pitZ0),
+      new Vector3(pitX1, PIT_Y, pitZ1),
       pitMat,
     );
   }
@@ -154,18 +154,18 @@ export function loadDonut() {
 
   this._frameMat = this.wallMaterial.clone();
   this._frameMat.color.setHex(0x999999);
-  this._frameMat.emissive          = new THREE.Color(0x000000);
+  this._frameMat.emissive          = new Color(0x000000);
   this._frameMat.emissiveIntensity = 0;
 
   this._slabMat = this.wallMaterial.clone();
   this._slabMat.color.setHex(0x999999);
   this._slabMat.clippingPlanes = [
-    new THREE.Plane(new THREE.Vector3(0, -1, 0), wallH),
+    new Plane(new Vector3(0, -1, 0), wallH),
   ];
   this._slabMat.clipShadows = true;
 
   const addWallMesh = (geo, x, y, z, rotY = 0) => {
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(x, y, z);
     if (rotY !== 0) mesh.rotation.y = rotY;
     mesh.castShadow = true;
@@ -175,7 +175,7 @@ export function loadDonut() {
   };
 
   const addFrameMesh = (geo, x, y, z) => {
-    const mesh = new THREE.Mesh(geo, this._frameMat);
+    const mesh = new Mesh(geo, this._frameMat);
     mesh.position.set(x, y, z);
     this.scene.add(mesh);
     this.doorFrameMeshes.push(mesh);
@@ -190,38 +190,38 @@ export function loadDonut() {
   const segOff     = segLen / 2 + DOOR_WIDTH / 2;
 
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(segLen, wallH, wallThick);
+    const geo = new BoxGeometry(segLen, wallH, wallThick);
     this.applyWallUVs(geo, segLen, wallH, wallThick);
     const mesh = addWallMesh(geo, sign * segOff, wallH / 2, doorZ);
     this.walls[`north_${sign > 0 ? 'right' : 'left'}`] = mesh;
   }
   for (const sign of [-1, 1]) {
-    const geo = new THREE.BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
+    const geo = new BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
     this.applyWallUVs(geo, postWidth, DOOR_HEIGHT, frameThick);
     addFrameMesh(geo, sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, doorZ);
   }
   const lintelW   = DOOR_WIDTH + postWidth * 2;
-  const lintelGeo = new THREE.BoxGeometry(lintelW, lintelH, frameThick);
+  const lintelGeo = new BoxGeometry(lintelW, lintelH, frameThick);
   this.applyWallUVs(lintelGeo, lintelW, lintelH, frameThick);
   addFrameMesh(lintelGeo, 0, DOOR_HEIGHT + lintelH / 2, doorZ);
 
   if (overDoorH > 0) {
-    const overGeo = new THREE.BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
+    const overGeo = new BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
     this.applyWallUVs(overGeo, DOOR_WIDTH, overDoorH, wallThick);
     this.walls['north_above'] = addWallMesh(overGeo, 0, DOOR_HEIGHT + lintelH + overDoorH / 2, doorZ);
   }
 
-  const voidGeo = new THREE.PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
-  const voidMat = new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide });
-  const voidMesh = new THREE.Mesh(voidGeo, voidMat);
+  const voidGeo = new PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
+  const voidMat = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
+  const voidMesh = new Mesh(voidGeo, voidMat);
   voidMesh.position.set(0, DOOR_HEIGHT / 2, doorZ - 0.4);
   this.scene.add(voidMesh);
   this.doorFrameMeshes.push(voidMesh);
   this._voidMesh = voidMesh;
 
-  const slabGeo = new THREE.BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
+  const slabGeo = new BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
   this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
-  this.doorSlab = new THREE.Mesh(slabGeo, this._slabMat);
+  this.doorSlab = new Mesh(slabGeo, this._slabMat);
   this.doorSlab.position.set(0, DOOR_HEIGHT / 2, doorZ);
   this.scene.add(this.doorSlab);
 
@@ -232,9 +232,9 @@ export function loadDonut() {
     const theta = i * (2 * Math.PI / N);
     const cx    = Math.sin(theta) * OUTER_R;
     const cz    = Math.cos(theta) * OUTER_R;
-    const geo   = new THREE.BoxGeometry(outerSideLen, wallH, wallThick);
+    const geo   = new BoxGeometry(outerSideLen, wallH, wallThick);
     this.applyWallUVs(geo, outerSideLen, wallH, wallThick);
-    const mesh = new THREE.Mesh(geo, this.wallMaterial);
+    const mesh = new Mesh(geo, this.wallMaterial);
     mesh.position.set(cx, wallH / 2, cz);
     mesh.rotation.y    = theta;
     mesh.castShadow    = true;
@@ -255,9 +255,9 @@ export function loadDonut() {
     const x = Math.sin(alpha) * R_COL;
     const z = Math.cos(alpha) * R_COL;
     this.obstacles.push({ x, z, width: COL_R * 2, depth: COL_R * 2, type: 'pillar' });
-    const geo = new THREE.CylinderGeometry(COL_R, COL_R, wallH, 12);
+    const geo = new CylinderGeometry(COL_R, COL_R, wallH, 12);
     this.applyCylinderUVs(geo, COL_R, wallH);
-    const mesh = new THREE.Mesh(geo, this._getObstacleMaterial());
+    const mesh = new Mesh(geo, this._getObstacleMaterial());
     mesh.position.set(x, MED_Y + wallH / 2, z);
     mesh.castShadow = true;
     mesh.receiveShadow = true;

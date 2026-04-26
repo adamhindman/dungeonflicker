@@ -1,4 +1,7 @@
-import * as THREE from 'three';
+import {
+  Vector3, SphereGeometry, CylinderGeometry, Mesh, MeshBasicMaterial,
+  PlaneGeometry, Plane, RepeatWrapping, TextureLoader, TorusGeometry, DoubleSide,
+} from 'three';
 import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
@@ -24,7 +27,7 @@ export class WizardController {
 
     this.flameStrikeTargetingActive = false;
     this.flameStrikeTargetRing = null;
-    this.flameStrikeTargetPos = new THREE.Vector3();
+    this.flameStrikeTargetPos = new Vector3();
     this._flameStrikeCones = [];
     this._cinderParticles = [];
   }
@@ -336,7 +339,7 @@ export class WizardController {
         );
         orb.uniqueOrbId = `orb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         orb.relativeOffset.copy(
-          new THREE.Vector3(orbX, 0, orbZ).sub(new THREE.Vector3(wizardPos.x, 0, wizardPos.z))
+          new Vector3(orbX, 0, orbZ).sub(new Vector3(wizardPos.x, 0, wizardPos.z))
         );
         this.gc.discs.push(orb);
         this.orbs.push(orb);
@@ -373,7 +376,7 @@ export class WizardController {
         );
         orb.uniqueOrbId = `orb_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
         orb.relativeOffset.copy(
-          new THREE.Vector3(orbX, 0, orbZ).sub(new THREE.Vector3(wizardPos.x, 0, wizardPos.z))
+          new Vector3(orbX, 0, orbZ).sub(new Vector3(wizardPos.x, 0, wizardPos.z))
         );
         this.gc.discs.push(orb);
         this.orbs.push(orb);
@@ -434,11 +437,11 @@ export class WizardController {
     const RING_DURATION = 0.45;
 
     for (let i = 0; i < 2; i++) {
-      const geometry = new THREE.TorusGeometry(1, 0.03, 8, 64);
-      const material = new THREE.MeshBasicMaterial({
-        color: 0x88CCFF, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+      const geometry = new TorusGeometry(1, 0.03, 8, 64);
+      const material = new MeshBasicMaterial({
+        color: 0x88CCFF, transparent: true, opacity: 0.85, side: DoubleSide,
       });
-      const ring = new THREE.Mesh(geometry, material);
+      const ring = new Mesh(geometry, material);
       ring.rotation.x = Math.PI / 2;
       ring.position.set(originX, ringY, originZ);
       this.gc.scene.add(ring);
@@ -455,11 +458,11 @@ export class WizardController {
     this.flameStrikeTargetingActive = true;
     this.flameStrikeTargetPos.copy(wizardDisc.mesh.position);
 
-    const geometry = new THREE.TorusGeometry(1, 0.1, 8, 64);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0xFF8800, transparent: true, opacity: 0.7, side: THREE.DoubleSide,
+    const geometry = new TorusGeometry(1, 0.1, 8, 64);
+    const material = new MeshBasicMaterial({
+      color: 0xFF8800, transparent: true, opacity: 0.7, side: DoubleSide,
     });
-    this.flameStrikeTargetRing = new THREE.Mesh(geometry, material);
+    this.flameStrikeTargetRing = new Mesh(geometry, material);
     this.flameStrikeTargetRing.rotation.x = Math.PI / 2;
     this.flameStrikeTargetRing.scale.set(FLAME_STRIKE_RADIUS, FLAME_STRIKE_RADIUS, 1);
     this.flameStrikeTargetRing.position.copy(this.flameStrikeTargetPos);
@@ -476,20 +479,20 @@ export class WizardController {
 
     const STRIKE_RADIUS = FLAME_STRIKE_RADIUS;
     const BEAM_H = 60;
-    const geo = new THREE.CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
-    const columnTex = new THREE.TextureLoader().load('images/tile-fire-column.jpg');
-    columnTex.wrapS = THREE.RepeatWrapping;
-    columnTex.wrapT = THREE.RepeatWrapping;
+    const geo = new CylinderGeometry(STRIKE_RADIUS, STRIKE_RADIUS, BEAM_H, 32, 4, true);
+    const columnTex = new TextureLoader().load('images/tile-fire-column.jpg');
+    columnTex.wrapS = RepeatWrapping;
+    columnTex.wrapT = RepeatWrapping;
     columnTex.repeat.set(4, 6);
-    const mat = new THREE.MeshBasicMaterial({ map: columnTex, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geo, mat);
+    const mat = new MeshBasicMaterial({ map: columnTex, transparent: true, opacity: 0.85, depthWrite: false, side: DoubleSide });
+    const mesh = new Mesh(geo, mat);
     mesh.position.set(targetX, BEAM_H * 1.5, targetZ);
     this.gc.scene.add(mesh);
 
     const imageFiles = [
       'fireball-streak-1.png', 'fireball-streak-2.png', 'fireball-streak-3.png', 'fireball-streak-4.png',
     ];
-    const loader = new THREE.TextureLoader();
+    const loader = new TextureLoader();
     const sprites = [];
     for (let i = 0; i < 70; i++) {
       const file = imageFiles[Math.floor(Math.random() * imageFiles.length)];
@@ -497,9 +500,9 @@ export class WizardController {
       const angle = Math.random() * Math.PI * 2;
       const yOffset = Math.random() * 180 - 30; // range: -30 (cylinder bottom) to +150
 
-      const planeGeo = new THREE.PlaneGeometry(height, height);
-      const planeMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false });
-      const plane = new THREE.Mesh(planeGeo, planeMat);
+      const planeGeo = new PlaneGeometry(height, height);
+      const planeMat = new MeshBasicMaterial({ transparent: true, opacity: 0.9, side: DoubleSide, depthWrite: false });
+      const plane = new Mesh(planeGeo, planeMat);
       plane.position.set(STRIKE_RADIUS * Math.cos(angle), yOffset, STRIKE_RADIUS * Math.sin(angle));
       plane.rotation.y = -angle;
       mesh.add(plane);
@@ -622,9 +625,9 @@ export class WizardController {
   _updateFlameStrikeTargeting() {
     if (!this.flameStrikeTargetingActive || !this.flameStrikeTargetRing) return;
 
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const plane = new Plane(new Vector3(0, 1, 0), 0);
     this.gc.raycaster.setFromCamera(this.gc.mouse, this.gc.camera);
-    const intersection = new THREE.Vector3();
+    const intersection = new Vector3();
     this.gc.raycaster.ray.intersectPlane(plane, intersection);
 
     if (this.gc.level) {
@@ -689,11 +692,11 @@ export class WizardController {
         this.gc.checkGameOverConditions();
 
         const cinderColors = [0xFF6600, 0xFF4400, 0xFF8800, 0xFFAA00, 0xFFFFFF, 0xFF2200];
-        const cinderGeo = new THREE.SphereGeometry(0.12, 4, 4);
+        const cinderGeo = new SphereGeometry(0.12, 4, 4);
         for (let c = 0; c < 60; c++) {
           const color = cinderColors[Math.floor(Math.random() * cinderColors.length)];
-          const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
-          const mesh = new THREE.Mesh(cinderGeo, mat);
+          const mat = new MeshBasicMaterial({ color, transparent: true, opacity: 1.0 });
+          const mesh = new Mesh(cinderGeo, mat);
           const angle = Math.random() * Math.PI * 2;
           const speed = 3 + Math.random() * 8;
           mesh.position.set(targetX, 0.1, targetZ);
@@ -710,11 +713,11 @@ export class WizardController {
 
         const ringY = 0.1;
         for (let j = 0; j < 2; j++) {
-          const geometry = new THREE.TorusGeometry(1, 0.05, 8, 64);
-          const material = new THREE.MeshBasicMaterial({
-            color: 0xFF8800, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+          const geometry = new TorusGeometry(1, 0.05, 8, 64);
+          const material = new MeshBasicMaterial({
+            color: 0xFF8800, transparent: true, opacity: 0.85, side: DoubleSide,
           });
-          const ring = new THREE.Mesh(geometry, material);
+          const ring = new Mesh(geometry, material);
           ring.rotation.x = Math.PI / 2;
           ring.position.set(targetX, ringY, targetZ);
           this.gc.scene.add(ring);

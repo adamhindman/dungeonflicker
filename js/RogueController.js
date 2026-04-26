@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import { SphereGeometry, Mesh, MeshBasicMaterial } from 'three';
 import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
@@ -267,13 +267,13 @@ export class RogueController {
     for (let i = 0; i < COUNT; i++) {
       const angle = (i / COUNT) * Math.PI * 2 + Math.random() * 0.3;
       const speed = 3.5 + Math.random() * 5.5;
-      const geo = new THREE.SphereGeometry(0.14 + Math.random() * 0.2, 5, 4);
-      const mat = new THREE.MeshBasicMaterial({
+      const geo = new SphereGeometry(0.14 + Math.random() * 0.2, 5, 4);
+      const mat = new MeshBasicMaterial({
         color: colors[Math.floor(Math.random() * colors.length)],
         transparent: true,
         opacity: 1.0,
       });
-      const mesh = new THREE.Mesh(geo, mat);
+      const mesh = new Mesh(geo, mat);
       mesh.position.copy(pos);
       this.gc.scene.add(mesh);
       this._explosionParticles.push({
