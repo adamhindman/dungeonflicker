@@ -7,10 +7,6 @@ import Level from "./Level.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
 import Disc from './Disc.js';
-import { BarbarianController } from './BarbarianController.js';
-import { WizardController } from './WizardController.js';
-import { NecromancerController } from './NecromancerController.js';
-import { RogueController } from './RogueController.js';
 import { CameraController } from './CameraController.js';
 import { PhysicsEngine }     from './PhysicsEngine.js';
 import { DiscSpawner }       from './DiscSpawner.js';
@@ -90,11 +86,11 @@ export default class GameController {
 
     this.thrownDisc = null;
 
-    // Character controllers (instantiated here, initialized in init())
-    this.barbarianController = new BarbarianController(this);
-    this.wizardController = new WizardController(this);
-    this.necromancerController = new NecromancerController(this);
-    this.rogueController = new RogueController(this);
+    // Character controllers — null until character selection; loaded via _loadControllers()
+    this.barbarianController = null;
+    this.wizardController = null;
+    this.necromancerController = null;
+    this.rogueController = null;
 
     // Subsystem controllers (camera/renderer/controls live in CameraController;
     // physics, spawning, and lava generation each have their own class)
@@ -256,11 +252,8 @@ export default class GameController {
     // Initialize discs for gameplay
     this.initDiscs();
 
-    // Initialize character controllers (buttons, listeners, initial visibility)
-    this.barbarianController.init(this.actionButtonsContainer);
-    this.wizardController.init(this.actionButtonsContainer);
-    this.necromancerController.init(this.actionButtonsContainer);
-    this.rogueController.init(this.actionButtonsContainer);
+    // Dynamically import and initialize only the two selected character controllers
+    await this._loadControllers(this.selectedPlayerKinds);
 
     // Generate lava pools
     this.lavaManager.generate();
@@ -309,9 +302,32 @@ export default class GameController {
     return true;
   }
 
+  async _loadControllers(kinds) {
+    const kindSet = new Set(kinds);
+    const [
+      { BarbarianController },
+      { WizardController },
+      { NecromancerController },
+      { RogueController },
+    ] = await Promise.all([
+      kindSet.has('Barbarian')   ? import('./BarbarianController.js')   : Promise.resolve({}),
+      kindSet.has('Wizard')      ? import('./WizardController.js')      : Promise.resolve({}),
+      kindSet.has('Necromancer') ? import('./NecromancerController.js') : Promise.resolve({}),
+      kindSet.has('Rogue')       ? import('./RogueController.js')       : Promise.resolve({}),
+    ]);
+    this.barbarianController   = BarbarianController   ? new BarbarianController(this)   : null;
+    this.wizardController      = WizardController      ? new WizardController(this)      : null;
+    this.necromancerController = NecromancerController ? new NecromancerController(this) : null;
+    this.rogueController       = RogueController       ? new RogueController(this)       : null;
+    this.barbarianController?.init(this.actionButtonsContainer);
+    this.wizardController?.init(this.actionButtonsContainer);
+    this.necromancerController?.init(this.actionButtonsContainer);
+    this.rogueController?.init(this.actionButtonsContainer);
+  }
+
   initDiscs(playerStats = null) {
     if (!playerStats) {
-      this.barbarianController.rageCharges = 0; // Reset Rage charges for a new game
+      if (this.barbarianController) this.barbarianController.rageCharges = 0; // Reset Rage charges for a new game
       this.npcsKilledForRageCharge.clear(); // Reset set of NPCs that granted a charge
     }
 
@@ -357,13 +373,13 @@ export default class GameController {
         }
       }
   }
-  this.barbarianController.updateRageButtonVisibility();
-  this.barbarianController.updateEndTurnButtonVisibility();
-  this.wizardController.updateActionButtons();
-  this.wizardController.updateEndTurnButtonVisibility();
-  this.necromancerController.updateActionButtons();
-  this.necromancerController.updateEndTurnButtonVisibility();
-  this.rogueController.updateActionButtons();
+  this.barbarianController?.updateRageButtonVisibility();
+  this.barbarianController?.updateEndTurnButtonVisibility();
+  this.wizardController?.updateActionButtons();
+  this.wizardController?.updateEndTurnButtonVisibility();
+  this.necromancerController?.updateActionButtons();
+  this.necromancerController?.updateEndTurnButtonVisibility();
+  this.rogueController?.updateActionButtons();
 
   if (this.currentDisc && this.currentDisc.type === 'player') {
     const discAtStart = this.currentDisc;
@@ -405,7 +421,7 @@ export default class GameController {
     this.mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
     this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
-    this.necromancerController.handlePointerHover(event);
+    this.necromancerController?.handlePointerHover(event);
 
     // Highlight the door frame when the round is won and the door is open
     if (this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
@@ -423,7 +439,7 @@ export default class GameController {
     if (this.gameOverState.active) {
       return;
     }
-    if (this.wizardController.flameStrikeTargetingActive) {
+    if (this.wizardController?.flameStrikeTargetingActive) {
       return;
     }
     if (this.soundManager) this.soundManager.notifyUserInteraction();
@@ -460,13 +476,13 @@ export default class GameController {
         // It's a player's turn and the player character is alive
         if (discForTurn.kind === 'Wizard') {
             // Wizard's turn
-            if (this.pointerDisc && (this.pointerDisc.kind === 'Orb' || this.pointerDisc.kind === 'HealingOrb') && this.wizardController.orbs.includes(this.pointerDisc) && !this.pointerDisc.dead) {
+            if (this.pointerDisc && (this.pointerDisc.kind === 'Orb' || this.pointerDisc.kind === 'HealingOrb') && this.wizardController?.orbs?.includes(this.pointerDisc) && !this.pointerDisc.dead) {
                 // Clicked on a valid, owned orb
                 discToControl = this.pointerDisc; // Orb becomes the controlled disc
                 allowAiming = true;
             } else if (this.pointerDisc === discForTurn) { // Clicked on the Wizard
                 discToControl = discForTurn; // Wizard is the controlled disc
-                if (this.wizardController.hasMovedThisTurn) {
+                if (this.wizardController?.hasMovedThisTurn) {
                     allowAiming = false; // Wizard has already moved, cannot aim/throw Wizard again
                 } else {
                     allowAiming = true; // Wizard has not moved yet, allow aiming/throwing Wizard
@@ -480,15 +496,15 @@ export default class GameController {
         } else if (discForTurn.kind === 'Necromancer') {
             // Necromancer's turn
             if (this.pointerDisc && this.pointerDisc.kind === 'AnimatedDead' &&
-                this.necromancerController.animatedDeadDiscs.includes(this.pointerDisc) && !this.pointerDisc.dead &&
-                !this.necromancerController.movedThisTurn.has(this.pointerDisc)) {
+                this.necromancerController?.animatedDeadDiscs?.includes(this.pointerDisc) && !this.pointerDisc.dead &&
+                !this.necromancerController?.movedThisTurn?.has(this.pointerDisc)) {
                 // Clicked on a valid, owned animated dead disc that hasn't moved yet this turn
                 discToControl = this.pointerDisc;
                 allowAiming = true;
             } else if (this.pointerDisc === discForTurn) {
                 // Clicked on the Necromancer
                 discToControl = discForTurn;
-                if (this.necromancerController.hasMovedThisTurn) {
+                if (this.necromancerController?.hasMovedThisTurn) {
                     allowAiming = false; // Necromancer already moved this turn
                 } else {
                     allowAiming = true;
@@ -500,13 +516,13 @@ export default class GameController {
             }
         } else if (discForTurn.kind === 'Rogue') {
             // Rogue's turn: can throw the Rogue disc, Bomb, or RoguePotion
-            if (this.pointerDisc && this.pointerDisc.kind === 'Bomb' && this.pointerDisc === this.rogueController.bomb && !this.pointerDisc.dead) {
+            if (this.pointerDisc && this.pointerDisc.kind === 'Bomb' && this.pointerDisc === this.rogueController?.bomb && !this.pointerDisc.dead) {
                 discToControl = this.pointerDisc;
                 allowAiming = true;
-            } else if (this.pointerDisc && this.pointerDisc.kind === 'RoguePotion' && this.rogueController.potions.includes(this.pointerDisc) && !this.pointerDisc.dead) {
+            } else if (this.pointerDisc && this.pointerDisc.kind === 'RoguePotion' && this.rogueController?.potions?.includes(this.pointerDisc) && !this.pointerDisc.dead) {
                 discToControl = this.pointerDisc;
                 allowAiming = true;
-            } else if (this.rogueController.throwsRemaining <= 0) {
+            } else if (this.rogueController?.throwsRemaining <= 0) {
                 discToControl = discForTurn;
                 allowAiming = false;
             } else if (this.pointerDisc === discForTurn) {
@@ -522,7 +538,7 @@ export default class GameController {
                 discToControl = discForTurn; // This character is the controlled disc
                 if (discForTurn.hasThrown) { // Crucial check: Has this disc already been thrown this turn?
                     allowAiming = false;
-                } else if (discForTurn.kind === 'Barbarian' && this.barbarianController.hasMoved && !discForTurn.rageIsActiveForNextThrow) {
+                } else if (discForTurn.kind === 'Barbarian' && this.barbarianController?.hasMoved && !discForTurn.rageIsActiveForNextThrow) {
                     allowAiming = false; // Must activate Rage before throwing again
                 } else {
                     allowAiming = true;
@@ -692,16 +708,16 @@ export default class GameController {
 
     if (dragLength <= clickThreshold) { // It's a click/tap
       // Handle Flame Strike targeting
-      if (this.wizardController.flameStrikeTargetingActive) {
+      if (this.wizardController?.flameStrikeTargetingActive) {
         const currentDisc = this.currentTurnIndex !== -1 ? this.discs[this.currentTurnIndex] : null;
         if (currentDisc && currentDisc.kind === 'Wizard') {
-          this.wizardController.castFlameStrike(
-            this.wizardController.flameStrikeTargetPos.x,
-            this.wizardController.flameStrikeTargetPos.z,
+          this.wizardController?.castFlameStrike(
+            this.wizardController?.flameStrikeTargetPos.x,
+            this.wizardController?.flameStrikeTargetPos.z,
             currentDisc
           );
         } else {
-          this.wizardController.endFlameStrikeTargeting();
+          this.wizardController?.endFlameStrikeTargeting();
         }
         this.controls.enabled = true;
         this.controlsEnabled = true;
@@ -709,9 +725,9 @@ export default class GameController {
       }
 
       // Handle Animate Dead disc-selection mode — player clicks a corpse in the scene
-      if (this.necromancerController.selectingTarget) {
-        this.necromancerController.handleTargetClick(clickedDisc);
-        this.necromancerController.cancelTargetSelection();
+      if (this.necromancerController?.selectingTarget) {
+        this.necromancerController?.handleTargetClick(clickedDisc);
+        this.necromancerController?.cancelTargetSelection();
         if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
         this.controls.enabled = true;
         this.controlsEnabled = true;
@@ -874,7 +890,7 @@ export default class GameController {
             discBeingThrown.canDoReboundDamage = false;
             discBeingThrown.rageWasUsedThisThrow = false; // Orbs don't use this path for rebound reset
           }
-          this.barbarianController.updateRageButtonVisibility();
+          this.barbarianController?.updateRageButtonVisibility();
         }
 
         const maxSpeed = discBeingThrown.kind === 'Bomb' ? 1.8 : 1;
@@ -885,10 +901,10 @@ export default class GameController {
         if (speed < minSpeed) speed = minSpeed;
 
         if (discBeingThrown.kind === 'Barbarian') {
-          this.barbarianController.uniqueNPCHitsThisThrow.clear();
+          this.barbarianController?.uniqueNPCHitsThisThrow.clear();
         }
         if (discBeingThrown.kind === 'Rogue') {
-          this.rogueController.onNewThrow(discBeingThrown);
+          this.rogueController?.onNewThrow(discBeingThrown);
         }
         if (discBeingThrown.kind === 'Bomb') {
           // Briefly ignore Bomb<->Rogue collisions after release so the bomb
@@ -921,7 +937,7 @@ export default class GameController {
     // Called by InputHandler when Escape is pressed during a drag/aim operation.
     // InputHandler itself will set its internal isPointerDown to false.
     // GameController needs to reset its aiming-specific state.
-    this.necromancerController.cancelTargetSelection();
+    this.necromancerController?.cancelTargetSelection();
     this.pointerDisc = null;
     this.currentDisc = null; // Reset currentDisc so pointerup doesn't trigger a throw
     if (this.controls) {
@@ -984,7 +1000,7 @@ clamp(value, min, max) {
         // When an AnimatedDead disc dies here (e.g. from lava while stationary),
         // clean up its state so it reverts to a plain dead NPC and can be re-animated.
         if (disc.kind === 'AnimatedDead' && this.necromancerController) {
-          this.necromancerController.removeAnimatedDead(disc);
+          this.necromancerController?.removeAnimatedDead(disc);
         }
         // When the Necromancer dies, kill all its animated dead minions
         if (disc.kind === 'Necromancer' && this.necromancerController) {
@@ -1000,7 +1016,7 @@ clamp(value, min, max) {
               disc.setSpotlightIntensity(true);
             }
           }
-          [...this.necromancerController.animatedDeadDiscs].forEach(minion => {
+          [...(this.necromancerController?.animatedDeadDiscs ?? [])].forEach(minion => {
             if (!minion.dead) {
               minion.hitPoints = 0;
               minion.die();
@@ -1052,10 +1068,10 @@ clamp(value, min, max) {
       if (!this.roundWon) {
         this.roundWon = true;
         if (this.necromancerController) {
-          this.necromancerController.cancelCarrionFeast();
+          this.necromancerController?.cancelCarrionFeast();
         }
 
-        const necromancer = this.necromancerController.getDisc();
+        const necromancer = this.necromancerController?.getDisc();
         if (necromancer && !necromancer.dead) {
             this.necromancerController.mana = Math.min(this.necromancerController.mana + 1, 6);
             if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
@@ -1159,10 +1175,10 @@ clamp(value, min, max) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
-    this.wizardController.onLevelStart();
-    this.necromancerController.onLevelStart();
-    this.barbarianController.onLevelStart();
-    this.rogueController.onLevelStart();
+    this.wizardController?.onLevelStart();
+    this.necromancerController?.onLevelStart();
+    this.barbarianController?.onLevelStart();
+    this.rogueController?.onLevelStart();
 
     // Reload level (generates new room/obstacles)
     if (this.level) {
@@ -1176,9 +1192,9 @@ clamp(value, min, max) {
     this.initDiscs(playerStats);
 
     // 4. Reset turn-specific state
-    this.wizardController.onTurnEnd();
-    this.necromancerController.onTurnEnd();
-    this.rogueController.onTurnEnd();
+    this.wizardController?.onTurnEnd();
+    this.necromancerController?.onTurnEnd();
+    this.rogueController?.onTurnEnd();
     this.waitingForDiscToStop = false;
     this.thrownDisc = null;
     this.playerDamagedNPCsThisThrow.clear();
@@ -1226,15 +1242,15 @@ clamp(value, min, max) {
       this.uiManager.hideGameOver();
       this.updateDiscNames(); // Refresh UI list
       this.uiManager.updateCurrentTurnDiscName(this.currentDisc); // Refresh current turn display
-      this.barbarianController.updateRageButtonVisibility();
-      this.barbarianController.updateEndTurnButtonVisibility();
-      this.wizardController.updateActionButtons();
-      this.wizardController.updateEndTurnButtonVisibility();
-      this.necromancerController.updateActionButtons();
-      this.necromancerController.updateEndTurnButtonVisibility();
-      this.necromancerController.cancelTargetSelection();
-      this.necromancerController.hideTargetSelectionPopup();
-      this.rogueController.updateActionButtons();
+      this.barbarianController?.updateRageButtonVisibility();
+      this.barbarianController?.updateEndTurnButtonVisibility();
+      this.wizardController?.updateActionButtons();
+      this.wizardController?.updateEndTurnButtonVisibility();
+      this.necromancerController?.updateActionButtons();
+      this.necromancerController?.updateEndTurnButtonVisibility();
+      this.necromancerController?.cancelTargetSelection();
+      this.necromancerController?.hideTargetSelectionPopup();
+      this.rogueController?.updateActionButtons();
     }
 
     if (this.soundManager) this.soundManager.playTension(this.currentDisc.mesh.position.clone());
@@ -1252,10 +1268,10 @@ clamp(value, min, max) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
-    this.wizardController.onGameRestart();
-    this.necromancerController.onGameRestart();
-    this.barbarianController.onGameRestart();
-    this.rogueController.onGameRestart();
+    this.wizardController?.onGameRestart();
+    this.necromancerController?.onGameRestart();
+    this.barbarianController?.onGameRestart();
+    this.rogueController?.onGameRestart();
 
     if (this.lavaPools && this.lavaPools.length > 0) {
       this.lavaPools.forEach(pool => {
@@ -1305,15 +1321,15 @@ clamp(value, min, max) {
 
     this.updateDiscNames();
     this._hideDiscInfoPopup();
-    this.barbarianController.updateRageButtonVisibility();
-    this.barbarianController.updateEndTurnButtonVisibility();
-    this.wizardController.updateActionButtons();
-    this.wizardController.updateEndTurnButtonVisibility();
-    this.necromancerController.updateActionButtons();
-    this.necromancerController.updateEndTurnButtonVisibility();
-    this.necromancerController.cancelTargetSelection();
-    this.necromancerController.hideTargetSelectionPopup();
-    this.rogueController.updateActionButtons();
+    this.barbarianController?.updateRageButtonVisibility();
+    this.barbarianController?.updateEndTurnButtonVisibility();
+    this.wizardController?.updateActionButtons();
+    this.wizardController?.updateEndTurnButtonVisibility();
+    this.necromancerController?.updateActionButtons();
+    this.necromancerController?.updateEndTurnButtonVisibility();
+    this.necromancerController?.cancelTargetSelection();
+    this.necromancerController?.hideTargetSelectionPopup();
+    this.rogueController?.updateActionButtons();
 
     this.recenterCamera();
     if (this.controls) {
@@ -1352,10 +1368,11 @@ clamp(value, min, max) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
-    this.wizardController.onGameRestart();
-    this.necromancerController.onGameRestart();
-    this.barbarianController.onGameRestart();
-    this.rogueController.onGameRestart();
+    this.wizardController?.onGameRestart();
+    this.necromancerController?.onGameRestart();
+    this.barbarianController?.onGameRestart();
+    this.rogueController?.onGameRestart();
+    await this._loadControllers(this.selectedPlayerKinds);
 
     // Cleanup existing lava pools
     if (this.lavaPools && this.lavaPools.length > 0) {
@@ -1425,15 +1442,15 @@ clamp(value, min, max) {
     // 7. Update UI elements
     this.updateDiscNames();
     this._hideDiscInfoPopup();
-    this.barbarianController.updateRageButtonVisibility();
-    this.barbarianController.updateEndTurnButtonVisibility();
-    this.wizardController.updateActionButtons();
-    this.wizardController.updateEndTurnButtonVisibility();
-    this.necromancerController.updateActionButtons();
-    this.necromancerController.updateEndTurnButtonVisibility();
-    this.necromancerController.cancelTargetSelection();
-    this.necromancerController.hideTargetSelectionPopup();
-    this.rogueController.updateActionButtons();
+    this.barbarianController?.updateRageButtonVisibility();
+    this.barbarianController?.updateEndTurnButtonVisibility();
+    this.wizardController?.updateActionButtons();
+    this.wizardController?.updateEndTurnButtonVisibility();
+    this.necromancerController?.updateActionButtons();
+    this.necromancerController?.updateEndTurnButtonVisibility();
+    this.necromancerController?.cancelTargetSelection();
+    this.necromancerController?.hideTargetSelectionPopup();
+    this.rogueController?.updateActionButtons();
 
     // 8. Reset Camera Position and Zoom, and ensure camera controls are enabled
     this.recenterCamera();
@@ -1532,8 +1549,8 @@ clamp(value, min, max) {
     }
 
     // Delegate per-frame character updates (orb following, radius blast rings, etc.)
-    this.wizardController.update(deltaTime);
-    this.rogueController.update(deltaTime);
+    this.wizardController?.update(deltaTime);
+    this.rogueController?.update(deltaTime);
 
     // Animate descending turn-start beams and ring ripples
     this._updateTurnStartBeams(deltaTime);
@@ -1662,7 +1679,7 @@ disc.isCurrentlyInLavaState = true;
               // Orbs, Bombs are immune to lava damage; RoguePotion dies in lava.
               if (disc.kind !== 'Orb' && disc.kind !== 'Bomb') {
                 if (disc.kind === 'RoguePotion') {
-                  this.rogueController.onPotionDied(disc);
+                  this.rogueController?.onPotionDied(disc);
                 } else {
                   disc.takeHit(1, null); // Damage on entry
                 }
@@ -1678,10 +1695,10 @@ disc.isCurrentlyInLavaState = true;
                           this.wizardController.manaEarnedThisTurn++;
                       } else if (actor.kind === 'Rogue' || actor.kind === 'Bomb') {
                           this.rogueController.charges++;
-                          this.rogueController.updateActionButtons();
+                          this.rogueController?.updateActionButtons();
                       }
                       this.npcsKilledForRageCharge.add(disc.discName);
-                      this.barbarianController.updateRageButtonVisibility();
+                      this.barbarianController?.updateRageButtonVisibility();
                   }
               }
 
@@ -1734,13 +1751,13 @@ disc.isCurrentlyInLavaState = true;
         }
 
         if (justMovedDisc.kind === 'Wizard' || justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') {
-            await this.wizardController.onDiscStopped(justMovedDisc);
+            await this.wizardController?.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Necromancer' || justMovedDisc.kind === 'AnimatedDead') {
-            await this.necromancerController.onDiscStopped(justMovedDisc);
+            await this.necromancerController?.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Barbarian') {
-            await this.barbarianController.onDiscStopped(justMovedDisc);
+            await this.barbarianController?.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Rogue' || justMovedDisc.kind === 'Bomb' || justMovedDisc.kind === 'RoguePotion') {
-            await this.rogueController.onDiscStopped(justMovedDisc);
+            await this.rogueController?.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Fireball') {
             this.removeFireball(justMovedDisc);
             await this._proceedToNextPlayerTurn();
@@ -1761,7 +1778,7 @@ disc.isCurrentlyInLavaState = true;
   // Delegate used by Disc.updatePosition when a non-thrown AnimatedDead disc dies and stops.
   removeAnimatedDead(disc) {
     if (this.necromancerController) {
-      this.necromancerController.removeAnimatedDead(disc);
+      this.necromancerController?.removeAnimatedDead(disc);
     }
   }
 
@@ -1842,10 +1859,10 @@ disc.isCurrentlyInLavaState = true;
       return;
     }
     const previousTurnIndex = this.currentTurnIndex;
-    this.wizardController.onTurnEnd();
-    this.necromancerController.onTurnEnd(); // also calls cancelTargetSelection internally
-    this.barbarianController.onTurnEnd();
-    this.rogueController.onTurnEnd();
+    this.wizardController?.onTurnEnd();
+    this.necromancerController?.onTurnEnd(); // also calls cancelTargetSelection internally
+    this.barbarianController?.onTurnEnd();
+    this.rogueController?.onTurnEnd();
 
     // If it was the Wizard's turn, or any player's turn, we find the next player.
     // If the next turn is the Wizard's, we transfer his pending orbs.
@@ -1906,8 +1923,8 @@ disc.isCurrentlyInLavaState = true;
                 this.currentTurnIndex = -1;
                 this.logCurrentTurn();
                 this._updateSpotlights();
-                this.barbarianController.updateRageButtonVisibility();
-                this.wizardController.updateActionButtons();
+                this.barbarianController?.updateRageButtonVisibility();
+                this.wizardController?.updateActionButtons();
                 return; // Exit, game over should have caught this.
             }
         }
@@ -1922,7 +1939,7 @@ disc.isCurrentlyInLavaState = true;
     );
     if (this.level && !this.roundWon && !this.level.doorIsOpen && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
       // End of round: grant bonus charge to Rogue
-      this.rogueController.onRoundEnd();
+      this.rogueController?.onRoundEnd();
       const ringData = this.level.stepRings();
       if (ringData) {
         this.soundManager.playStoneSlide(new Vector3(0, 0, 0));
@@ -2016,13 +2033,13 @@ disc.isCurrentlyInLavaState = true;
 
     // If it's now the Wizard's turn, transfer pending mana earned and grant +1 passive mana
     if (this.currentDisc && this.currentDisc.kind === 'Wizard' && !this.currentDisc.dead) {
-        this.wizardController.applyEarnedMana();
+        this.wizardController?.applyEarnedMana();
         if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     }
 
     // If it's now the Necromancer's turn, transfer pending mana earned
     if (this.currentDisc && this.currentDisc.kind === 'Necromancer' && !this.currentDisc.dead) {
-        this.necromancerController.applyEarnedMana();
+        this.necromancerController?.applyEarnedMana();
         if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     }
 
@@ -2040,13 +2057,13 @@ disc.isCurrentlyInLavaState = true;
     if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     this.logCurrentTurn();
     this._updateSpotlights();
-    this.barbarianController.updateRageButtonVisibility();
-    this.barbarianController.updateEndTurnButtonVisibility();
-    this.wizardController.updateActionButtons();
-    this.wizardController.updateEndTurnButtonVisibility();
-    this.necromancerController.updateActionButtons();
-    this.necromancerController.updateEndTurnButtonVisibility();
-    this.rogueController.updateActionButtons();
+    this.barbarianController?.updateRageButtonVisibility();
+    this.barbarianController?.updateEndTurnButtonVisibility();
+    this.wizardController?.updateActionButtons();
+    this.wizardController?.updateEndTurnButtonVisibility();
+    this.necromancerController?.updateActionButtons();
+    this.necromancerController?.updateEndTurnButtonVisibility();
+    this.rogueController?.updateActionButtons();
     this._updateSpotlights(); // Ensure spotlights are updated after turn progression
 
     // Show descending beam + ring ripples for player turns
@@ -2460,7 +2477,7 @@ disc.isCurrentlyInLavaState = true;
 
     // Clear Barbarian-specific unique NPC hit tracking before calculating throw trajectory
     if (disc.kind === 'Barbarian') {
-      this.barbarianController.uniqueNPCHitsThisThrow.clear();
+      this.barbarianController?.uniqueNPCHitsThisThrow.clear();
     }
 
     let bestDir = idealDir;
@@ -2531,10 +2548,10 @@ disc.takeHit(1, null); // Apply 1 damage
                     this.wizardController.manaEarnedThisTurn++;
                 } else if (actor.kind === 'Rogue' || actor.kind === 'Bomb') {
                     this.rogueController.charges++;
-                    this.rogueController.updateActionButtons();
+                    this.rogueController?.updateActionButtons();
                 }
                 this.npcsKilledForRageCharge.add(disc.discName);
-                this.barbarianController.updateRageButtonVisibility();
+                this.barbarianController?.updateRageButtonVisibility();
             }
         }
 
