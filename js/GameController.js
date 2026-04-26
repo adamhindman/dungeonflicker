@@ -246,14 +246,14 @@ export default class GameController {
     // UI elements (throwInfoDiv, fpsDisplayElement, GameOverUI) are now managed by UIManager
     // Event listeners (pointerdown, pointermove, pointerup, keydown, keyup) are now managed by InputHandler
 
+    // Dynamically import and initialize only the two selected character controllers
+    await this._loadControllers(this.selectedPlayerKinds);
+
     // Generate lava pools first so disc spawning can avoid them
     this.lavaManager.generate();
 
     // Initialize discs for gameplay
     this.initDiscs();
-
-    // Dynamically import and initialize only the two selected character controllers
-    await this._loadControllers(this.selectedPlayerKinds);
 
     // Generate lava pools
     this.lavaManager.generate();

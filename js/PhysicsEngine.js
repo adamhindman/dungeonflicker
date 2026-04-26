@@ -179,14 +179,14 @@ export class PhysicsEngine {
         const d2 = collisionArray[j];
 
         // Skip collision between Wizard and his own regular Orbs while they are orbiting
-        if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && gc.wizardController.orbs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Wizard' && d1.kind === 'Orb' && gc.wizardController.orbs.includes(d1) && !d1.moving)) {
+        if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && gc.wizardController?.orbs?.includes(d2) && !d2.moving) ||
+            (d2.kind === 'Wizard' && d1.kind === 'Orb' && gc.wizardController?.orbs?.includes(d1) && !d1.moving)) {
           continue;
         }
 
         // Skip collision between Necromancer and its animated dead while they are orbiting
-        if ((d1.kind === 'Necromancer' && gc.necromancerController.animatedDeadDiscs.includes(d2) && !d2.moving) ||
-            (d2.kind === 'Necromancer' && gc.necromancerController.animatedDeadDiscs.includes(d1) && !d1.moving)) {
+        if ((d1.kind === 'Necromancer' && gc.necromancerController?.animatedDeadDiscs?.includes(d2) && !d2.moving) ||
+            (d2.kind === 'Necromancer' && gc.necromancerController?.animatedDeadDiscs?.includes(d1) && !d1.moving)) {
           continue;
         }
 
@@ -357,7 +357,7 @@ export class PhysicsEngine {
                 if (npc.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(npc.discName)) {
                   gc.wizardController.manaEarnedThisTurn += 1;
                   gc.npcsKilledForRageCharge.add(npc.discName);
-                  gc.barbarianController.updateRageButtonVisibility();
+                  gc.barbarianController?.updateRageButtonVisibility();
                   gc.wizardController.updateActionButtons();
                 }
 
@@ -417,7 +417,7 @@ export class PhysicsEngine {
                         gc.rogueController.updateActionButtons();
                       }
                       gc.npcsKilledForRageCharge.add(d2.discName);
-                      gc.barbarianController.updateRageButtonVisibility();
+                      gc.barbarianController?.updateRageButtonVisibility();
                     }
                     if (!d1.canDoReboundDamage) {
                       gc.playerDamagedNPCsThisThrow.add(d2.discName);

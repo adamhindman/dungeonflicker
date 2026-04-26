@@ -485,7 +485,7 @@ export default class UIManager {
                         chargesDiv.style.display = 'block';
                         chargesDiv.style.fontSize = '0.8em';
                         chargesDiv.style.marginTop = '4px';
-                        const charges = currentDisc.gameController.barbarianController.rageCharges;
+                        const charges = currentDisc.gameController.barbarianController?.rageCharges ?? 0;
                         chargesDiv.textContent = `Charges: ${'⚡'.repeat(charges)}`;
                         this.currentTurnDiscNameElement.appendChild(chargesDiv);
                     }
@@ -497,7 +497,7 @@ export default class UIManager {
                         manaDiv.style.display = 'block';
                         manaDiv.style.fontSize = '0.8em';
                         manaDiv.style.marginTop = '4px';
-                        manaDiv.textContent = `Mana: ${'🔵'.repeat(currentDisc.gameController.wizardController.mana)}`;
+                        manaDiv.textContent = `Mana: ${'🔵'.repeat(currentDisc.gameController.wizardController?.mana ?? 0)}`;
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 
@@ -508,7 +508,7 @@ export default class UIManager {
                         manaDiv.style.display = 'block';
                         manaDiv.style.fontSize = '0.8em';
                         manaDiv.style.marginTop = '4px';
-                        manaDiv.textContent = `Mana: ${'💀'.repeat(currentDisc.gameController.necromancerController.mana)}`;
+                        manaDiv.textContent = `Mana: ${'💀'.repeat(currentDisc.gameController.necromancerController?.mana ?? 0)}`;
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 
@@ -519,7 +519,7 @@ export default class UIManager {
                         chargesDiv.style.display = 'block';
                         chargesDiv.style.fontSize = '0.8em';
                         chargesDiv.style.marginTop = '4px';
-                        const charges = currentDisc.gameController.rogueController.charges;
+                        const charges = currentDisc.gameController.rogueController?.charges ?? 0;
                         chargesDiv.textContent = `Charges: ${'⚡'.repeat(charges)}`;
                         this.currentTurnDiscNameElement.appendChild(chargesDiv);
                     }
@@ -560,9 +560,9 @@ export default class UIManager {
         const gc = currentDisc.gameController;
         let moveUsed = !!currentDisc.hasThrown;
         if (gc && currentDisc.kind === 'Wizard') {
-            moveUsed = !!gc.wizardController.hasMovedThisTurn;
+            moveUsed = !!gc.wizardController?.hasMovedThisTurn;
         } else if (gc && currentDisc.kind === 'Necromancer') {
-            moveUsed = !!gc.necromancerController.hasMovedThisTurn;
+            moveUsed = !!gc.necromancerController?.hasMovedThisTurn;
         }
 
         this.moveStatusChipElement.textContent = moveUsed ? 'Move used' : 'Move available';
