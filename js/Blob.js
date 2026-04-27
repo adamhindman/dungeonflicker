@@ -107,6 +107,13 @@ export default class Blob extends Disc {
             }
             const index = this.gameController.discs.indexOf(corpse);
             if (index > -1) {
+                if (corpse.type === "player" && corpse.kind !== "Orb" && corpse.kind !== "HealingOrb" && corpse.kind !== "AnimatedDead" && corpse.kind !== "Bomb" && corpse.kind !== "RoguePotion") {
+                    this.gameController._blobEatenPlayerStats.push({
+                        kind: corpse.kind,
+                        hitPoints: 0,
+                        maxHitPoints: corpse._originalMaxHitPoints ?? corpse.maxHitPoints
+                    });
+                }
                 this.gameController.discs.splice(index, 1);
             }
             this.evolve();

@@ -33,6 +33,7 @@ export default class GameController {
     this.level = null;
     this.discs = [];
     this.lavaPools = []; // For storing LavaPool instances
+    this._blobEatenPlayerStats = []; // Tracks player discs eaten by blobs this level
 
     // Which player kinds were selected on the character selection screen.
     // null means all three (legacy / first-run default before selection).
@@ -1141,6 +1142,13 @@ clamp(value, min, max) {
         hitPoints: (d.dead || d.isAnimatedDead) ? 0 : d.hitPoints,
         maxHitPoints: d._originalMaxHitPoints ?? d.maxHitPoints
       }));
+    // Merge in stats for player discs eaten by blobs this level (removed from discs array)
+    for (const eaten of this._blobEatenPlayerStats) {
+      if (!playerStats.find(s => s.kind === eaten.kind)) {
+        playerStats.push(eaten);
+      }
+    }
+    this._blobEatenPlayerStats = [];
 
     const previousActingIndex = this.currentTurnIndex;
 
@@ -1267,6 +1275,7 @@ clamp(value, min, max) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
+    this._blobEatenPlayerStats = [];
     this.wizardController?.onGameRestart();
     this.necromancerController?.onGameRestart();
     this.barbarianController?.onGameRestart();
@@ -1367,6 +1376,7 @@ clamp(value, min, max) {
       this.discs.forEach(disc => disc.dispose());
     }
     this.discs = [];
+    this._blobEatenPlayerStats = [];
     this.wizardController?.onGameRestart();
     this.necromancerController?.onGameRestart();
     this.barbarianController?.onGameRestart();
