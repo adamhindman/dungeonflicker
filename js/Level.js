@@ -145,9 +145,19 @@ export default class Level {
     // rotated BoxGeometry produces inflated AABBs that create phantom collisions.
     // The radial clamp in PhysicsEngine is the authoritative outer boundary.
     const walls = Object.entries(this.walls)
-      .filter(([key, wall]) => wall !== undefined &&
-        !(this.circleRadius && key.startsWith('poly_')) &&
-        !(this.crusherConfig && key.startsWith('clip_visual')))
+      .filter(([key, wall]) => {
+        if (!wall) return false;
+        if (this.circleRadius && key.startsWith('poly_')) return false;
+        if (this.crusherConfig && key.startsWith('clip_visual')) return false;
+        // Pillar and triangle obstacles have dedicated collision in PhysicsEngine;
+        // including them here causes Box3.setFromObject to produce inflated AABBs.
+        if (key.startsWith('obstacle_')) {
+          const idx = parseInt(key.slice('obstacle_'.length));
+          const obs = this.obstacles[idx];
+          if (obs && (obs.type === 'pillar' || obs.type === 'triangle')) return false;
+        }
+        return true;
+      })
       .map(([, wall]) => wall);
     // Include the door slab for collision while the door is closed
     if (this.doorSlab && !this.doorIsOpen) {

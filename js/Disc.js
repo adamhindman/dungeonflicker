@@ -335,7 +335,8 @@ export default class Disc {
 
       // Reflect velocity along collision normal with bounce damping
       const velocityDot = this.velocity.dot(collisionNormal);
-      if (velocityDot < 0) {
+      const didBounce = velocityDot < 0;
+      if (didBounce) {
         const reflection = collisionNormal.multiplyScalar(-2 * velocityDot);
         this.velocity.add(reflection);
         this.velocity.multiplyScalar(bounceDamping);
@@ -343,7 +344,9 @@ export default class Disc {
 
       // Mark disc as moving
       this.moving = true;
-      return true;
+      // Only signal a bounce when velocity was actually reflected; returning true
+      // on every penetrating frame would double-count contacts (e.g. sneak attack).
+      return didBounce;
     }
     return false;
   }

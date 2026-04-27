@@ -75,25 +75,115 @@ export class PhysicsEngine {
           }
         }
 
-        // Circular obstacle collision for pillars and triangular columns.
-        // Box3.setFromObject on a 3-segment prism produces an asymmetric AABB
-        // that misses from certain approach angles; a 2D circle push is exact.
+        // Obstacle collision: pillars use exact circle push; triangles use
+        // proper polygon collision against the actual triangle edges + vertices.
         for (const obs of (gc.level.obstacles || [])) {
-          if (obs.type !== 'pillar' && obs.type !== 'triangle') continue;
-          const obsRadius = obs.width / 2;
-          const dx = disc.mesh.position.x - obs.x;
-          const dz = disc.mesh.position.z - obs.z;
-          const dist = Math.sqrt(dx * dx + dz * dz);
-          const minDist = disc.radius + obsRadius;
-          if (dist < minDist && dist > 0.001) {
-            const nx = dx / dist;
-            const nz = dz / dist;
-            disc.mesh.position.x = obs.x + nx * minDist;
-            disc.mesh.position.z = obs.z + nz * minDist;
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+          if (obs.type === 'pillar') {
+            const obsRadius = obs.width / 2;
+            const dx = disc.mesh.position.x - obs.x;
+            const dz = disc.mesh.position.z - obs.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+            const minDist = disc.radius + obsRadius;
+            if (dist < minDist && dist > 0.001) {
+              const nx = dx / dist;
+              const nz = dz / dist;
+              disc.mesh.position.x = obs.x + nx * minDist;
+              disc.mesh.position.z = obs.z + nz * minDist;
+              const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+              if (vDotN < 0) {
+                disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+                disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+                if (gc.soundManager && disc.velocity.length() > 0.05) {
+                  gc.soundManager.playBounce(disc.mesh.position.clone());
+                }
+                if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+                  gc.rogueController.sneakAttackBonusCount++;
+                }
+              }
+            }
+          } else if (obs.type === 'triangle') {
+            // Three.js CylinderGeometry(r,r,h,3) places vertices at angles
+            // rotY + k*2π/3 (k=0,1,2) from the +Z axis in the XZ plane (CW winding
+            // when viewed from above). Collision uses SAT against the 3 edge normals
+            // plus vertex-region handling for disc centers near corners.
+            const R = obs.width / 2; // circumradius
+            const discR = disc.radius;
+            const rotY = obs.rotY ?? 0;
+            const px = disc.mesh.position.x;
+            const pz = disc.mesh.position.z;
+
+            // Quick reject: outside circumscribed circle + discR
+            const qdx = px - obs.x, qdz = pz - obs.z;
+            if (qdx * qdx + qdz * qdz > (R + discR) * (R + discR)) continue;
+
+            // Build the 3 vertices in world space
+            const verts = [];
+            for (let k = 0; k < 3; k++) {
+              const a = rotY + k * 2 * Math.PI / 3;
+              verts.push([obs.x + R * Math.sin(a), obs.z + R * Math.cos(a)]);
+            }
+
+            // For CW winding the outward normal of edge V_k→V_{k+1} is the
+            // 90° CCW rotation of the edge direction: n = ((az-bz), (bx-ax)) / len.
+            // Signed distance is positive when disc center is outside that half-plane.
+            const sDist = [];
+            const normals = [];
+            for (let k = 0; k < 3; k++) {
+              const [ax, az] = verts[k];
+              const [bx, bz] = verts[(k + 1) % 3];
+              const edgeDx = bx - ax, edgeDz = bz - az;
+              const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
+              const nx = (az - bz) / edgeLen;
+              const nz = (bx - ax) / edgeLen;
+              normals.push([nx, nz]);
+              sDist.push((px - ax) * nx + (pz - az) * nz);
+            }
+
+            // SAT separating axis test
+            let maxDist = -Infinity, maxK = 0;
+            let separated = false;
+            for (let k = 0; k < 3; k++) {
+              if (sDist[k] > discR) { separated = true; break; }
+              if (sDist[k] > maxDist) { maxDist = sDist[k]; maxK = k; }
+            }
+            if (separated) continue;
+
+            // Determine which region the disc center is in
+            const outerEdges = sDist.reduce((acc, d, k) => { if (d > 0) acc.push(k); return acc; }, []);
+
+            let resolveNx, resolveNz, penetration;
+
+            if (outerEdges.length === 0) {
+              // Inside triangle: push through nearest edge (the one with max signed dist)
+              resolveNx = normals[maxK][0];
+              resolveNz = normals[maxK][1];
+              penetration = discR - maxDist;
+            } else if (outerEdges.length === 1) {
+              // Face region: push along that edge's outward normal
+              const k = outerEdges[0];
+              resolveNx = normals[k][0];
+              resolveNz = normals[k][1];
+              penetration = discR - sDist[k];
+            } else {
+              // Vertex region: disc is outside 2 adjacent edges, push from shared vertex
+              const e0 = outerEdges[0], e1 = outerEdges[1];
+              // Edge e goes V_e → V_{(e+1)%3}; shared vertex is (e0+1)%3 if that equals e1, else e0
+              const vertIdx = (e0 + 1) % 3 === e1 ? e1 : e0;
+              const [vx, vz] = verts[vertIdx];
+              const dvx = px - vx, dvz = pz - vz;
+              const dvDist = Math.sqrt(dvx * dvx + dvz * dvz);
+              if (dvDist < 0.001 || dvDist >= discR) continue; // no actual collision at vertex
+              resolveNx = dvx / dvDist;
+              resolveNz = dvz / dvDist;
+              penetration = discR - dvDist;
+            }
+
+            disc.mesh.position.x += resolveNx * penetration;
+            disc.mesh.position.z += resolveNz * penetration;
+            const vDotN = disc.velocity.x * resolveNx + disc.velocity.z * resolveNz;
             if (vDotN < 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * resolveNx) * bounceDamping;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * resolveNz) * bounceDamping;
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
