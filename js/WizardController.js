@@ -778,7 +778,8 @@ export class WizardController {
   // ─── Turn / level / game lifecycle ──────────────────────────────────────────
 
   applyEarnedMana() {
-    this.mana += this.manaEarnedThisTurn + 1; // +1 passive per turn
+    const passiveMana = this.gc.roundWon ? 0 : 1;
+    this.mana += this.manaEarnedThisTurn + passiveMana;
     this.manaEarnedThisTurn = 0;
   }
 
