@@ -85,7 +85,8 @@ export class NecromancerController {
     if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < ANIMATED_DEAD_MAX_COUNT) return true;
     if (this.mana >= 2 && deadPCs.length > 0) return true;
     if (this.mana >= DRAIN_LIFE_MANA_COST) return true; // can activate drain life
-    if (this.mana >= CARRION_FEAST_MANA_COST && !this.hasMovedThisTurn) return true; // can activate carrion feast
+    const hasCorpsesForFeast = this.gc.discs.some(d => d.dead && d.kind !== 'Necromancer' && !d.isDissolving);
+    if (this.mana >= CARRION_FEAST_MANA_COST && !this.hasMovedThisTurn && hasCorpsesForFeast) return true; // can activate carrion feast
     return false;
   }
 
@@ -490,7 +491,7 @@ export class NecromancerController {
     if (this.carrionFeastActive) {
       this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast: ON';
     } else {
-      this.carrionFeastButton.innerHTML = `<kbd>4</kbd> Carrion Feast (${CARRION_FEAST_MANA_COST}\u{1F480})`;
+      this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast';
     }
   }
 
@@ -525,7 +526,8 @@ export class NecromancerController {
       this.carrionFeastButton.disabled = false;
       this.carrionFeastButton.title = 'Deactivate Carrion Feast.';
     } else {
-      const canActivate = this.mana >= CARRION_FEAST_MANA_COST;
+      const hasCorpses = this.gc.discs.some(d => d.dead && d.kind !== 'Necromancer' && !d.isDissolving);
+      const canActivate = this.mana >= CARRION_FEAST_MANA_COST && hasCorpses;
       this.carrionFeastButton.style.display = canActivate ? 'inline-block' : 'none';
       this.carrionFeastButton.disabled = !canActivate || this.hasMovedThisTurn;
       if (this.hasMovedThisTurn) {

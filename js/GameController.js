@@ -1,7 +1,7 @@
 import {
   Vector3, Vector2, Scene, Raycaster, Quaternion, Line, LineBasicMaterial,
   BufferGeometry, BufferAttribute, RingGeometry, Mesh, MeshBasicMaterial,
-  Box3, CylinderGeometry, BackSide, DoubleSide,
+  Box3, CylinderGeometry, BackSide, DoubleSide, Color,
 } from "three";
 import Level from "./Level.js";
 import UIManager from "./UIManager.js";
@@ -106,6 +106,8 @@ export default class GameController {
     this.discInfoHpElement = null;
     this.discInfoDescriptionElement = null;
     this.discInfoPopupSelectedDisc = null;
+    this._hoverTimer = null;
+    this._hoverPendingDisc = null;
 
     this.discDescriptions = {
         Barbarian: "Deals heavy damage, plus extra damage per enemy hit on the same throw. Unleash your Rage to do even more damage and gain multiple attacks.",
@@ -433,6 +435,26 @@ export default class GameController {
     } else if (this.level) {
       this.level.setDoorHovered(false);
     }
+
+    // Show disc-info popup after hovering a disc for 500 ms.
+    if (this.discs && this.raycaster && this.camera) {
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      let hoveredDisc = null;
+      for (const disc of this.discs) {
+        if (!disc.mesh) continue;
+        const hits = this.raycaster.intersectObject(disc.mesh, true);
+        if (hits.length > 0) { hoveredDisc = disc; break; }
+      }
+      if (hoveredDisc !== this._hoverPendingDisc) {
+        clearTimeout(this._hoverTimer);
+        this._hoverPendingDisc = hoveredDisc;
+        if (hoveredDisc) {
+          this._hoverTimer = setTimeout(() => { this._showDiscInfoPopup(hoveredDisc); }, 320);
+        } else {
+          this._hideDiscInfoPopup();
+        }
+      }
+    }
   }
 
   handlePointerDownInteraction(event, initialPointerDownPos) {
@@ -735,35 +757,12 @@ export default class GameController {
       }
 
       if (clickedDisc) {
-        // Clicked on a disc
-        if (this.discInfoPopupSelectedDisc === clickedDisc) {
-          this._hideDiscInfoPopup();
-        } else {
-          this._showDiscInfoPopup(clickedDisc);
-        }
         // Common cleanup for click interaction on a disc
         if (this.uiManager) this.uiManager.updateThrowInfo("", false);
         if (this.throwDirectionLine) this.throwDirectionLine.visible = false;
-        this.controls.enabled = true; // Ensure OrbitControls are re-enabled
-        this.controlsEnabled = true; // Reset our custom state flag (camera controls active)
-        // We return immediately, so no throw can happen — no need to null currentDisc.
-        return; // Click handled, do not proceed to throw logic
-      } else {
-        // Clicked on empty space (not on a disc)
-        if (this.discInfoPopupSelectedDisc && this.discInfoPopupElement) {
-            let targetElement = event.target;
-            let isClickInsidePopup = false;
-            while (targetElement != null) {
-                if (targetElement === this.discInfoPopupElement) {
-                    isClickInsidePopup = true;
-                    break;
-                }
-                targetElement = targetElement.parentElement;
-            }
-            if (!isClickInsidePopup) {
-                 this._hideDiscInfoPopup();
-            }
-        }
+        this.controls.enabled = true;
+        this.controlsEnabled = true;
+        return;
       }
     } else {
       // This block executes if dragLength > clickThreshold
@@ -1528,7 +1527,8 @@ clamp(value, min, max) {
                   // Textured top-face planes should stay white so the texture renders correctly.
                   child.material.color.set(child.material.map ? 0xffffff : animColor);
                 } else if (child.material.color) {
-                  child.material.color.set(child.material.color.getHex());
+                  // Reset textured faces to white so tints (e.g. low-HP pulse) clear when no longer active.
+                  child.material.color.set(child.material.map ? 0xffffff : child.material.color.getHex());
                 }
                 child.material.opacity = 0.9;
                 child.material.transparent = true;
@@ -1716,6 +1716,22 @@ disc.isCurrentlyInLavaState = true;
       });
 
     }
+
+    // Low-HP warning: tint NPC discs red when at 1 HP.
+    const _lowHpRed = new Color(0xff2200);
+    this.discs.forEach(disc => {
+      if (!disc.lowHpPulse || disc.dead || disc.isDissolving) return;
+      if (disc.mesh.isGroup) {
+        disc.mesh.children.forEach(child => {
+          if (!child.material) return;
+          const base = new Color(child.material.map ? 0xffffff : disc.initialColor);
+          child.material.color.copy(base).lerp(_lowHpRed, 0.75);
+        });
+      } else {
+        const base = new Color(disc.initialColor);
+        disc.mesh.material.color.copy(base).lerp(_lowHpRed, 0.75);
+      }
+    });
 
     // Check room-clear state every frame after physics/lava damage so the portal
     // timer starts when the last NPC dies, not when the current round advances.

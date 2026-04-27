@@ -275,21 +275,21 @@ export default class Level {
 
   /** Shared lighting setup used by both room shapes. */
   _addLighting() {
-    const ambientLight = new AmbientLight(0xffffff, 0);
-    this.scene.add(ambientLight);
+    this._ambientLight = new AmbientLight(0xffffff, 0);
+    this.scene.add(this._ambientLight);
 
-    const directionalLight = new DirectionalLight(0xffffff, 0.2);
-    directionalLight.position.set(10, 20, 10);
-    directionalLight.castShadow = true;
-    directionalLight.shadow.mapSize.width = 512;
-    directionalLight.shadow.mapSize.height = 512;
-    directionalLight.shadow.camera.left  = -40;
-    directionalLight.shadow.camera.right =  40;
-    directionalLight.shadow.camera.top   =  40;
-    directionalLight.shadow.camera.bottom = -40;
-    directionalLight.shadow.camera.near  = 0.1;
-    directionalLight.shadow.camera.far   = 100;
-    this.scene.add(directionalLight);
+    this._directionalLight = new DirectionalLight(0xffffff, 0.2);
+    this._directionalLight.position.set(10, 20, 10);
+    this._directionalLight.castShadow = true;
+    this._directionalLight.shadow.mapSize.width = 512;
+    this._directionalLight.shadow.mapSize.height = 512;
+    this._directionalLight.shadow.camera.left  = -40;
+    this._directionalLight.shadow.camera.right =  40;
+    this._directionalLight.shadow.camera.top   =  40;
+    this._directionalLight.shadow.camera.bottom = -40;
+    this._directionalLight.shadow.camera.near  = 0.1;
+    this._directionalLight.shadow.camera.far   = 100;
+    this.scene.add(this._directionalLight);
   }
 
   /**
@@ -905,6 +905,14 @@ export default class Level {
   }
 
   unload() {
+    if (this._ambientLight) {
+      this.scene.remove(this._ambientLight);
+      this._ambientLight = null;
+    }
+    if (this._directionalLight) {
+      this.scene.remove(this._directionalLight);
+      this._directionalLight = null;
+    }
     this.obstacles = [];
     if (this.floor) {
       this.scene.remove(this.floor);
