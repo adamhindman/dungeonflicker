@@ -115,7 +115,7 @@ export default class GameController {
         Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
         Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
-        FireElemental: "A creature of living flame that can hurls fireballs a distance.",
+        FireElemental: "A creature of living flame that can hurl fireballs from a distance.",
         Warden: "A massive metal bully. Hard to move, and hard to kill.",
         Blob: "A gelatinous cube that consumes dead bodies. Starts small and agile, grows stronger and slower with each victim.",
         Rogue: "A man with a criminal record and a bag of grenades.",
