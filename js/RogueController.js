@@ -403,6 +403,9 @@ export class RogueController {
     this.isSneakAttackThrow = false;
     this.sneakAttackPending = false;
     this.sneakAttackBonusCount = 0;
+    [this.bombButton, this.sneakAttackButton, this.potionButton, this.endTurnButton].forEach(btn => {
+      if (btn) btn.style.display = 'none';
+    });
   }
 
   onRoundEnd() {

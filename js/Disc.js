@@ -255,7 +255,6 @@ export default class Disc {
     this.hasThrown = false;
     this.hasCausedDamage = false;
     this.animatedDeadRing = null;
-    this.lowHpPulse = false;
   }
 
   updatePosition() {
@@ -395,7 +394,6 @@ export default class Disc {
   revive(hp) {
     if (!this.dead) return;
     this.dead = false;
-    this.lowHpPulse = false;
     this.hitPoints = hp;
     this.lastHitPoints = hp;
     this.hasThrown = false;
@@ -461,10 +459,6 @@ export default class Disc {
       this.gameController.uiManager.showFloatingText(this, actualDamage, false);
     }
     this.lastHitPoints = this.hitPoints;
-    const noHpPulseKinds = ['Orb', 'HealingOrb', 'Fireball', 'Bomb', 'RoguePotion', 'AnimatedDead'];
-    if (this.type !== 'PC' && !noHpPulseKinds.includes(this.kind)) {
-      this.lowHpPulse = this.hitPoints > 0 && this.hitPoints <= 1;
-    }
 
     // If an orb itself is reduced to 0 HP (e.g. hit directly), it should disappear
     if ((this.kind === 'Orb' || this.kind === 'HealingOrb') && this.hitPoints <= 0 && oldHP > 0) {
@@ -490,7 +484,6 @@ export default class Disc {
       this.gameController.uiManager.showFloatingText(this, actualHealing, true);
     }
     this.lastHitPoints = this.hitPoints;
-    if (this.hitPoints > 1) this.lowHpPulse = false;
   }
 
   // Handle disc death: disable further throws, make disc gray and opaque
@@ -499,7 +492,6 @@ export default class Disc {
       return;
     }
     this.dead = true;
-    this.lowHpPulse = false;
     // Make the disc gray and opaque
     if (this.mesh.isGroup) {
       // Handle group structure (disc with texture)

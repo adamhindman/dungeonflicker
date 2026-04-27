@@ -1717,10 +1717,11 @@ disc.isCurrentlyInLavaState = true;
 
     }
 
-    // Low-HP warning: tint NPC discs red when at 1 HP.
+    // Low-HP warning: tint NPC discs red when at exactly 1 HP (derived live, never stale).
     const _lowHpRed = new Color(0xff2200);
     this.discs.forEach(disc => {
-      if (!disc.lowHpPulse || disc.dead || disc.isDissolving) return;
+      const shouldTint = disc.type === 'NPC' && disc.hitPoints === 1 && !disc.dead && !disc.isDissolving;
+      if (!shouldTint) return;
       if (disc.mesh.isGroup) {
         disc.mesh.children.forEach(child => {
           if (!child.material) return;
