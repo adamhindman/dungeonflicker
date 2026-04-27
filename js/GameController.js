@@ -2253,10 +2253,11 @@ disc.isCurrentlyInLavaState = true;
 
     // Special targeting for FireElemental:
     //   - Within SELF_THROW_RANGE of a PC → throw itself (fall through)
-    //   - Outside range + LOS → throw a fireball
-    //   - Outside range + no LOS → fall through to move closer
+    //   - Outside SELF_THROW_RANGE but within MAX_FIREBALL_RANGE + LOS → throw a fireball
+    //   - Outside MAX_FIREBALL_RANGE, or no LOS → fall through to move closer
     if (disc.kind === 'FireElemental') {
       const SELF_THROW_RANGE = 10;
+      const MAX_FIREBALL_RANGE = 22;
 
       const alivePlayers = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead);
       if (alivePlayers.length === 0) return;
@@ -2268,7 +2269,7 @@ disc.isCurrentlyInLavaState = true;
         if (d < minDist) { minDist = d; target = alivePlayers[i]; }
       }
 
-      if (minDist > SELF_THROW_RANGE) {
+      if (minDist > SELF_THROW_RANGE && minDist <= MAX_FIREBALL_RANGE) {
         const fromPos = disc.mesh.position.clone();
         const toPos = target.mesh.position.clone();
 

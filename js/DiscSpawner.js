@@ -388,26 +388,37 @@ export class DiscSpawner {
       color: NPC_HEX_COLORS[index % NPC_HEX_COLORS.length],
     }));
 
+    const getNpcSpawnRadius = (npc) => {
+      if (npc.kind === 'Blob') return 1 + ((npc.startingLevel ?? 1) - 1) * 0.5;
+      if (npc.kind === 'Warden') return 2.5;
+      return 1.0; // Skeleton, FireElemental
+    };
+
     const npcDiscs = [];
     // AI AGENT: Do not modify the following parameters unless explicitly instructed.
     let npcIdx = 0;
     for (const npc of npcData) {
+      const npcRadius = getNpcSpawnRadius(npc);
+      // minDistance: enough that this disc's edge clears all previously placed discs
+      // (existing positions may have radius up to 2.5, so npcRadius + 3 gives a safe buffer).
+      const minDistance = Math.max(4, npcRadius + 3);
+
       let position;
       if (isBullseyeLevel) {
         // First 4 NPCs on the middle ring (r 8–16), remaining on the outer ring (r 16–22).
         position = npcIdx < 4
-          ? generateBullseyeRingPos(8, 16, 1.5, existingPositions)
-          : generateBullseyeRingPos(16, 22, 1.5, existingPositions);
+          ? generateBullseyeRingPos(8, 16, npcRadius, existingPositions, minDistance)
+          : generateBullseyeRingPos(16, 22, npcRadius, existingPositions, minDistance);
       } else if (isHexLevel) {
-        position = generateOuterRingPosition(1.5, existingPositions);
+        position = generateOuterRingPosition(npcRadius, existingPositions, minDistance);
       } else if (isDonutLevel) {
-        position = generateDonutRingPosition(1.5, existingPositions);
+        position = generateDonutRingPosition(npcRadius, existingPositions, minDistance);
       } else {
-        position = generateRandomPosition(1.5, existingPositions);
+        position = generateRandomPosition(npcRadius, existingPositions, minDistance);
       }
       npcIdx++;
 
-      if (!position) position = generateRandomPosition(1.5, existingPositions);
+      if (!position) position = generateRandomPosition(npcRadius, existingPositions, minDistance);
       const finalX = position ? position.x : (Math.random() - 0.5) * gc.level.fieldWidth  * 0.7;
       const finalZ = position ? position.z : (Math.random() - 0.5) * gc.level.fieldDepth  * 0.7;
 

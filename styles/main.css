@@ -373,3 +373,15 @@ button kbd {
     background: rgba(255, 255, 255, 0.9);
 }
 
+
+#fps-counter {
+    position: fixed;
+    bottom: 8px;
+    left: 8px;
+    color: white;
+    font-size: 11px;
+    font-family: monospace;
+    opacity: 0.5;
+    pointer-events: none;
+    z-index: 9999;
+}

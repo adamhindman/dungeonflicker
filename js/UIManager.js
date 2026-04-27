@@ -5,9 +5,6 @@ export default class UIManager {
         this.focusCameraOnDiscCallback = focusCameraOnDiscCallback;
         this.rageButtonElement = document.getElementById("rage-button");
         this.fpsDisplayElement = document.getElementById("fps-counter");
-        if (this.fpsDisplayElement) {
-            this.fpsDisplayElement.style.display = 'none'; // Hidden by default
-        }
 
         this.powersAreaElement = document.getElementById("powers-area");
         if (this.powersAreaElement) {
