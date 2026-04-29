@@ -150,6 +150,11 @@ export default class InputHandler {
                     this.gameController.recenterCamera();
                 }
                 break;
+            case 'g':
+                if (this.gameController.toggleGodsEye) {
+                    this.gameController.toggleGodsEye();
+                }
+                break;
             case 'c':
                 if (this.gameController.uiManager) {
                     this.gameController.uiManager.toggleCameraControlsMenu();

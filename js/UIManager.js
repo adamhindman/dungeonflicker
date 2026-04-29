@@ -280,7 +280,8 @@ export default class UIManager {
 
         const menu = document.createElement('div');
         menu.id = 'camera-controls-menu';
-        menu.innerHTML = `<ul>
+      menu.innerHTML = `<ul>
+            <li><kbd>G</kbd> God's Eye View (toggle)
             <li><kbd>R</kbd> Recenter</li>
             <li><kbd>Q</kbd>/<kbd>E</kbd> Rotate</li>
             <li><kbd>A</kbd>/<kbd>D</kbd> Pan</li>

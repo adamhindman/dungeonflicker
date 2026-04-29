@@ -160,6 +160,10 @@ export default class GameController {
     this.cameraController.recenterCamera();
   }
 
+  toggleGodsEye() {
+    this.cameraController.toggleGodsEye(this.level);
+  }
+
   focusCameraOnDisc(discName) {
     const disc = this.discs.find(d => d.discName === discName);
     if (disc) this.cameraController.focusCameraOnDisc(disc);
