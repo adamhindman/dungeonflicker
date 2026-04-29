@@ -161,7 +161,13 @@ export default class GameController {
   }
 
   toggleGodsEye() {
+    const entering = !this.cameraController.godsEyeActive;
     this.cameraController.toggleGodsEye(this.level);
+    if (entering) {
+      this.soundManager.playGodsEyeIn();
+    } else {
+      this.soundManager.playGodsEyeOut();
+    }
   }
 
   focusCameraOnDisc(discName) {

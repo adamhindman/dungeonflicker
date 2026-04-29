@@ -78,6 +78,8 @@ export class SoundManager {
     this.gameOverBuffer = null;
     this.fireballCastBuffer = null;
     this.fireballHitBuffer = null;
+    this.godsEyeInBuffer = null;
+    this.godsEyeOutBuffer = null;
     this.musicBuffer = null;
     this._musicAudio = null;
     this._musicPending = false;
@@ -159,6 +161,9 @@ export class SoundManager {
     load('/sounds/atmosphere/background-loop.mp3').then(music => {
       this.musicBuffer = music || null;
     });
+
+    load('/sounds/menu/zoom-in.mp3').then(buf => { this.godsEyeInBuffer = buf || null; });
+    load('/sounds/menu/zoom-out.mp3').then(buf => { this.godsEyeOutBuffer = buf || null; });
   }
 
   _play(buffers, position, volume = 1.0) {
@@ -304,6 +309,26 @@ export class SoundManager {
     const sound = new Audio(this.listener);
     sound.setBuffer(this.menuOpenBuffer);
     sound.setVolume(1.0);
+    sound.play();
+  }
+
+  playGodsEyeIn() {
+    if (!this.godsEyeInBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+    const sound = new Audio(this.listener);
+    sound.setBuffer(this.godsEyeInBuffer);
+    sound.setVolume(0.25);
+    sound.play();
+  }
+
+  playGodsEyeOut() {
+    if (!this.godsEyeOutBuffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+    const sound = new Audio(this.listener);
+    sound.setBuffer(this.godsEyeOutBuffer);
+    sound.setVolume(0.25);
     sound.play();
   }
 
