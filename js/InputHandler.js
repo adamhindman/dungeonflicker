@@ -81,6 +81,9 @@ export default class InputHandler {
         if (event._handledByInputHandler) return;
         event._handledByInputHandler = true;
 
+        const tag = event.target && event.target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
         const key = (event.key || '').toLowerCase();
         // console.log("InputHandler: KeyDown detected - key:", key, "original event.key:", event.key); // DETAILED DEBUG
 
