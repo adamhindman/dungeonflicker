@@ -297,9 +297,9 @@ export class PhysicsEngine {
           continue;
         }
 
-        // Fireballs pass through NPCs (including their caster), AnimatedDead, and dead discs
-        if ((d1.kind === 'Fireball' && (d2.type === 'NPC' || d2.kind === 'AnimatedDead' || d2.dead)) ||
-            (d2.kind === 'Fireball' && (d1.type === 'NPC' || d1.kind === 'AnimatedDead' || d1.dead))) {
+        // Fireballs pass through their caster, AnimatedDead, and dead discs; they deflect off other NPCs
+        if ((d1.kind === 'Fireball' && (d2 === d1.casterDisc || d2.kind === 'AnimatedDead' || d2.dead)) ||
+            (d2.kind === 'Fireball' && (d1 === d2.casterDisc || d1.kind === 'AnimatedDead' || d1.dead))) {
           continue;
         }
 

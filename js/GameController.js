@@ -1697,7 +1697,7 @@ disc.isCurrentlyInLavaState = true;
 
               // Apply lethal damage (or specific lava effect)
               // Orbs, Bombs are immune to lava damage; RoguePotion dies in lava.
-              if (disc.kind !== 'Orb' && disc.kind !== 'Bomb') {
+              if (disc.kind !== 'Orb' && disc.kind !== 'Bomb' && disc.kind !== 'Fireball') {
                 if (disc.kind === 'RoguePotion') {
                   this.rogueController?.onPotionDied(disc);
                 } else {
@@ -2354,6 +2354,7 @@ disc.isCurrentlyInLavaState = true;
             /* description: */ null
           );
 
+          fireball.casterDisc = disc;
           const FIREBALL_SPEED = 0.6;
           fireball.velocity.set(dir.x * FIREBALL_SPEED, 0, dir.z * FIREBALL_SPEED);
           fireball.moving = true;
