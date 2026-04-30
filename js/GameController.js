@@ -3,6 +3,10 @@ import {
   BufferGeometry, BufferAttribute, RingGeometry, Mesh, MeshBasicMaterial,
   Box3, CylinderGeometry, BackSide, DoubleSide, Color,
 } from "three";
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { OutlinePass } from 'three/examples/jsm/postprocessing/OutlinePass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import Level from "./Level.js";
 import UIManager from "./UIManager.js";
 import InputHandler from './InputHandler.js';
@@ -86,6 +90,8 @@ export default class GameController {
     this.levelTransitionInProgress = false;
 
     this.thrownDisc = null;
+    this.composer = null;
+    this.outlinePass = null;
 
     // Character controllers — null until character selection; loaded via _loadControllers()
     this.barbarianController = null;
@@ -146,6 +152,16 @@ export default class GameController {
     });
 
     this._currentDisc = value;
+
+    if (this.outlinePass) {
+      if (value && !value.dead) {
+        this.outlinePass.selectedObjects = [value.baseMesh];
+        this.outlinePass.visibleEdgeColor.setHex(value.initialColor);
+      } else {
+        this.outlinePass.selectedObjects = [];
+      }
+    }
+
     if (this.uiManager) {
       this.uiManager.updateCurrentTurnDiscName(this._currentDisc);
       this.uiManager.updateDiscNames(this.discs, this._currentDisc); // Update the disc list (turn order)
@@ -186,6 +202,20 @@ export default class GameController {
     this.camera   = this.cameraController.camera;
     this.renderer = this.cameraController.renderer;
     this.controls = this.cameraController.controls;
+
+    this.composer = new EffectComposer(this.renderer);
+    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    this.outlinePass = new OutlinePass(
+      new Vector2(window.innerWidth, window.innerHeight),
+      this.scene,
+      this.camera
+    );
+    this.outlinePass.edgeStrength = 4;
+    this.outlinePass.edgeThickness = 1;
+    this.outlinePass.edgeGlow = 0;
+    this.outlinePass.pulsePeriod = 3;
+    this.composer.addPass(this.outlinePass);
+    this.composer.addPass(new OutputPass());
 
     this.soundManager.init();
     this.soundManager.whenReady(() => { this.soundManager.startMusic(); });
@@ -965,6 +995,9 @@ export default class GameController {
 
   onWindowResize() {
     this.cameraController.onWindowResize();
+    if (this.composer) {
+      this.composer.setSize(window.innerWidth, window.innerHeight);
+    }
 
     if (this.level) {
       this.discs.forEach((disc) => {
@@ -1761,7 +1794,9 @@ disc.isCurrentlyInLavaState = true;
     }
 
     // Render the scene
-    if (this.renderer) {
+    if (this.composer) {
+      this.composer.render();
+    } else if (this.renderer) {
       this.renderer.render(this.scene, this.camera);
     }
 

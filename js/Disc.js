@@ -183,6 +183,7 @@ export default class Disc {
       );
       baseMesh.castShadow = true;
       baseMesh.receiveShadow = true;
+      this.baseMesh = baseMesh;
       this.mesh.add(baseMesh);
 
       // Load texture with error handling and Chrome compatibility
@@ -222,6 +223,7 @@ export default class Disc {
           transparent: true,
         })
       );
+      this.baseMesh = this.mesh;
       this.mesh.castShadow = true;
       this.mesh.receiveShadow = true;
     }
