@@ -1,5 +1,7 @@
 # dungeonflicker
 
+**[Play it live at dungeonflicker.netlify.app](https://dungeonflicker.netlify.app/)**
+
 *This game, including the art and this README, was proudly 100% vibe coded by a combination of models.*
 
 ## Description
