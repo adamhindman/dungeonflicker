@@ -349,7 +349,7 @@ export class DiscSpawner {
       /* discName: */ "Rogue",
       /* type: */ "player",
       /* kind: */ "Rogue",
-      /* hitPoints: */ 4,
+      /* hitPoints: */ 3,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/rogue-nobg.png",
       /* canDoReboundDamage: */ false,

@@ -224,11 +224,15 @@ export class RogueController {
     this.gc.discs.forEach(disc => {
       if (disc === this.bomb || disc.dead) return;
       if (disc.kind === 'RoguePotion') return;
+      if (!disc.mesh) return;
       const dx = disc.mesh.position.x - bombPos.x;
       const dz = disc.mesh.position.z - bombPos.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
-      const effectiveBlastRadius = EXPLODE_RADIUS + (disc.radius || 0);
-      if (dist <= effectiveBlastRadius) {
+      if (!Number.isFinite(dist)) return;
+      // Use edge-distance so large discs are only affected when their body is
+      // actually inside the blast radius.
+      const edgeDist = Math.max(0, dist - (disc.radius || 0));
+      if (edgeDist <= EXPLODE_RADIUS) {
         const wasAliveNpc = disc.type === 'NPC' && disc.hitPoints > 0 && !disc.dead;
         disc.takeHit(EXPLODE_DAMAGE, this.bomb);
         if (wasAliveNpc && disc.hitPoints <= 0 && !this.gc.npcsKilledForRageCharge.has(disc.discName)) {
@@ -236,10 +240,10 @@ export class RogueController {
           chargesEarnedFromBombKills++;
         }
         if (dist > 0) {
-          const force = EXPLODE_FORCE * Math.max(0, 1 - dist / effectiveBlastRadius);
+          const force = EXPLODE_FORCE * Math.max(0, 1 - edgeDist / EXPLODE_RADIUS);
           disc.velocity.x += (dx / dist) * force;
           disc.velocity.z += (dz / dist) * force;
-          disc.moving = true;
+          if (force > 0.0001) disc.moving = true;
         }
       }
     });

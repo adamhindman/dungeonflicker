@@ -561,6 +561,12 @@ export default class UIManager {
             moveUsed = !!gc.wizardController?.hasMovedThisTurn;
         } else if (gc && currentDisc.kind === 'Necromancer') {
             moveUsed = !!gc.necromancerController?.hasMovedThisTurn;
+        } else if (gc && currentDisc.kind === 'Barbarian') {
+            // Base Barbarian move is spent after first throw; Rage availability should not flip this back.
+            moveUsed = !!gc.barbarianController?.hasMoved;
+        } else if (gc && currentDisc.kind === 'Rogue') {
+            // Rogue has two base moves; powers/sub-discs should not count as move availability.
+            moveUsed = (gc.rogueController?.throwsRemaining ?? 0) <= 0;
         }
 
         this.moveStatusChipElement.textContent = moveUsed ? 'Move used' : 'Move available';

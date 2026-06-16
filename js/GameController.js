@@ -154,7 +154,15 @@ export default class GameController {
     this._currentDisc = value;
 
     if (this.outlinePass) {
-      if (value && !value.dead) {
+      const isPlayerCharacter = !!(value &&
+        value.type === 'player' &&
+        value.kind !== 'Orb' &&
+        value.kind !== 'HealingOrb' &&
+        value.kind !== 'AnimatedDead' &&
+        value.kind !== 'Bomb' &&
+        value.kind !== 'RoguePotion' &&
+        value.kind !== 'Fireball');
+      if (isPlayerCharacter && !value.dead) {
         this.outlinePass.selectedObjects = [value.baseMesh];
         this.outlinePass.visibleEdgeColor.setHex(value.initialColor);
       } else {
@@ -1244,6 +1252,7 @@ clamp(value, min, max) {
     // 4. Reset turn-specific state
     this.wizardController?.onTurnEnd();
     this.necromancerController?.onTurnEnd();
+    this.barbarianController?.onTurnEnd();
     this.rogueController?.onTurnEnd();
     this.waitingForDiscToStop = false;
     this.thrownDisc = null;
@@ -1729,8 +1738,8 @@ disc.isCurrentlyInLavaState = true;
 
 
               // Apply lethal damage (or specific lava effect)
-              // Orbs, Bombs are immune to lava damage; RoguePotion dies in lava.
-              if (disc.kind !== 'Orb' && disc.kind !== 'Bomb' && disc.kind !== 'Fireball') {
+              // Orbs, Bombs, Fireballs, and Fire Elementals are immune; RoguePotion dies in lava.
+              if (disc.kind !== 'Orb' && disc.kind !== 'Bomb' && disc.kind !== 'Fireball' && disc.kind !== 'FireElemental') {
                 if (disc.kind === 'RoguePotion') {
                   this.rogueController?.onPotionDied(disc);
                 } else {
