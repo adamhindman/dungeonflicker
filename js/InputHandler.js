@@ -195,7 +195,8 @@ export default class InputHandler {
             case '4':
             case '5':
             case '6':
-            case '7': {
+            case '7':
+            case '8': {
                 // Numbered keys = action/spell buttons (6+ are Sanctuary items).
                 // Prefer a button with a matching data-shortcut attribute (stable regardless of
                 // which other buttons are visible). Fall back to position-based selection for

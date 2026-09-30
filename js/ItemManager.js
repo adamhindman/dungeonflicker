@@ -9,6 +9,8 @@ import {
   AdditiveBlending, BackSide, Box3, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial,
   Plane, TorusGeometry, Vector3,
 } from 'three';
+import Disc from './Disc.js';
+import { KNIFE_BLADE_NARROWING, KNIFE_BLADE_THICKNESS, KNIFE_STEEL, makeKnifeBlade } from './ItemModels.js';
 import { getResource, formatAmount, isMainPC } from './PartyResources.js';
 
 export const GHOST_OPACITY = 0.55;
@@ -38,10 +40,24 @@ export const ITEMS = {
       'start of each of your turns while it stays on. Turning it off is free; it switches ' +
       'off by itself when you run out of mana or charges.',
   },
+  throwingKnife: {
+    name: 'Throwing Knife',
+    cost: 3,
+    damage: 1,
+    color: 0x7dff1f, // acid green
+    model: 'knife',
+    description: 'Ready the knife beside you, then flick it at an enemy for 1 damage. One throw per ' +
+      'turn, on top of your normal move. It can\'t be destroyed and enemies pass over it; move ' +
+      'over it to pick it back up. It returns to you when you leave the room.',
+  },
 };
 
 const WARP_RING_KEY = '6';
 const GHOST_RING_KEY = '7';
+const KNIFE_KEY = '8';
+
+const KNIFE_RADIUS = 0.45;        // collision size (the blade's point reaches a little further)
+const KNIFE_READY_DISTANCE = 2;   // how far from its owner a readied knife waits
 
 // Teleport beams: same shape as the turn-start beam (tall, open, drawn from the
 // inside) plus a bright additive core. Timings in seconds.
@@ -67,6 +83,10 @@ export class ItemManager {
     this._buttonStateKey = '';
     this.warpRingButton = null;
     this.ghostRingButton = null;
+    this.knifeButton = null;
+    this._knives = {};               // kind → { disc, landed } while the knife is out of its owner's hand
+    this._knifeThrownBy = new Set(); // kinds that have thrown their knife this turn
+    this._turnHeldForKnife = false;  // an automatic turn end is waiting on a readied knife
   }
 
   init(actionButtonsContainer) {
@@ -74,6 +94,8 @@ export class ItemManager {
     this.warpRingButton.addEventListener('click', () => this.startTeleportTargeting());
     this.ghostRingButton = this._createButton(actionButtonsContainer, 'ghost-ring-button', GHOST_RING_KEY);
     this.ghostRingButton.addEventListener('click', () => this.toggleGhostRing());
+    this.knifeButton = this._createButton(actionButtonsContainer, 'knife-button', KNIFE_KEY);
+    this.knifeButton.addEventListener('click', () => this.toggleKnife());
   }
 
   /**
@@ -83,7 +105,7 @@ export class ItemManager {
    */
   placeButtons(container) {
     if (!container) return;
-    container.append(this.warpRingButton, this.ghostRingButton);
+    container.append(this.warpRingButton, this.ghostRingButton, this.knifeButton);
     const endTurnButtons = [...container.querySelectorAll('button')].filter(b => b.id.includes('end-turn'));
     container.append(...endTurnButtons);
   }
@@ -103,13 +125,20 @@ export class ItemManager {
     this.onLevelUnload();
   }
 
-  /** Cancels targeting and in-flight effects. Call before the level unloads. */
+  /**
+   * Cancels targeting and in-flight effects, and returns every knife to its
+   * owner's hand (the level disposes the knife discs with the rest).
+   * Call before the level unloads.
+   */
   onLevelUnload() {
     this.cancelTeleportTargeting();
     if (this._teleport) {
       this._teleport.pillars.forEach(p => this._disposeMesh(p));
       this._teleport = null;
     }
+    this._knives = {};
+    this._knifeThrownBy.clear();
+    this._turnHeldForKnife = false;
   }
 
   getInventory(kind) {
@@ -146,6 +175,7 @@ export class ItemManager {
   update(deltaTime) {
     this._updateTeleportTargeting();
     this._updateTeleportEffect(deltaTime);
+    this._updateKnives();
     this._updateButtons();
   }
 
@@ -178,8 +208,14 @@ export class ItemManager {
     let ringBlocker = null;
     if (hasRing && !busy) ringBlocker = ghost ? this._ghostOffBlocker(disc) : this._ghostOnBlocker(disc);
 
+    const hasKnife = !!(inv && inv.throwingKnife);
+    const knifeOut = disc ? this._knives[disc.kind] : null;
+    const knifeReady = !!(knifeOut && !knifeOut.landed);
+    const knifeBlocker = hasKnife && !knifeReady ? this._knifeBlocker(disc) : null;
+
     // Only touch the DOM when something changed.
-    const key = [hasWarp, warpCost, warpBlocker, hasRing, ghost, busy, ringBlocker].join('|');
+    const key = [hasWarp, warpCost, warpBlocker, hasRing, ghost, busy, ringBlocker,
+      hasKnife, knifeReady, knifeBlocker].join('|');
     if (key === this._buttonStateKey) return;
     this._buttonStateKey = key;
 
@@ -191,6 +227,11 @@ export class ItemManager {
       ringBlocker || (ghost
         ? 'Turn off the Ghost Ring.'
         : `Turn on the Ghost Ring (costs 1 HP and ${res ? formatAmount(res, 1) : '1 mana'}, then the same each turn).`));
+    this._setButton(this.knifeButton, hasKnife, busy || !!knifeBlocker,
+      `<kbd>${KNIFE_KEY}</kbd> ${knifeReady ? 'Put Away Knife' : 'Ready Knife'}`,
+      knifeBlocker || (knifeReady
+        ? 'Put the knife back in your hand.'
+        : 'Ready the Throwing Knife beside you, then flick it at an enemy (1 damage).'));
   }
 
   _setButton(button, visible, disabled, html, title) {
@@ -324,6 +365,215 @@ export class ItemManager {
     }
     this.gc._refreshActionUI();
     this._buttonStateKey = '';
+  }
+
+  // ─── Throwing Knife ───────────────────────────────────────────────────────
+  //
+  // In hand → readied (a disc waiting beside its owner, like a Wizard's orb)
+  // → thrown → landed on the floor until the owner moves over it. Knives are
+  // discs of type 'item', so turn order, enemy AI, the Blob, the turn list and
+  // room-clear checks all ignore them.
+
+  /** Why `disc` can't ready their knife right now, or null if they can. */
+  _knifeBlocker(disc) {
+    const knife = this._knives[disc.kind];
+    if (knife && knife.landed) return 'Your knife is on the floor. Move over it to pick it up.';
+    if (this._knifeThrownBy.has(disc.kind)) return 'You already threw your knife this turn.';
+    return null;
+  }
+
+  /** True if `knifeDisc` is `turnDisc`'s readied knife, ready to be flicked. */
+  canThrowKnife(knifeDisc, turnDisc) {
+    if (!knifeDisc || knifeDisc.kind !== 'Knife' || knifeDisc.owner !== turnDisc) return false;
+    const knife = this._knives[turnDisc.kind];
+    return !!(knife && knife.disc === knifeDisc && !knife.landed);
+  }
+
+  /** Readies the knife beside its owner, or puts a readied knife away. */
+  toggleKnife() {
+    const disc = this.activeCharacter();
+    if (!disc || this._busy() || !this.getInventory(disc.kind).throwingKnife) return;
+    const knife = this._knives[disc.kind];
+    if (knife && !knife.landed) {
+      this._removeKnife(disc.kind);
+    } else if (!this._knifeBlocker(disc)) {
+      this._readyKnife(disc);
+    }
+    this._buttonStateKey = '';
+  }
+
+  /** Places a knife disc at the first open spot around its owner. */
+  _readyKnife(owner) {
+    const { x, z } = owner.mesh.position;
+    for (let deg = 0; deg < 360; deg += 5) {
+      const a = deg * Math.PI / 180;
+      const kx = x + KNIFE_READY_DISTANCE * Math.cos(a);
+      const kz = z + KNIFE_READY_DISTANCE * Math.sin(a);
+      if (!this.gc.isPositionValid(kx, kz, KNIFE_RADIUS, true, [owner])) continue;
+
+      const disc = new Disc(
+        KNIFE_RADIUS, KNIFE_BLADE_THICKNESS, KNIFE_STEEL, kx, kz,
+        this.gc.scene, `${owner.discName}'s Knife`, 'item', 'Knife',
+        1, 0, null, false, 0.5, 0.5, false, false, ITEMS.throwingKnife.damage,
+        this.gc, ITEMS.throwingKnife.description,
+      );
+      // Swap the round disc body for the triangular blade.
+      const blade = makeKnifeBlade();
+      disc.mesh.geometry.dispose();
+      disc.mesh.material.dispose();
+      disc.mesh.geometry = blade.geometry;
+      disc.mesh.material = blade.material;
+      disc.mesh.scale.x = KNIFE_BLADE_NARROWING;
+      disc.mesh.rotation.y = Math.atan2(kx - x, kz - z); // point away from the owner
+
+      disc.owner = owner;
+      disc.relativeOffset.set(kx - x, 0, kz - z);
+      this.gc.discs.push(disc);
+      disc.setSpotlightIntensity(false);
+      this._knives[owner.kind] = { disc, landed: false };
+      return true;
+    }
+    return false;
+  }
+
+  /** Takes a knife disc off the field; the knife is back in its owner's hand. */
+  _removeKnife(kind) {
+    const knife = this._knives[kind];
+    if (!knife) return;
+    delete this._knives[kind];
+    const gc = this.gc;
+    const index = gc.discs.indexOf(knife.disc);
+    if (index > -1) {
+      gc.discs.splice(index, 1);
+      if (index < gc.currentTurnIndex) gc.currentTurnIndex--;
+    }
+    if (gc.currentDisc === knife.disc) gc.currentDisc = knife.disc.owner;
+    knife.disc.dispose();
+    this._buttonStateKey = '';
+  }
+
+  /** Readied knives wait beside their owner; landed ones are picked up when the owner touches them. */
+  _updateKnives() {
+    for (const [kind, knife] of Object.entries(this._knives)) {
+      const disc = knife.disc;
+      const owner = disc.owner;
+      const pos = disc.mesh.position;
+
+      if (disc.moving) {
+        // Point along the flight path.
+        if (disc.velocity.lengthSq() > 1e-8) disc.mesh.rotation.y = Math.atan2(disc.velocity.x, disc.velocity.z);
+        continue;
+      }
+      if (!knife.landed) {
+        if (owner.dead) { this._removeKnife(kind); continue; }
+        pos.x = owner.mesh.position.x + disc.relativeOffset.x;
+        pos.z = owner.mesh.position.z + disc.relativeOffset.z;
+        disc.spotlight.position.set(pos.x, 8, pos.z);
+      } else if (!owner.dead && this.gc.thrownDisc !== disc &&
+                 Math.hypot(owner.mesh.position.x - pos.x, owner.mesh.position.z - pos.z) < owner.radius + disc.radius) {
+        this._removeKnife(kind);
+        if (this.gc.soundManager) this.gc.soundManager.playMenuOpen();
+      }
+    }
+  }
+
+  /** Called by GameController when a knife is flicked. */
+  onKnifeThrown(disc) {
+    const knife = this._knives[disc.owner.kind];
+    if (knife) knife.landed = true;
+    this._knifeThrownBy.add(disc.owner.kind);
+    this._buttonStateKey = '';
+  }
+
+  /** Called by PhysicsEngine when a knife in flight touches an enemy: 1 damage, and the knife stops dead. */
+  onKnifeHit(disc, target) {
+    const gc = this.gc;
+    if (disc !== gc.thrownDisc || target.dead || target.kind === 'Fireball') return;
+    disc.velocity.set(0, 0, 0);
+    disc.moving = false;
+
+    const owner = disc.owner;
+    target.takeHit(ITEMS.throwingKnife.damage, owner); // a ghost owner's knife does no damage
+    if (gc.soundManager) gc.soundManager.playWardenHit(disc.mesh.position.clone());
+    if (target.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(target.discName)) {
+      this._rewardKill(owner);
+      gc.npcsKilledForRageCharge.add(target.discName);
+    }
+    gc.updateAllDiscDeadStates();
+    gc.updateDiscNames();
+    gc._refreshActionUI();
+  }
+
+  /** A knife kill earns the owner the same reward as a kill with their own disc. */
+  _rewardKill(owner) {
+    const gc = this.gc;
+    if (owner.kind === 'Barbarian' && gc.barbarianController) gc.barbarianController.rageCharges++;
+    else if (owner.kind === 'Wizard' && gc.wizardController) gc.wizardController.manaEarnedThisTurn += 2;
+    else if (owner.kind === 'Necromancer' && gc.necromancerController) gc.necromancerController.manaEarnedThisTurn += 2;
+    else if (owner.kind === 'Rogue' && gc.rogueController) gc.rogueController.charges++;
+  }
+
+  /** Called by GameController when a thrown knife comes to rest. */
+  async onKnifeStopped(disc) {
+    const gc = this.gc;
+    if (this._turnHeldForKnife) {
+      // The owner had already finished their move; the knife was the last thing left.
+      this._turnHeldForKnife = false;
+      await this._endTurnOf(disc.owner);
+      return;
+    }
+    this._returnControlTo(disc.owner);
+  }
+
+  /** Ends the owner's turn the way their End Turn button does (runs any turn-end effects). */
+  _endTurnOf(owner) {
+    const gc = this.gc;
+    const controller = {
+      Barbarian: gc.barbarianController,
+      Wizard: gc.wizardController,
+      Necromancer: gc.necromancerController,
+      Rogue: gc.rogueController,
+    }[owner.kind];
+    const endTurn = controller && (controller._handleEndTurnButtonClick || controller._handleEndTurnClick);
+    return endTurn ? endTurn.call(controller) : gc._proceedToNextPlayerTurn();
+  }
+
+  /**
+   * Called when a turn is about to end on its own after the character's move.
+   * If they still have a readied, unthrown knife, the turn stays open for it
+   * (End Turn still ends it). Returns true if the turn was held.
+   */
+  holdTurnForKnife() {
+    const disc = this.activeCharacter();
+    const knife = disc ? this._knives[disc.kind] : null;
+    if (!knife || knife.landed) return false;
+    this._turnHeldForKnife = true;
+    this._returnControlTo(disc);
+    return true;
+  }
+
+  /** Makes `disc` the controlled disc again and refreshes the turn UI. */
+  _returnControlTo(disc) {
+    const gc = this.gc;
+    gc.currentDisc = disc;
+    const index = gc.discs.indexOf(disc);
+    if (index !== -1) gc.currentTurnIndex = index;
+    gc.logCurrentTurn();
+    gc._updateSpotlights();
+    gc._refreshActionUI();
+    gc.barbarianController?.updateEndTurnButtonVisibility();
+    gc.wizardController?.updateEndTurnButtonVisibility();
+    gc.necromancerController?.updateEndTurnButtonVisibility();
+    this._buttonStateKey = '';
+  }
+
+  /** Turn over: readied knives go back in hand, and everyone may throw again next turn. */
+  onTurnEnd() {
+    this._turnHeldForKnife = false;
+    this._knifeThrownBy.clear();
+    for (const [kind, knife] of Object.entries(this._knives)) {
+      if (!knife.landed) this._removeKnife(kind);
+    }
   }
 
   // ─── Warp Ring ────────────────────────────────────────────────────────────

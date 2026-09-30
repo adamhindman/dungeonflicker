@@ -837,6 +837,8 @@ export class NecromancerController {
       const canCast = this.canCastSpells(disc);
 
       if (activeAnimatedCount === 0 && !canCast) {
+        // A readied Throwing Knife keeps the turn open (turn-end effects wait for End Turn)
+        if (this.gc.itemManager?.holdTurnForKnife()) return;
         this._applyDrainLifeOnTurnEnd();
         this._applyCarrionFeastOnTurnEnd();
         await this.gc._proceedToNextPlayerTurn();
@@ -868,6 +870,7 @@ export class NecromancerController {
         const unmovedAnimated = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead && !this.movedThisTurn.has(d)).length;
         const canStillCast = this.canCastSpells(necromancerDisc);
         if (unmovedAnimated === 0 && this.hasMovedThisTurn && !canStillCast) {
+          if (this.gc.itemManager?.holdTurnForKnife()) return;
           this._applyDrainLifeOnTurnEnd();
           this._applyCarrionFeastOnTurnEnd();
           await this.gc._proceedToNextPlayerTurn();

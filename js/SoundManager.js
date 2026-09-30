@@ -81,6 +81,7 @@ export class SoundManager {
     this.godsEyeInBuffer = null;
     this.godsEyeOutBuffer = null;
     this.teleportBuffer = null;
+    this.purchaseBuffers = [];
     this.heartbeatBuffer = null;
     this._heartbeat = null;         // { obj, sound } while the Sanctuary heartbeat loops
     this._heartbeatPending = null;  // position to start at once the buffer loads
@@ -162,6 +163,10 @@ export class SoundManager {
       this.jellySqueezeBuffers = buffers.filter(Boolean);
     });
     load('/sounds/energy/teleport.mp3').then(buffer => { this.teleportBuffer = buffer || null; });
+    Promise.all([
+      load('/sounds/menu/ui-medieval-collect-loot-light-01.mp3'),
+      load('/sounds/menu/ui-medieval-collect-loot-medium-01.mp3'),
+    ]).then(buffers => { this.purchaseBuffers = buffers.filter(Boolean); });
     load('/sounds/atmosphere/human-body-heartbeat-bassy-single-medium-03.mp3').then(buffer => {
       this.heartbeatBuffer = buffer || null;
       if (this._heartbeatPending) this.startHeartbeat(this._heartbeatPending);
@@ -380,6 +385,13 @@ export class SoundManager {
   /** Warp Ring: played once as the teleport starts; long enough to cover the landing too. */
   playTeleport() {
     this._playBuffer(this.teleportBuffer, 0.8);
+  }
+
+  /** Sanctuary shop purchase: one of the collect-loot sounds, picked at random. */
+  playPurchase() {
+    const buffers = this.purchaseBuffers;
+    if (buffers.length === 0) return;
+    this._playBuffer(buffers[Math.floor(Math.random() * buffers.length)], 0.8);
   }
 
   _playBuffer(buffer, volume) {

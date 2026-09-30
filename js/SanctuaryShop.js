@@ -9,7 +9,7 @@
 
 import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { ITEMS } from './ItemManager.js';
-import { makeRingModel } from './ItemModels.js';
+import { makeKnifeModel, makeRingModel } from './ItemModels.js';
 import { getResource, formatAmount } from './PartyResources.js';
 
 const OFFER_COUNT = 2;
@@ -46,8 +46,8 @@ export class SanctuaryShop {
       mesh.position.set(pos.x, 0, pos.z);
 
       let spinner = null;
-      if (item.model === 'ring') {
-        spinner = makeRingModel(item.color);
+      if (item.model === 'ring' || item.model === 'knife') {
+        spinner = item.model === 'ring' ? makeRingModel(item.color) : makeKnifeModel(item.color);
         mesh.add(spinner);
       } else {
         const disc = new Mesh(
@@ -84,7 +84,7 @@ export class SanctuaryShop {
     this.pedestals = [];
   }
 
-  /** Spins ring models in place. Call every frame. */
+  /** Spins item models in place. Call every frame. */
   update(deltaTime) {
     for (const p of this.pedestals) {
       if (p.spinner) p.spinner.rotation.y += SPIN_SPEED * deltaTime;
@@ -122,7 +122,7 @@ export class SanctuaryShop {
     if (!this.gc.itemManager.purchase(pedestal.itemId, this._buyer())) return;
     this._removeMesh(pedestal.mesh);
     this.pedestals = this.pedestals.filter(p => p !== pedestal);
-    if (this.gc.soundManager) this.gc.soundManager.playMenuOpen();
+    if (this.gc.soundManager) this.gc.soundManager.playPurchase();
   }
 
   _removeMesh(group) {

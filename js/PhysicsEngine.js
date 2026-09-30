@@ -272,6 +272,19 @@ export class PhysicsEngine {
         // Ghost Ring discs pass through every other disc
         if (d1.isGhost || d2.isGhost) continue;
 
+        // Throwing Knife: everything passes over it, except that a knife in
+        // flight strikes the first enemy it touches.
+        if (d1.kind === 'Knife' || d2.kind === 'Knife') {
+          const knife = d1.kind === 'Knife' ? d1 : d2;
+          const other = knife === d1 ? d2 : d1;
+          const dx = knife.mesh.position.x - other.mesh.position.x;
+          const dz = knife.mesh.position.z - other.mesh.position.z;
+          if (knife.moving && other.type === 'NPC' && Math.hypot(dx, dz) < knife.radius + other.radius) {
+            gc.itemManager?.onKnifeHit(knife, other);
+          }
+          continue;
+        }
+
         // Skip collision between Wizard and his own regular Orbs while they are orbiting
         if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && gc.wizardController?.orbs?.includes(d2) && !d2.moving) ||
             (d2.kind === 'Wizard' && d1.kind === 'Orb' && gc.wizardController?.orbs?.includes(d1) && !d1.moving)) {

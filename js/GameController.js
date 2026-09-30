@@ -349,6 +349,7 @@ export default class GameController {
     if (checkDiscs && this.discs) {
       for (const disc of this.discs) {
         if (!disc || disc.dead || disc.hitPoints <= 0) continue;
+        if (disc.type === 'item') continue; // items on the floor (Throwing Knife) don't take up space
         if (excludeDiscs.includes(disc)) continue;
 
         const dx = x - disc.mesh.position.x;
@@ -588,7 +589,11 @@ export default class GameController {
 
     if (discForTurn && discForTurn.type === 'player' && !discForTurn.dead) {
         // It's a player's turn and the player character is alive
-        if (discForTurn.kind === 'Wizard') {
+        if (this.pointerDisc && this.itemManager?.canThrowKnife(this.pointerDisc, discForTurn)) {
+            // Clicked on this character's readied Throwing Knife (an extra throw, any class)
+            discToControl = this.pointerDisc;
+            allowAiming = true;
+        } else if (discForTurn.kind === 'Wizard') {
             // Wizard's turn
             if (this.pointerDisc && (this.pointerDisc.kind === 'Orb' || this.pointerDisc.kind === 'HealingOrb') && this.wizardController?.orbs?.includes(this.pointerDisc) && !this.pointerDisc.dead) {
                 // Clicked on a valid, owned orb
@@ -915,8 +920,8 @@ export default class GameController {
         return;
       }
 
-      // Only allow throwing player-type discs (Wizard, Barbarian, Orb)
-      if (this.currentDisc.type !== "player") {
+      // Only allow throwing player-type discs (Wizard, Barbarian, Orb) and the Throwing Knife
+      if (this.currentDisc.type !== "player" && this.currentDisc.kind !== 'Knife') {
         return;
       }
 
@@ -1007,6 +1012,9 @@ export default class GameController {
           // Briefly ignore Bomb<->Rogue collisions after release so the bomb
           // can pass through the thrower before normal collisions resume.
           discBeingThrown.ignoreRogueCollisionUntil = performance.now() + 300;
+        }
+        if (discBeingThrown.kind === 'Knife') {
+          this.itemManager?.onKnifeThrown(discBeingThrown);
         }
 
         discBeingThrown.velocity.set(
@@ -1941,7 +1949,13 @@ disc.isCurrentlyInLavaState = true;
           justMovedDisc.checkForNewKills();
         }
 
-        if (justMovedDisc.kind === 'Wizard' || justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') {
+        // Turn endings triggered from here are automatic (not End Turn), so a
+        // readied Throwing Knife can hold the turn open for its extra throw.
+        this._autoTurnEnd = true;
+        try {
+        if (justMovedDisc.kind === 'Knife') {
+            await this.itemManager?.onKnifeStopped(justMovedDisc);
+        } else if (justMovedDisc.kind === 'Wizard' || justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') {
             await this.wizardController?.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Necromancer' || justMovedDisc.kind === 'AnimatedDead') {
             await this.necromancerController?.onDiscStopped(justMovedDisc);
@@ -1955,6 +1969,9 @@ disc.isCurrentlyInLavaState = true;
         } else {
             // NPC or any other disc
             await this._proceedToNextPlayerTurn();
+        }
+        } finally {
+          this._autoTurnEnd = false;
         }
       }
     }
@@ -2049,6 +2066,13 @@ disc.isCurrentlyInLavaState = true;
     if (this.checkGameOverConditions()) {
       return;
     }
+    // A turn ending on its own after the character's move stays open while
+    // they still have a readied Throwing Knife to throw.
+    const autoTurnEnd = this._autoTurnEnd;
+    this._autoTurnEnd = false;
+    if (autoTurnEnd && this.itemManager?.holdTurnForKnife()) return;
+    this.itemManager?.onTurnEnd();
+
     const previousTurnIndex = this.currentTurnIndex;
     this.wizardController?.onTurnEnd();
     this.necromancerController?.onTurnEnd(); // also calls cancelTargetSelection internally
@@ -2404,7 +2428,7 @@ disc.isCurrentlyInLavaState = true;
     }
 
     this.discInfoNameElement.innerText = disc.discName;
-    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead'];
+    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead', 'Knife'];
     const showHp = !noHpKinds.includes(disc.kind);
     const currentHp = showHp ? (Number(disc.hitPoints) || 0) : 0;
     const rawMaxHp = disc.maxHitPoints;
