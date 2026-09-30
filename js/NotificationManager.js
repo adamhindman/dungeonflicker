@@ -25,14 +25,14 @@ export class NotificationManager {
     if (this._revealed) return;
     this._revealed = true;
     if (this._area) this._area.classList.add('revealed');
-    // Auto-dismiss the current notification after 5 seconds.
+    // Auto-dismiss the current notification after 10 seconds.
     this._scheduleAutoDismiss();
   }
 
   _scheduleAutoDismiss() {
     clearTimeout(this._autoDismissTimer);
     if (this._queue.length === 0) return;
-    this._autoDismissTimer = setTimeout(() => this._dismiss(), 5000);
+    this._autoDismissTimer = setTimeout(() => this._dismiss(), 10000);
   }
 
   _build() {

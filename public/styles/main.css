@@ -186,7 +186,22 @@ body {
     #action-buttons-container{
         display: flex;
         flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
         gap: 1rem;
+        /* Wrap onto another row before reaching the Camera Controls button
+           (bottom-right, ~20rem incl. margin), keeping the bar centred. */
+        max-width: max(28rem, calc(100vw - 2 * 22rem));
+    }
+    #action-buttons-container button {
+        flex-shrink: 0;       /* wrap whole buttons rather than squashing them */
+        white-space: nowrap;
+    }
+    /* Sanctuary item buttons stay visible but greyed out while unusable */
+    #warp-ring-button:disabled,
+    #ghost-ring-button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
     }
     .hearts-container{
         margin-left: 1rem;

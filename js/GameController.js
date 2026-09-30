@@ -19,6 +19,12 @@ import { SoundManager }      from './SoundManager.js';
 import { CharacterSelectScreen } from './CharacterSelectScreen.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { NotificationManager } from './NotificationManager.js';
+import { SanctuaryShrine } from './SanctuaryShrine.js';
+import { SanctuaryShop } from './SanctuaryShop.js';
+import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
+
+// A Sanctuary room follows every this-many cleared combat rooms.
+const SANCTUARY_INTERVAL = 1; // TODO: restore to 3 after testing
 
 let instance = null;
 
@@ -254,11 +260,16 @@ export default class GameController {
     // Notification system — subscribe to first-time events so each newly fired
     // event automatically queues a notification card in the lower-right corner.
     this.notificationManager = new NotificationManager();
+    this.sanctuaryShrine = new SanctuaryShrine(this);
+    this.sanctuaryShop = new SanctuaryShop(this);
+    this._sanctuaryDoorTimer = null;
     firstTimeEvents.addListener(key => this.notificationManager.push(key));
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
       // Depending on how critical this is, you might want to return or throw an error
     }
+    this.itemManager = new ItemManager(this);
+    this.itemManager.init(this.actionButtonsContainer);
     // Initialize throw direction line helper for drag aim visualization
     const material = new LineBasicMaterial({
       color: 0xffffff,
@@ -374,6 +385,7 @@ export default class GameController {
     this.wizardController?.init(this.actionButtonsContainer);
     this.necromancerController?.init(this.actionButtonsContainer);
     this.rogueController?.init(this.actionButtonsContainer);
+    this.itemManager?.placeButtons(this.actionButtonsContainer);
   }
 
   initDiscs(playerStats = null) {
@@ -485,7 +497,7 @@ export default class GameController {
       this.level.setDoorHovered(false);
     }
 
-    // Show disc-info popup after hovering a disc for 500 ms.
+    // Show disc-info popup after hovering a disc (or the Sanctuary prop) for 320 ms.
     if (this.discs && this.raycaster && this.camera) {
       this.raycaster.setFromCamera(this.mouse, this.camera);
       let hoveredDisc = null;
@@ -494,11 +506,25 @@ export default class GameController {
         const hits = this.raycaster.intersectObject(disc.mesh, true);
         if (hits.length > 0) { hoveredDisc = disc; break; }
       }
-      if (hoveredDisc !== this._hoverPendingDisc) {
+
+      // Sanctuary props (resurrection altar, shop items): pointer cursor when usable
+      const prop = hoveredDisc ? null : this._pickProp();
+      const propClickable = !!prop && prop.canActivate();
+      if (propClickable) {
+        this.renderer.domElement.style.cursor = 'pointer';
+      } else if (this._propCursorActive) {
+        this.renderer.domElement.style.cursor = '';
+      }
+      this._propCursorActive = propClickable;
+
+      const hoveredTarget = hoveredDisc || prop;
+      if (hoveredTarget !== this._hoverPendingDisc) {
         clearTimeout(this._hoverTimer);
-        this._hoverPendingDisc = hoveredDisc;
+        this._hoverPendingDisc = hoveredTarget;
         if (hoveredDisc) {
           this._hoverTimer = setTimeout(() => { this._showDiscInfoPopup(hoveredDisc); }, 320);
+        } else if (prop) {
+          this._hoverTimer = setTimeout(() => { this._showPropInfoPopup(prop); }, 320);
         } else {
           this._hideDiscInfoPopup();
         }
@@ -510,7 +536,7 @@ export default class GameController {
     if (this.gameOverState.active) {
       return;
     }
-    if (this.wizardController?.flameStrikeTargetingActive) {
+    if (this.wizardController?.flameStrikeTargetingActive || this.itemManager?.teleportTargetingActive) {
       return;
     }
     if (this.soundManager) this.soundManager.notifyUserInteraction();
@@ -525,6 +551,23 @@ export default class GameController {
         this.startNextLevel(this.currentDisc);
         return;
       }
+    }
+
+    // Sanctuary props swallow the click (no aiming) when hit — unless a disc is
+    // under the cursor (e.g. one sliding beneath the floating orb), which wins.
+    const prop = this._pickProp();
+    const discUnderCursor = prop && this.discs.some(d => d.mesh && this.raycaster.intersectObject(d.mesh, true).length > 0);
+    if (prop && !discUnderCursor) {
+      if (!this.waitingForDiscToStop && prop.canActivate()) {
+        prop.activate();
+        clearTimeout(this._hoverTimer); // a pending hover must not re-show the used prop
+        this._hideDiscInfoPopup();
+        this._hoverPendingDisc = null;
+        this._propCursorActive = false;
+        this.renderer.domElement.style.cursor = '';
+        this._refreshActionUI();
+      }
+      return;
     }
 
     this.pointerDisc = null;
@@ -778,6 +821,12 @@ export default class GameController {
     const clickedDisc = this.pointerDisc; // Disc under cursor at pointerdown, set in handlePointerDownInteraction
 
     if (dragLength <= clickThreshold) { // It's a click/tap
+      // Warp Ring destination click (stays in targeting mode if the spot is blocked)
+      if (this.itemManager?.teleportTargetingActive) {
+        this.itemManager.confirmTeleport();
+        return;
+      }
+
       // Handle Flame Strike targeting
       if (this.wizardController?.flameStrikeTargetingActive) {
         const currentDisc = this.currentTurnIndex !== -1 ? this.discs[this.currentTurnIndex] : null;
@@ -1129,15 +1178,7 @@ clamp(value, min, max) {
         }
 
         if (this.level) {
-          setTimeout(() => {
-            if (this.soundManager) {
-              const dc = this.level._doorOpeningCenter;
-              const pos = dc ? new Vector3(dc.x, 0, dc.z) : new Vector3();
-              this.soundManager.playDoorUnlock(pos);
-            }
-            firstTimeEvents.track('portal_door_opened');
-            this.level.openDoor();
-          }, 3000);
+          setTimeout(() => this._openLevelDoor(), 3000);
         }
       }
     }
@@ -1168,6 +1209,59 @@ clamp(value, min, max) {
   }
 
   /** Returns the room shape for a given 1-based level number. */
+  _openLevelDoor() {
+    if (!this.level) return;
+    if (this.soundManager) {
+      const dc = this.level._doorOpeningCenter;
+      const pos = dc ? new Vector3(dc.x, 0, dc.z) : new Vector3();
+      this.soundManager.playDoorUnlock(pos);
+    }
+    firstTimeEvents.track('portal_door_opened');
+    this.level.openDoor();
+  }
+
+  /**
+   * Sanctuary rooms have no enemies: treat the round as already won (so the
+   * doorway works and no end-of-round bonuses accrue), place the resurrection
+   * prop, and open the door 3s after the screen fades in.
+   */
+  _startSanctuaryIfNeeded() {
+    if (!this.level || !this.level.isSanctuary) return;
+    this.roundWon = true;
+    this.sanctuaryShrine.setup();
+    this.sanctuaryShop.setup();
+    const FADE_IN_DELAY_MS = 1000; // matches fadeBlackOverlayAfterDelay in startNextLevel
+    this._sanctuaryDoorTimer = setTimeout(() => this._openLevelDoor(), FADE_IN_DELAY_MS + 3000);
+  }
+
+  /** Clears Sanctuary props and in-progress item effects. Call before unloading the level. */
+  _clearRoomState() {
+    clearTimeout(this._sanctuaryDoorTimer);
+    this._sanctuaryDoorTimer = null;
+    this.sanctuaryShrine?.teardown();
+    this.sanctuaryShop?.teardown();
+    this.itemManager?.onLevelUnload();
+    if (this.discInfoPopupSelectedDisc && !this.discs.includes(this.discInfoPopupSelectedDisc)) {
+      this._hideDiscInfoPopup();
+    }
+    clearTimeout(this._hoverTimer);
+    this._hoverPendingDisc = null;
+  }
+
+  /** The Sanctuary prop (altar or shop item) under the raycaster, if any. */
+  _pickProp() {
+    return this.sanctuaryShrine?.pickAt(this.raycaster) || this.sanctuaryShop?.pickAt(this.raycaster) || null;
+  }
+
+  /** Refreshes the turn panel and every character's action buttons after mana/HP changes. */
+  _refreshActionUI() {
+    if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
+    this.barbarianController?.updateRageButtonVisibility();
+    this.wizardController?.updateActionButtons();
+    this.necromancerController?.updateActionButtons();
+    this.rogueController?.updateActionButtons();
+  }
+
   _shapeForLevel(n) {
     // Level sequence cycles through the authored room types.
     const sequence = ['rect', 'circle', 'crusher', 'bullseye', 'donut'];
@@ -1224,6 +1318,8 @@ clamp(value, min, max) {
     this._ringStepDiscData = null;
 
     // Unload current level
+    const leavingSanctuary = !!(this.level && this.level.isSanctuary);
+    this._clearRoomState();
     if (this.level) {
       this.level.unload();
     }
@@ -1238,16 +1334,22 @@ clamp(value, min, max) {
     this.barbarianController?.onLevelStart();
     this.rogueController?.onLevelStart();
 
-    // Reload level (generates new room/obstacles)
+    // Reload level (generates new room/obstacles). A Sanctuary follows every
+    // SANCTUARY_INTERVAL cleared rooms and doesn't advance the level number.
     if (this.level) {
-      this.currentLevelNumber++;
-      this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
+      if (!leavingSanctuary && this.currentLevelNumber % SANCTUARY_INTERVAL === 0) {
+        this.level.nextShape = 'sanctuary';
+      } else {
+        this.currentLevelNumber++;
+        this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
+      }
       this.level.load();
     }
 
     // 3. Re-initialize world (lava first so disc spawning can avoid pools)
     this.lavaManager.generate();
     this.initDiscs(playerStats);
+    this._startSanctuaryIfNeeded();
 
     // 4. Reset turn-specific state
     this.wizardController?.onTurnEnd();
@@ -1345,9 +1447,11 @@ clamp(value, min, max) {
     this._ringStepDiscData = null;
 
     if (this.level) {
+      const inSanctuary = this.level.isSanctuary;
+      this._clearRoomState();
       this.level.unload();
       // Keep currentLevelNumber as-is — restart the level the player died on.
-      this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
+      this.level.nextShape = inSanctuary ? 'sanctuary' : this._shapeForLevel(this.currentLevelNumber);
       this.level.load();
     } else {
       return;
@@ -1364,6 +1468,7 @@ clamp(value, min, max) {
     this.gameOverState.active = false;
     this.roundWon = false;
     this.panningKeys = { up: false, down: false, left: false, right: false };
+    this._startSanctuaryIfNeeded();
 
     if (this.discs.length > 0) {
       let startingDisc = this.discs.find(disc => disc.type === 'player');
@@ -1450,6 +1555,8 @@ clamp(value, min, max) {
     this._ringStepDiscData = null;
 
     // 2. Unload the current level
+    this._clearRoomState();
+    this.itemManager?.reset(); // new game: empty every inventory
     if (this.level) {
       this.level.unload();
     }
@@ -1592,7 +1699,7 @@ clamp(value, min, max) {
                   // Reset textured faces to white so tints (e.g. low-HP pulse) clear when no longer active.
                   child.material.color.set(child.material.map ? 0xffffff : child.material.color.getHex());
                 }
-                child.material.opacity = 0.9;
+                child.material.opacity = disc.isGhost ? GHOST_OPACITY : 0.9;
                 child.material.transparent = true;
               }
             });
@@ -1603,7 +1710,7 @@ clamp(value, min, max) {
             } else {
               disc.mesh.material.color.set(disc.mesh.material.color.getHex());
             }
-            disc.mesh.material.opacity = 0.9;
+            disc.mesh.material.opacity = disc.isGhost ? GHOST_OPACITY : 0.9;
             disc.mesh.material.transparent = true;
           }
         }
@@ -1613,6 +1720,9 @@ clamp(value, min, max) {
     // Delegate per-frame character updates (orb following, radius blast rings, etc.)
     this.wizardController?.update(deltaTime);
     this.rogueController?.update(deltaTime);
+    this.itemManager?.update(deltaTime);
+    this.sanctuaryShop?.update(deltaTime);
+    this.sanctuaryShrine?.update(deltaTime);
 
     // Animate descending turn-start beams and ring ripples
     this._updateTurnStartBeams(deltaTime);
@@ -2127,7 +2237,10 @@ disc.isCurrentlyInLavaState = true;
     // Apply lava damage if the disc starts its turn in lava
     this._applyStartOfTurnLavaDamage(this.currentDisc);
 
-    // If the disc died from start-of-turn lava damage and game is not over, immediately proceed to next turn.
+    // Ghost Ring upkeep: 1 HP and 1 mana/charge per turn while it's on
+    this.itemManager?.applyGhostUpkeep(this.currentDisc);
+
+    // If the disc died from start-of-turn lava or Ghost Ring damage and game is not over, immediately proceed to next turn.
     if (this.currentDisc && this.currentDisc.dead && !this.gameOverState.active) {
       // console.log(`${this.currentDisc.discName} died at start of turn from lava. Skipping turn.`);
       await this._proceedToNextPlayerTurn();
@@ -2313,6 +2426,18 @@ disc.isCurrentlyInLavaState = true;
     this.discInfoPopupSelectedDisc = disc;
   }
 
+  /** Shows a Sanctuary prop's info (altar or shop item) in the disc-info popup. */
+  _showPropInfoPopup(prop) {
+    if (!this.discInfoPopupElement || !prop) return;
+    const { name, cost, description } = prop.getInfo();
+    this.discInfoNameElement.innerText = name;
+    this.discInfoHpElement.innerText = cost;
+    this.discInfoDescriptionElement.innerText = description;
+    this.discInfoPopupElement.className = 'popup';
+    this.discInfoPopupElement.classList.remove('element-hidden');
+    this.discInfoPopupSelectedDisc = prop;
+  }
+
   _hideDiscInfoPopup() {
     if (!this.discInfoPopupElement) return;
     this.discInfoPopupElement.classList.add('element-hidden');
@@ -2329,6 +2454,13 @@ disc.isCurrentlyInLavaState = true;
     });
   }
 
+  /** Living player discs for NPCs to aim at, preferring ones not phased by a Ghost Ring. */
+  _aiTargetablePlayers() {
+    const alive = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead);
+    const solid = alive.filter(d => !d.isGhost);
+    return solid.length > 0 ? solid : alive;
+  }
+
   async aiThrow(disc) {
     if (!disc || disc.dead) return;
 
@@ -2340,7 +2472,7 @@ disc.isCurrentlyInLavaState = true;
       const SELF_THROW_RANGE = 10;
       const MAX_FIREBALL_RANGE = 22;
 
-      const alivePlayers = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead);
+      const alivePlayers = this._aiTargetablePlayers();
       if (alivePlayers.length === 0) return;
 
       let target = alivePlayers[0];
@@ -2419,7 +2551,7 @@ disc.isCurrentlyInLavaState = true;
       let minDist = Infinity;
 
       const corpses = this.discs.filter(d => d.dead);
-      const players = this.discs.filter(d => !d.dead && d.type === 'player' && d.hitPoints > 0);
+      const players = this._aiTargetablePlayers();
       const targets = [...corpses, ...players];
 
       if (targets.length === 0) return;
@@ -2508,9 +2640,7 @@ disc.isCurrentlyInLavaState = true;
     }
 
     // Get alive player discs as targets (exclude AnimatedDead — they are player-controlled but not real targets)
-    const alivePlayers = this.discs.filter(
-      (d) => d.type === "player" && d.hitPoints > 0 && !d.dead,
-    );
+    const alivePlayers = this._aiTargetablePlayers();
     if (alivePlayers.length === 0) return;
 
     // Select closest player disc as target

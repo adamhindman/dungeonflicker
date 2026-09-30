@@ -421,6 +421,15 @@ export class CameraController {
       this._wallFadeRaycaster.intersectObjects(visualWalls).map(h => h.object)
     );
 
+    // Also fade walls hiding any points of interest the level asks to keep in
+    // view (e.g. Sanctuary shop items tucked into alcoves).
+    for (const target of (level.fadeTargets || [])) {
+      this._wallFadeDir.subVectors(target, this.camera.position).normalize();
+      this._wallFadeRaycaster.set(this.camera.position, this._wallFadeDir);
+      this._wallFadeRaycaster.far = this.camera.position.distanceTo(target);
+      for (const h of this._wallFadeRaycaster.intersectObjects(visualWalls)) hits.add(h.object);
+    }
+
     // Boundary-proximity fade for outer walls
     const cam  = this.camera.position;
     const fw   = level.fieldWidth  / 2;  // east/west boundary

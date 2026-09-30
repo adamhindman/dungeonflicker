@@ -430,6 +430,9 @@ export default class Disc {
 
   // Reduce hit points by the specified damage amount
   takeHit(damageAmount = 1, attacker = null) {
+    // Ghost Ring: a phased disc neither takes nor deals damage
+    if (this.isGhost || (attacker && attacker.isGhost)) return;
+
     // Orb defense logic for Wizard (only absorbs physical hits from an attacker disc, not environmental damage)
     if (this.kind === 'Wizard' && this.gameController && attacker !== null) {
       const absorbingOrb = this.gameController.wizardController.orbs.find(orb => orb && orb.hitPoints > 0 && !orb.dead);

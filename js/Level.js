@@ -9,6 +9,11 @@ import { loadHexagon, getHexTerrainHeight, getHexTerrainSlopeForce, disposeHexag
 import { loadBullseye, stepRings, updateBullseyeAnimation, disposeBullseye } from "./levels/bullseye.js";
 import { loadDonut, getDonutTerrainHeight, getDonutTerrainSlopeForce, disposeDonut } from "./levels/donut.js";
 import { loadCrusher, setCrusherLength, stepCrushers, updateCrusherAnimation, disposeCrusher } from "./levels/crusher.js";
+import { loadSanctuary } from "./levels/sanctuary.js";
+
+// Keys in Level.walls for meshes that sit inside the room rather than forming
+// its boundary (see getAllWalls(boundaryOnly)).
+const INTERIOR_WALL_PREFIXES = ['obstacle_', 'donut_col_', 'hex_col_', 'sanctuary_'];
 
 export default class Level {
   constructor(scene) {
@@ -66,6 +71,13 @@ export default class Level {
     // Donut level support
     this.donutInnerRadius = null;   // spawn exclusion radius (= ring inner edge)
     this.donutRings = null;         // { MED_Y, PIT_Y, RING_INNER_R, PIT_R, OUTER_R }
+
+    // Sanctuary room support (enemy-free rest room every few levels)
+    this.isSanctuary = false;
+    this.floorRects = null;         // walkable rects for non-rectangular rooms; null = whole field
+    this.altarPosition = null;      // { x, z } of the Sanctuary's resurrection prop
+    this.shopPositions = null;      // [{ x, z }] of the Sanctuary's shop items
+    this.fadeTargets = null;        // [Vector3] points the camera fades walls to keep visible
 
     // Crusher level support
     this.crusherConfig = null;       // clipped-square bounds + alternating crusher state
@@ -139,7 +151,12 @@ export default class Level {
     return this.obstacleMaterial;
   }
 
-  getAllWalls() {
+  /**
+   * @param {boolean} [boundaryOnly=false] - true to return only the room's
+   *   outer walls and door slab, skipping obstacles, columns, crushers and
+   *   props inside the room (used by Ghost Ring discs).
+   */
+  getAllWalls(boundaryOnly = false) {
     // Return all wall meshes including internal walls.
     // For radial-boundary levels, skip polygon outer walls (poly_*) — their
     // rotated BoxGeometry produces inflated AABBs that create phantom collisions.
@@ -147,6 +164,7 @@ export default class Level {
     const walls = Object.entries(this.walls)
       .filter(([key, wall]) => {
         if (!wall) return false;
+        if (boundaryOnly && INTERIOR_WALL_PREFIXES.some(p => key.startsWith(p))) return false;
         if (this.circleRadius && key.startsWith('poly_')) return false;
         if (this.crusherConfig && key.startsWith('clip_visual')) return false;
         // Pillar and triangle obstacles have dedicated collision in PhysicsEngine;
@@ -163,6 +181,7 @@ export default class Level {
     if (this.doorSlab && !this.doorIsOpen) {
       walls.push(this.doorSlab);
     }
+    if (boundaryOnly) return walls;
     // Include rotating column meshes for the bullseye level
     if (this._bullseyeColumnMeshes && this._bullseyeColumnMeshes.length) {
       walls.push(...this._bullseyeColumnMeshes);
@@ -239,6 +258,8 @@ export default class Level {
       this._loadDonut();
     } else if (shape === 'crusher') {
       this._loadCrusher();
+    } else if (shape === 'sanctuary') {
+      this._loadSanctuary();
     } else {
       this._loadRectangular();
     }
@@ -250,6 +271,7 @@ export default class Level {
   _loadBullseye() { return loadBullseye.call(this); }
   _loadDonut() { return loadDonut.call(this); }
   _loadCrusher() { return loadCrusher.call(this); }
+  _loadSanctuary() { return loadSanctuary.call(this); }
 
   _setCrusherLength(crusher, length) { return setCrusherLength.call(this, crusher, length); }
   stepCrushers() { return stepCrushers.call(this); }
@@ -300,8 +322,11 @@ export default class Level {
    *
    * TODO: When supporting irregular walls, filter to walls large enough for
    *       the door before choosing randomly.
+   *
+   * @param {{length: number, z: number}} [northWall] - for irregular rooms, the
+   *   length and z of a north wall (centred on x = 0) that isn't the field edge.
    */
-  _createDoor() {
+  _createDoor(northWall = null) {
     // Always place the door on the north wall — opposite the camera's default
     // position (which is on the south/+Z side looking toward the origin).
     this.doorWall = 'north';
@@ -325,7 +350,8 @@ export default class Level {
       x: this.doorWall === 'east'  ?  this.fieldWidth  / 2
        : this.doorWall === 'west'  ? -this.fieldWidth  / 2
        : 0,
-      z: this.doorWall === 'north' ? -this.fieldDepth / 2
+      z: northWall                 ?  northWall.z
+       : this.doorWall === 'north' ? -this.fieldDepth / 2
        : this.doorWall === 'south' ?  this.fieldDepth / 2
        : 0,
     };
@@ -373,7 +399,7 @@ export default class Level {
       return mesh;
     };
 
-    const totalLen     = isNS ? this.fieldWidth : this.fieldDepth;
+    const totalLen     = northWall ? northWall.length : isNS ? this.fieldWidth : this.fieldDepth;
     const segLen       = (totalLen - DOOR_WIDTH) / 2;
     const segOffset    = segLen / 2 + DOOR_WIDTH / 2;
 
@@ -842,6 +868,17 @@ export default class Level {
       ) return false;
     }
 
+    // Non-rectangular floorplans: every corner of the padded footprint must
+    // land on a walkable rect (rejects the empty corners of the bounding box).
+    if (this.floorRects) {
+      const onFloor = (px, pz) => this.floorRects.some(r =>
+        px >= r.x0 && px <= r.x1 && pz >= r.z0 && pz <= r.z1);
+      for (const [px, pz] of [[x - padding, z - padding], [x + padding, z - padding],
+                              [x - padding, z + padding], [x + padding, z + padding]]) {
+        if (!onFloor(px, pz)) return false;
+      }
+    }
+
     // Check against all generated obstacles
     for (const obs of this.obstacles) {
       if (obs.type === "pillar" || obs.type === "triangle") {
@@ -1018,6 +1055,11 @@ export default class Level {
     if (this._vineTileTexture) { this._vineTileTexture.dispose(); this._vineTileTexture = null; }
 
     resetCircularState.call(this);
+    this.isSanctuary = false;
+    this.floorRects = null;
+    this.altarPosition = null;
+    this.shopPositions = null;
+    this.fadeTargets = null;
     disposeDonut.call(this);
     disposeHexagon.call(this);
     disposeBullseye.call(this);

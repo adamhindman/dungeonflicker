@@ -109,6 +109,7 @@ export class DiscSpawner {
     const isHexLevel      = !!(gc.level && gc.level.hexRings);
     const isBullseyeLevel = !!(gc.level && gc.level.bullseyeRings);
     const isDonutLevel    = !!(gc.level && gc.level.donutRings);
+    const isSanctuaryLevel = !!(gc.level && gc.level.isSanctuary);
 
     // ── Position-generation helpers ─────────────────────────────────────────
 
@@ -205,9 +206,16 @@ export class DiscSpawner {
     // ── PC start positions ───────────────────────────────────────────────────
     // Bullseye: near the inner-ring edge (r ≈ 6.5), 120° apart.
     // Hex / Donut: random positions on the outer ring (same pool as NPCs).
+    // Sanctuary: fixed slots in the nave, facing the altar across the crossing.
     const BULLSEYE_PC_R = 6.5;
+    const SANCTUARY_PC_SLOTS = [{ x: -3, z: 12 }, { x: 3, z: 12 }, { x: -3, z: 16 }, { x: 3, z: 16 }];
     const ringPCPositions = [];
     const _ringPCPos = (radius) => {
+      if (isSanctuaryLevel) {
+        const pos = SANCTUARY_PC_SLOTS[ringPCPositions.length];
+        ringPCPositions.push(pos);
+        return pos;
+      }
       const pos = isHexLevel      ? generateOuterRingPosition(radius, ringPCPositions, 5)
                 : isDonutLevel    ? generateDonutRingPosition(radius, ringPCPositions, 5)
                 : isBullseyeLevel ? null  // bullseye uses fixed-angle placement below
@@ -372,6 +380,11 @@ export class DiscSpawner {
       .map(d => ({ x: d.mesh.position.x, z: d.mesh.position.z }));
 
     // ── NPC discs ────────────────────────────────────────────────────────────
+    // The Sanctuary has no enemies.
+    if (isSanctuaryLevel) {
+      return [barbarian, wizard, necromancer, rogue].filter(Boolean);
+    }
+
     // Budget: 10 points on level 1, +2 per room cleared
     const budget = 9 + (gc.currentLevelNumber - 1) * 2;
     const baseNpcDefinitions = this._buildNpcPool(budget);

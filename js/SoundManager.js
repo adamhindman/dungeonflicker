@@ -332,6 +332,26 @@ export class SoundManager {
     sound.play();
   }
 
+  /** Warp Ring: whoosh as the disc leaves (reuses the God's-eye zoom-out sound, louder). */
+  playTeleportOut() {
+    this._playBuffer(this.godsEyeOutBuffer, 0.6);
+  }
+
+  /** Warp Ring: whoosh as the disc lands (reuses the God's-eye zoom-in sound, louder). */
+  playTeleportIn() {
+    this._playBuffer(this.godsEyeInBuffer, 0.6);
+  }
+
+  _playBuffer(buffer, volume) {
+    if (!buffer) return;
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+    const sound = new Audio(this.listener);
+    sound.setBuffer(buffer);
+    sound.setVolume(volume);
+    sound.play();
+  }
+
   playWizardRadiusBlast(position) {
     if (!this._loaded || !this.wizardRadiusBlastBuffer) return;
     const ctx = this.listener.context;

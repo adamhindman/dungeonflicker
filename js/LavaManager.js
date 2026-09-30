@@ -28,8 +28,8 @@ return;
     }
     gc.lavaPools = [];
 
-    // Crusher level: no random lava pools.
-    if (gc.level.crusherConfig) {
+    // Crusher and Sanctuary levels: no random lava pools.
+    if (gc.level.crusherConfig || gc.level.isSanctuary) {
       return;
     }
 

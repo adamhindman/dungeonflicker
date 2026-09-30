@@ -58,7 +58,8 @@ export class PhysicsEngine {
           gc.rogueController.sneakAttackBonusCount++;
         }
 
-        const walls = gc.level.getAllWalls();
+        // Ghost Ring discs only collide with the room's outer walls.
+        const walls = gc.level.getAllWalls(!!disc.isGhost);
         walls.forEach((wall) => {
           const hitWall = disc.handleCollisionWithBox(wall, bounceDamping);
           if (hitWall && gc.soundManager && disc.velocity.length() > 0.05) {
@@ -69,7 +70,7 @@ export class PhysicsEngine {
           }
         });
 
-        if (gc.level && gc.level.crusherConfig) {
+        if (gc.level && gc.level.crusherConfig && !disc.isGhost) {
           for (const crusher of gc.level.crusherConfig.crushers) {
             this._handleCrusherCollision(disc, crusher);
           }
@@ -77,7 +78,7 @@ export class PhysicsEngine {
 
         // Obstacle collision: pillars use exact circle push; triangles use
         // proper polygon collision against the actual triangle edges + vertices.
-        for (const obs of (gc.level.obstacles || [])) {
+        for (const obs of (disc.isGhost ? [] : (gc.level.obstacles || []))) {
           if (obs.type === 'pillar') {
             const obsRadius = obs.width / 2;
             const dx = disc.mesh.position.x - obs.x;
@@ -267,6 +268,9 @@ export class PhysicsEngine {
       const d1 = collisionArray[i];
       for (let j = i + 1; j < collisionArray.length; j++) {
         const d2 = collisionArray[j];
+
+        // Ghost Ring discs pass through every other disc
+        if (d1.isGhost || d2.isGhost) continue;
 
         // Skip collision between Wizard and his own regular Orbs while they are orbiting
         if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && gc.wizardController?.orbs?.includes(d2) && !d2.moving) ||
