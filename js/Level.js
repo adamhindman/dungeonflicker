@@ -77,8 +77,6 @@ export default class Level {
     this.floorRects = null;         // walkable rects for non-rectangular rooms; null = whole field
     this.altarPosition = null;      // { x, z } of the Sanctuary's resurrection prop
     this.shopPositions = null;      // [{ x, z }] of the Sanctuary's shop items
-    this.fadeTargets = null;        // [Vector3] points the camera fades walls to keep visible
-
     // Crusher level support
     this.crusherConfig = null;       // clipped-square bounds + alternating crusher state
     this._crusherMeshes = [];
@@ -1059,7 +1057,6 @@ export default class Level {
     this.floorRects = null;
     this.altarPosition = null;
     this.shopPositions = null;
-    this.fadeTargets = null;
     disposeDonut.call(this);
     disposeHexagon.call(this);
     disposeBullseye.call(this);

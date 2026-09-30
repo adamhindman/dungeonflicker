@@ -7,7 +7,7 @@
 // finds it with pickAt(), shows getInfo() in the disc-info popup, and calls
 // activate() on click when canActivate() is true.
 
-import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Vector3 } from 'three';
+import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { ITEMS } from './ItemManager.js';
 import { makeRingModel } from './ItemModels.js';
 import { getResource, formatAmount } from './PartyResources.js';
@@ -18,7 +18,6 @@ const PEDESTAL_HEIGHT = 0.2;
 const SPIN_SPEED = 1.5;        // radians per second
 const HIT_RADIUS = 0.8;        // generous invisible hover/click target
 const HIT_HEIGHT = 1.8;
-const FADE_TARGET_Y = 1.2;     // roughly the middle of a ring display
 
 export class SanctuaryShop {
   constructor(gc) {
@@ -77,21 +76,12 @@ export class SanctuaryShop {
       };
       this.pedestals.push(pedestal);
     });
-    this._updateFadeTargets();
   }
 
   /** Removes all pedestals from the scene. Call before Level.unload(). */
   teardown() {
     this.pedestals.forEach(p => this._removeMesh(p.mesh));
     this.pedestals = [];
-    this._updateFadeTargets();
-  }
-
-  /** Asks the camera to fade any wall that hides an item still on display. */
-  _updateFadeTargets() {
-    const level = this.gc.level;
-    if (!level) return;
-    level.fadeTargets = this.pedestals.map(p => new Vector3(p.mesh.position.x, FADE_TARGET_Y, p.mesh.position.z));
   }
 
   /** Spins ring models in place. Call every frame. */
@@ -132,7 +122,6 @@ export class SanctuaryShop {
     if (!this.gc.itemManager.purchase(pedestal.itemId, this._buyer())) return;
     this._removeMesh(pedestal.mesh);
     this.pedestals = this.pedestals.filter(p => p !== pedestal);
-    this._updateFadeTargets();
     if (this.gc.soundManager) this.gc.soundManager.playMenuOpen();
   }
 

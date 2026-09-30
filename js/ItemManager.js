@@ -431,7 +431,7 @@ export class ItemManager {
     disc.velocity.set(0, 0, 0);
     disc.moving = false;
     this.gc._spawnTurnStartRings(disc); // ripple in the disc's colour where it leaves
-    if (this.gc.soundManager) this.gc.soundManager.playTeleportOut();
+    if (this.gc.soundManager) this.gc.soundManager.playTeleport();
 
     this._teleport = { disc, target, rising, falling, pillars: [rising, falling], elapsed: 0, landed: false };
   }
@@ -463,9 +463,7 @@ export class ItemManager {
       if (p >= 1 && !t.landed) {
         t.landed = true;
         this._placeDisc(t.disc, t.target);
-        this.gc._spawnTurnStartRings(t.disc);
-        if (this.gc.soundManager) this.gc.soundManager.playTeleportIn();
-      }
+        this.gc._spawnTurnStartRings(t.disc);      }
       if (t.landed) {
         const f = Math.min(Math.max(d - DESCEND_DURATION - LAND_HOLD, 0) / LAND_FADE_DURATION, 1);
         this._setBeamStrength(t.falling, 1 - f);

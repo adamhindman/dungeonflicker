@@ -10,7 +10,7 @@
 
 import {
   AdditiveBlending, BackSide, CanvasTexture, CircleGeometry, Group, Mesh, MeshBasicMaterial,
-  MeshStandardMaterial, PointLight, SphereGeometry,
+  MeshStandardMaterial, PointLight, SphereGeometry, Vector3,
 } from 'three';
 import { getResource, formatAmount, isMainPC } from './PartyResources.js';
 
@@ -86,6 +86,11 @@ export class SanctuaryShrine {
     this._shadow.position.set(altar.x, 0.03, altar.z);
     this.gc.scene.add(this._shadow);
     this._bobTime = 0;
+
+    // The orb's heartbeat loops for as long as the orb is here.
+    if (this.gc.soundManager) {
+      this.gc.soundManager.startHeartbeat(new Vector3(altar.x, 0, altar.z));
+    }
   }
 
   /** Bobs the orb gently up and down; its shadow tightens as it dips. Call every frame. */
@@ -98,9 +103,10 @@ export class SanctuaryShrine {
     this._shadow.material.opacity = SHADOW_OPACITY * (1 - bob * 0.12);
   }
 
-  /** Removes the orb and its shadow from the scene. Call before Level.unload(). */
+  /** Removes the orb and its shadow and stops its heartbeat. Call before Level.unload(). */
   teardown() {
     if (!this.mesh) return;
+    if (this.gc.soundManager) this.gc.soundManager.stopHeartbeat();
     for (const object of [this.mesh, this._shadow]) {
       this.gc.scene.remove(object);
       object.traverse(o => {

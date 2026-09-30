@@ -80,6 +80,10 @@ export class SoundManager {
     this.fireballHitBuffer = null;
     this.godsEyeInBuffer = null;
     this.godsEyeOutBuffer = null;
+    this.teleportBuffer = null;
+    this.heartbeatBuffer = null;
+    this._heartbeat = null;         // { obj, sound } while the Sanctuary heartbeat loops
+    this._heartbeatPending = null;  // position to start at once the buffer loads
     this.musicBuffer = null;
     this._musicAudio = null;
     this._musicPending = false;
@@ -156,6 +160,11 @@ export class SoundManager {
     });
     Promise.all(JELLY_SQUEEZE_URLS.map(url => load(url))).then(buffers => {
       this.jellySqueezeBuffers = buffers.filter(Boolean);
+    });
+    load('/sounds/energy/teleport.mp3').then(buffer => { this.teleportBuffer = buffer || null; });
+    load('/sounds/atmosphere/human-body-heartbeat-bassy-single-medium-03.mp3').then(buffer => {
+      this.heartbeatBuffer = buffer || null;
+      if (this._heartbeatPending) this.startHeartbeat(this._heartbeatPending);
     });
 
     load('/sounds/atmosphere/background-loop.mp3').then(music => {
@@ -332,14 +341,45 @@ export class SoundManager {
     sound.play();
   }
 
-  /** Warp Ring: whoosh as the disc leaves (reuses the God's-eye zoom-out sound, louder). */
-  playTeleportOut() {
-    this._playBuffer(this.godsEyeOutBuffer, 0.6);
+  /**
+   * Sanctuary: loops the golden orb's heartbeat at `position` until
+   * stopHeartbeat(). Starts once the sound has loaded if it hasn't yet.
+   */
+  startHeartbeat(position) {
+    this.stopHeartbeat();
+    if (!this.heartbeatBuffer) {
+      this._heartbeatPending = position.clone();
+      return;
+    }
+    const ctx = this.listener.context;
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const obj = new Object3D();
+    obj.position.copy(position);
+    this.gc.scene.add(obj);
+
+    const sound = new PositionalAudio(this.listener);
+    sound.setBuffer(this.heartbeatBuffer);
+    sound.setRefDistance(20);
+    sound.setVolume(1.0);
+    sound.setLoop(true);
+    obj.add(sound);
+    sound.play();
+    this._heartbeat = { obj, sound };
   }
 
-  /** Warp Ring: whoosh as the disc lands (reuses the God's-eye zoom-in sound, louder). */
-  playTeleportIn() {
-    this._playBuffer(this.godsEyeInBuffer, 0.6);
+  stopHeartbeat() {
+    this._heartbeatPending = null;
+    if (!this._heartbeat) return;
+    const { obj, sound } = this._heartbeat;
+    if (sound.isPlaying) sound.stop();
+    this.gc.scene.remove(obj);
+    this._heartbeat = null;
+  }
+
+  /** Warp Ring: played once as the teleport starts; long enough to cover the landing too. */
+  playTeleport() {
+    this._playBuffer(this.teleportBuffer, 0.8);
   }
 
   _playBuffer(buffer, volume) {

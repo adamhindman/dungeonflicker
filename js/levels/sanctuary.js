@@ -1,16 +1,14 @@
 import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, MeshStandardMaterial, RepeatWrapping } from "three";
 
 // Sanctuary floorplan (north = -Z, the far wall; camera sits south): a central
-// aisle with two pairs of alcoves.
+// aisle with one long alcove on each side, each holding two item spots.
 //
 //              ┌─door─┐
 //              │chancel│
 //      ┌───────┘      └───────┐
-//      │ alcove   orb   alcove │  ← row 1: resurrection orb + two shop items
-//      └───────┐      ┌───────┘
-//              │ neck │
-//      ┌───────┘      └───────┐
-//      │ alcove         alcove │  ← row 2: reserved for two more shop items
+//      │ item     orb     item │  ← row 1: resurrection orb + two shop items
+//      │                       │
+//      │ item             item │  ← row 2: reserved for two more shop items
 //      └───────┐      ┌───────┘
 //              │ nave │  ← party starts here
 //              └──────┘
@@ -21,10 +19,9 @@ const HALF_ARM   = 7;    // half-width of the aisle
 const ALCOVE_X   = 15;   // x of each alcove's end wall
 const NORTH_Z    = -19;  // chancel end wall (door)
 const SOUTH_Z    = 19;   // nave end wall
-const ALCOVE_ROWS = [    // [north z, south z] of each alcove pair, door end first
-  [-13, -5],
-  [-1, 7],
-];
+const ALCOVE_N_Z = -13;  // north edge of the alcoves
+const ALCOVE_S_Z = 7;    // south edge of the alcoves
+const ITEM_ROWS_Z = [-9, 3]; // z of each row of item spots, door end first
 
 export function loadSanctuary() {
   const wallH     = this.wallHeight;
@@ -37,19 +34,16 @@ export function loadSanctuary() {
   this.fieldWidth  = ALCOVE_X * 2;
   this.fieldDepth  = SOUTH_Z - NORTH_Z;
   // Walkable areas, used by isPositionValid() to reject the empty corners.
-  this.floorRects = [{ x0: -HALF_ARM, x1: HALF_ARM, z0: NORTH_Z, z1: SOUTH_Z }]; // the aisle
-  for (const [z0, z1] of ALCOVE_ROWS) {
-    this.floorRects.push(
-      { x0: -ALCOVE_X, x1: -HALF_ARM, z0, z1 },
-      { x0: HALF_ARM,  x1: ALCOVE_X,  z0, z1 },
-    );
-  }
-  // One shop item in the middle of each alcove, door-end row first. The
-  // resurrection orb floats in the aisle, level with the first row.
+  this.floorRects = [
+    { x0: -HALF_ARM, x1: HALF_ARM,  z0: NORTH_Z,    z1: SOUTH_Z },    // the aisle
+    { x0: -ALCOVE_X, x1: -HALF_ARM, z0: ALCOVE_N_Z, z1: ALCOVE_S_Z }, // west alcove
+    { x0: HALF_ARM,  x1: ALCOVE_X,  z0: ALCOVE_N_Z, z1: ALCOVE_S_Z }, // east alcove
+  ];
+  // Two item spots per alcove, door-end row first. The resurrection orb floats
+  // in the aisle, level with the first row.
   const alcoveX = (HALF_ARM + ALCOVE_X) / 2;
-  const rowZ = ALCOVE_ROWS.map(([z0, z1]) => (z0 + z1) / 2);
-  this.altarPosition = { x: 0, z: rowZ[0] };
-  this.shopPositions = rowZ.flatMap(z => [{ x: -alcoveX, z }, { x: alcoveX, z }]);
+  this.altarPosition = { x: 0, z: ITEM_ROWS_Z[0] };
+  this.shopPositions = ITEM_ROWS_Z.flatMap(z => [{ x: -alcoveX, z }, { x: alcoveX, z }]);
 
   // ── Floor ──────────────────────────────────────────────────────────────────
   // One mesh built from the walkable rects, with world-space UVs so the tiles
@@ -115,16 +109,11 @@ export function loadSanctuary() {
   for (const sign of [-1, 1]) {
     const side = sign > 0 ? 'east' : 'west';
     const [ax0, ax1] = [Math.min(sign * HALF_ARM, sign * ALCOVE_X), Math.max(sign * HALF_ARM, sign * ALCOVE_X)];
-    // Walk the aisle wall from the door to the nave, stepping out around each alcove.
-    let aisleZ = NORTH_Z;
-    ALCOVE_ROWS.forEach(([z0, z1], row) => {
-      wallAlongZ(`aisle_${side}_${row}`, aisleZ, z0, sign * HALF_ARM);
-      wallAlongX(`alcove_${side}_${row}_north`, ax0, ax1, z0);
-      wallAlongZ(`alcove_${side}_${row}_end`, z0, z1, sign * ALCOVE_X);
-      wallAlongX(`alcove_${side}_${row}_south`, ax0, ax1, z1);
-      aisleZ = z1;
-    });
-    wallAlongZ(`aisle_${side}_${ALCOVE_ROWS.length}`, aisleZ, SOUTH_Z, sign * HALF_ARM);
+    wallAlongZ(`chancel_${side}`, NORTH_Z, ALCOVE_N_Z, sign * HALF_ARM);
+    wallAlongX(`alcove_${side}_north`, ax0, ax1, ALCOVE_N_Z);
+    wallAlongZ(`alcove_${side}_end`, ALCOVE_N_Z, ALCOVE_S_Z, sign * ALCOVE_X);
+    wallAlongX(`alcove_${side}_south`, ax0, ax1, ALCOVE_S_Z);
+    wallAlongZ(`nave_${side}`, ALCOVE_S_Z, SOUTH_Z, sign * HALF_ARM);
   }
   wallAlongX('nave_south', -HALF_ARM, HALF_ARM, SOUTH_Z);
 
