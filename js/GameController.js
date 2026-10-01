@@ -143,7 +143,7 @@ export default class GameController {
     this._hoverPendingDisc = null;
 
     this.discDescriptions = {
-        Barbarian: "Deals 2 damage to every enemy he hits. Enemies he knocks into walls take extra damage. Every blow he takes feeds his Rage, and while raging, each kill earns him another throw. Raging leaves him Exhausted for a turn: half power, no Rage.",
+        Barbarian: "Deals 2 damage to every enemy he hits. Enemies he knocks into walls take extra damage. Every blow he takes feeds his Rage, and while raging, each kill earns him another throw. Raging leaves him Exhausted for a turn: half power, no Rage. He can also Taunt, forcing nearby enemies to attack him.",
         Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
         Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
@@ -1856,6 +1856,7 @@ clamp(value, min, max) {
     this.wizardController?.update(deltaTime);
     this.rogueController?.update(deltaTime);
     this.itemManager?.update(deltaTime);
+    this.barbarianController?.update(deltaTime);
     this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
@@ -2572,7 +2573,12 @@ disc.isCurrentlyInLavaState = true;
     const resourceLine = res
       ? `\n${res.units[0].toUpperCase()}${res.units.slice(1)}: ${res.controller[res.field]}`
       : '';
-    const statusLine = disc.exhausted ? '\nStatus: Exhausted' : '';
+    const statuses = [];
+    if (disc.exhausted) statuses.push('Exhausted');
+    if (disc.kind === 'Barbarian' && disc === this.barbarianController?.getDisc() && this.barbarianController.taunting) {
+      statuses.push('Taunting');
+    }
+    const statusLine = statuses.length ? `\nStatus: ${statuses.join(', ')}` : '';
     this.discInfoDescriptionElement.innerText = `${heartsLine}Attack: ${attackPower}${resourceLine}${statusLine}\n\n${descriptionText}`;
 
     // Reset classes and apply new ones
@@ -2615,9 +2621,11 @@ disc.isCurrentlyInLavaState = true;
   /**
    * Living player discs for NPCs to aim at. A Rogue hidden by Sneak Attack is
    * never a target; discs phased by a Ghost Ring are only targeted when no one
-   * else is left.
+   * else is left. An `attacker` inside the Barbarian's Taunt can only target him.
    */
-  _aiTargetablePlayers() {
+  _aiTargetablePlayers(attacker = null) {
+    const taunter = this.barbarianController?.taunterFor(attacker);
+    if (taunter) return [taunter];
     const alive = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead && !d.isHidden);
     const solid = alive.filter(d => !d.isGhost);
     return solid.length > 0 ? solid : alive;
@@ -2682,7 +2690,7 @@ disc.isCurrentlyInLavaState = true;
       const SELF_THROW_RANGE = 10;
       const MAX_FIREBALL_RANGE = 22;
 
-      const alivePlayers = this._aiTargetablePlayers();
+      const alivePlayers = this._aiTargetablePlayers(disc);
       if (alivePlayers.length === 0) return;
 
       let target = alivePlayers[0];
@@ -2760,8 +2768,10 @@ disc.isCurrentlyInLavaState = true;
       let target = null;
       let minDist = Infinity;
 
-      const corpses = this.discs.filter(d => d.dead);
-      const players = this._aiTargetablePlayers();
+      // A taunted Blob ignores corpses and goes for the Barbarian.
+      const taunted = !!this.barbarianController?.taunterFor(disc);
+      const corpses = taunted ? [] : this.discs.filter(d => d.dead);
+      const players = this._aiTargetablePlayers(disc);
       const targets = [...corpses, ...players];
 
       if (targets.length === 0) return;
@@ -2850,7 +2860,7 @@ disc.isCurrentlyInLavaState = true;
     }
 
     // Get alive player discs as targets (exclude AnimatedDead — they are player-controlled but not real targets)
-    const alivePlayers = this._aiTargetablePlayers();
+    const alivePlayers = this._aiTargetablePlayers(disc);
     if (alivePlayers.length === 0) return;
 
     // Select closest player disc as target
