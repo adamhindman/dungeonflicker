@@ -9,6 +9,7 @@
 
 import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { ITEMS } from './ItemManager.js';
+import { ItemHelpDialog } from './ItemHelpDialog.js';
 import { makeKnifeModel, makeRingModel, makeShieldModel } from './ItemModels.js';
 import { getResource, formatAmount } from './PartyResources.js';
 
@@ -23,6 +24,7 @@ export class SanctuaryShop {
   constructor(gc) {
     this.gc = gc;
     this.pedestals = []; // [{ itemId, mesh, spinner, prop }]
+    this._helpDialog = new ItemHelpDialog(); // "how to use it", shown after a purchase
   }
 
   /** Call after the Sanctuary's discs are spawned. */
@@ -81,6 +83,7 @@ export class SanctuaryShop {
 
   /** Removes all pedestals from the scene. Call before Level.unload(). */
   teardown() {
+    this._helpDialog.close();
     this.pedestals.forEach(p => this._removeMesh(p.mesh));
     this.pedestals = [];
   }
@@ -120,10 +123,12 @@ export class SanctuaryShop {
   }
 
   _buy(pedestal) {
-    if (!this.gc.itemManager.purchase(pedestal.itemId, this._buyer())) return;
+    const buyer = this._buyer();
+    if (!this.gc.itemManager.purchase(pedestal.itemId, buyer)) return;
     this._removeMesh(pedestal.mesh);
     this.pedestals = this.pedestals.filter(p => p !== pedestal);
     if (this.gc.soundManager) this.gc.soundManager.playPurchase();
+    this._helpDialog.show(pedestal.itemId, buyer.discName);
   }
 
   _removeMesh(group) {

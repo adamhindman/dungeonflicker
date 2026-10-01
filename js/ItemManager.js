@@ -34,6 +34,12 @@ export const ITEMS = {
     model: 'ring',
     description: 'Instantly jump to any open spot in the room. Each use costs 1 mana or charge. ' +
       'Can be used before or after moving.',
+    // Shown once when bought (see ItemHelpDialog): how to use it, step by step.
+    help: [
+      'Press <kbd>6</kbd> (or click <b>Warp Ring</b>), then click any open spot to teleport there.',
+      'Each jump costs 1 mana or charge. Use it before or after your move.',
+      'Press <kbd>Esc</kbd> to cancel before choosing a spot.',
+    ],
   },
   ghostRing: {
     name: 'Ghost Ring',
@@ -44,6 +50,14 @@ export const ITEMS = {
       'Turning it on costs 1 HP and 1 mana or charge, and it costs the same again at the ' +
       'start of each of your turns while it stays on. Turning it off is free; it switches ' +
       'off by itself when you run out of mana or charges.',
+    help: [
+      'Press <kbd>7</kbd> to turn it on. You become a ghost: you pass through discs and obstacles ' +
+        '(but not the room\'s outer walls), and you neither take nor deal damage.',
+      'Turning it on costs 1 HP and 1 mana or charge, and the same again at the start of each of ' +
+        'your turns while it stays on. Careful: that HP cost can kill you.',
+      'Press <kbd>7</kbd> again to turn it off for free (not while you\'re inside an obstacle). ' +
+        'It switches off by itself when you run out of mana or charges.',
+    ],
   },
   throwingKnife: {
     name: 'Throwing Knife',
@@ -54,6 +68,14 @@ export const ITEMS = {
     description: 'Ready the knife beside you, then flick it at an enemy for 1 damage. One throw per ' +
       'turn, on top of your normal move. It can\'t be destroyed and enemies pass over it; move ' +
       'over it to pick it back up. It returns to you when you leave the room.',
+    help: [
+      'Press <kbd>8</kbd> to ready the knife beside you, then drag from the knife to flick it, ' +
+        'just like throwing a disc.',
+      'It\'s an extra throw each turn, on top of your normal move. It deals 1 damage to the first ' +
+        'enemy it hits and stops there.',
+      'Move over the knife to pick it back up. It can\'t be destroyed, enemies ignore it, and it ' +
+        'returns to you when you leave the room.',
+    ],
   },
   hardyShield: {
     name: 'Hardy Shield',
@@ -63,6 +85,13 @@ export const ITEMS = {
     description: 'A steel shield that stands beside you and faces a fixed direction. Discs bounce ' +
       'off it, and it blocks blasts and explosions coming from its side. On your turn, click it ' +
       '(or press 9) to move it to one of its other two spots for free.',
+    help: [
+      'The shield stands beside you and always faces the same direction, whichever way you move.',
+      'Discs bounce off it, so enemies can\'t hit you from that side, and it blocks explosions ' +
+        'and blasts coming from its side.',
+      'On your turn, click the shield (or press <kbd>9</kbd>), then click one of the other two ' +
+        'spots to move it there. Moving it is free.',
+    ],
   },
 };
 
