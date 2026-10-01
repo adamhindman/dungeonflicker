@@ -5,11 +5,11 @@ const CHARACTERS = [
     image: '/images/barbarian-nobg.png',
     color: '#0088ff',
     hp: 5,
-    summary: 'A heavy-hitting warrior who grows stronger with each kill.',
+    summary: 'A hulking brawler who charges into the thick of the fight.',
     skills: [
-      'Hits deal +1 damage per additional enemy struck in a single throw.',
-      'Rage: spend a charge to power up your next throw.',
-      'Earn Rage charges by killing enemies.',
+      'Plows through crowds of enemies',
+      'Slams foes into walls',
+      'Flies into a rage to keep the carnage going',
     ],
   },
   {
@@ -18,12 +18,11 @@ const CHARACTERS = [
     image: '/images/wizard-nobg.png',
     color: '#00C0C0',
     hp: 3,
-    summary: 'A clever spellcaster who bends magic to his will.',
+    summary: 'A master of the arcane who blasts foes and mends friends.',
     skills: [
-      'Mystical Orb: launch a volatile magical projectile.',
-      'Healing Orb: a sphere that restores 2 HP to allies it touches.',
-      'Radius Blast: detonate all orbs in a shockwave.',
-      'Flame Strike: unleash a devastating column of flames',
+      'Hurls volatile orbs of magic',
+      'Heals allies from afar',
+      'Calls down pillars of fire',
     ],
   },
   {
@@ -34,10 +33,9 @@ const CHARACTERS = [
     hp: 3,
     summary: 'A dark sorcerer who commands the dead.',
     skills: [
-      'Animate Dead: raise a fallen enemy as a minion.',
-      'Drain Life: sap HP from all nearby enemies at turn\'s end.',
-      'Resurrect Ally: revive a fallen ally at half HP.',
-      'Earn Mana from kills and clearing rooms.',
+      'Raises fallen enemies',
+      'Drains the life from nearby foes',
+      'Death is negotiable when he\'s around',
     ],
   },
   {
@@ -46,12 +44,11 @@ const CHARACTERS = [
     image: '/images/rogue-nobg.png',
     color: '#CC3355',
     hp: 4,
-    summary: 'A sneaky bomb-thrower who attacks with deceptive speed.',
+    summary: 'A quick, sneaky trickster with a bag full of surprises.',
     skills: [
-      'Gets 2 throws per turn.',
-      'Bomb: lob a timed explosive that blasts everything nearby.',
-      'Sneak Attack: hide, then strike next turn with ricochet shots that grow stronger off walls.',
-      'Health Potion: throw a healing flask onto the field.',
+      'Moves twice every turn',
+      'Lobs bombs and healing potions',
+      'Hides in the shadows, then strikes',
     ],
   },
 ];

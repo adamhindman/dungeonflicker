@@ -1,3 +1,5 @@
+import { tooltipManager } from './TooltipManager.js';
+
 export default class UIManager {
     constructor(restartGameCallback, recenterCameraCallback, focusCameraOnDiscCallback, restartLevelCallback) {
         this.throwInfoDiv = document.getElementById("throw-info");
@@ -13,10 +15,25 @@ export default class UIManager {
             // Styles for currentTurnDiscNameElement are now in main.css
             this.powersAreaElement.prepend(this.currentTurnDiscNameElement);
 
+            // Status chips in a row: "Move available/used", plus "Exhausted" for a
+            // Barbarian the turn after a Rage.
+            const statusChips = document.createElement("div");
+            statusChips.id = "turn-status-chips";
+            this.powersAreaElement.appendChild(statusChips);
+
             this.moveStatusChipElement = document.createElement("div");
             this.moveStatusChipElement.id = "move-status-chip";
             this.moveStatusChipElement.classList.add("element-hidden");
-            this.powersAreaElement.appendChild(this.moveStatusChipElement);
+            statusChips.appendChild(this.moveStatusChipElement);
+
+            this.exhaustedChipElement = document.createElement("div");
+            this.exhaustedChipElement.id = "exhausted-chip";
+            this.exhaustedChipElement.textContent = "Exhausted";
+            this.exhaustedChipElement.classList.add("element-hidden");
+            statusChips.appendChild(this.exhaustedChipElement);
+            tooltipManager.register(this.exhaustedChipElement, 'barbarian_exhausted_chip',
+                'Raging last turn left the Barbarian exhausted: this turn he throws at half power and can\'t Rage.',
+                { completeOnClick: false });
 
             // Create container for action buttons
             this.actionButtonsContainerElement = document.createElement("div");
@@ -552,6 +569,9 @@ export default class UIManager {
 
     updateMoveStatusChip(currentDisc) {
         if (!this.moveStatusChipElement) return;
+
+        this.exhaustedChipElement?.classList.toggle('element-hidden',
+            !(currentDisc && !currentDisc.dead && currentDisc.kind === 'Barbarian' && currentDisc.exhausted));
 
         if (!currentDisc || currentDisc.dead || currentDisc.type !== 'player') {
             this.moveStatusChipElement.classList.add('element-hidden');

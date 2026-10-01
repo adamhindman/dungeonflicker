@@ -27,7 +27,8 @@ function maxLaunchSpeed(disc) {
     const skillFactor = 0.7 + 0.3 * (disc.skillLevel / 100);
     return (skillFactor * disc.throwPowerMultiplier) / disc.mass;
   }
-  return disc.kind === 'Bomb' ? 1.8 : 1; // player throws are capped at this speed
+  const scale = disc.gameController?._throwPowerScale(disc) ?? 1; // e.g. an Exhausted Barbarian
+  return (disc.kind === 'Bomb' ? 1.8 : 1) * scale; // player throws are capped at this speed
 }
 
 /** How far the disc's centre slides from a full-power launch on flat, open floor. */

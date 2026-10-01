@@ -34,8 +34,11 @@ class TooltipManager {
    * @param {string}      eventKey  - firstTimeEvents key to gate on
    * @param {string|function(): string} text - tooltip body text, or a function
    *   returning it (read on each hover, for text that changes with game state)
+   * @param {{completeOnClick?: boolean}} [options] - completeOnClick: false for
+   *   elements that only explain something (e.g. a status chip), so clicking
+   *   them doesn't run the checkmark completion sequence
    */
-  register(button, eventKey, text) {
+  register(button, eventKey, text, { completeOnClick = true } = {}) {
     if (!button) return;
     const getText = typeof text === 'function' ? text : () => text;
 
@@ -60,6 +63,7 @@ class TooltipManager {
       this._hide();
     });
 
+    if (!completeOnClick) return;
     button.addEventListener('click', () => {
       // Only run completion if this button's tooltip is currently visible
       // and we haven't started a completion sequence yet.

@@ -5,7 +5,6 @@ import { tooltipManager } from './TooltipManager.js';
 const DRAIN_LIFE_RADIUS = 8;
 const DRAIN_LIFE_MANA_COST = 2;
 const CARRION_FEAST_MANA_COST = 2;
-const NECROMANCER_MAX_MANA = 6;
 const ANIMATED_DEAD_MAX_COUNT = 6;
 
 export class NecromancerController {
@@ -885,7 +884,7 @@ export class NecromancerController {
   // ─── Turn / level / game lifecycle ──────────────────────────────────────────
 
   applyEarnedMana() {
-    this.mana = Math.min(this.mana + this.manaEarnedThisTurn, NECROMANCER_MAX_MANA); // no passive gain for Necromancer
+    this.mana += this.manaEarnedThisTurn; // no passive gain for Necromancer
     this.manaEarnedThisTurn = 0;
   }
 

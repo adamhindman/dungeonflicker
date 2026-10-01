@@ -35,6 +35,21 @@ export default class Disc {
       penumbra: 1.2, // Same as active
       color: 0xff0000 // Red color for rage
     },
+    // Barbarian the turn after a Rage: a weary, cold blue-grey light
+    exhaustedActive: {
+      intensity: 45,
+      distance: 20,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0x6f86a8
+    },
+    exhausted: {
+      intensity: 20,
+      distance: 12.5,
+      angle: Math.PI / 4,
+      penumbra: 1.2,
+      color: 0x6f86a8
+    },
     animatedDead: {
       intensity: 80,
       distance: 15,
@@ -467,6 +482,11 @@ export default class Disc {
       this.gameController?.rogueController?.onDamageDealt();
     }
 
+    // Every hit the Barbarian takes, however hard, feeds his Rage.
+    if (actualDamage > 0 && this.kind === 'Barbarian' && this.type === 'player') {
+      this.gameController?.barbarianController?.onHitTaken();
+    }
+
     if (actualDamage > 0 && this.gameController && this.gameController.uiManager && this.kind !== 'Orb' && this.kind !== 'HealingOrb' && this.kind !== 'Fireball') {
       this.gameController.uiManager.showFloatingText(this, actualDamage, false);
     }
@@ -551,6 +571,9 @@ export default class Disc {
     } else if (this.kind === "Barbarian" && (this.rageIsActiveForNextThrow || this.rageWasUsedThisThrow)) {
       this.hideAnimatedDeadRing();
       this.updateSpotlightConfig('raging');
+    } else if (this.kind === "Barbarian" && this.exhausted) {
+      this.hideAnimatedDeadRing();
+      this.updateSpotlightConfig(isActive ? 'exhaustedActive' : 'exhausted');
     } else if (this.kind === "AnimatedDead") {
       this.showAnimatedDeadRing();
       this.updateSpotlightConfig('inactive');

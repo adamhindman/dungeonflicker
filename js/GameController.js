@@ -143,7 +143,7 @@ export default class GameController {
     this._hoverPendingDisc = null;
 
     this.discDescriptions = {
-        Barbarian: "Deals heavy damage, plus extra damage per enemy hit on the same throw. Unleash your Rage to do even more damage and gain multiple attacks.",
+        Barbarian: "Deals 2 damage to every enemy he hits. Enemies he knocks into walls take extra damage. Every blow he takes feeds his Rage, and while raging, each kill earns him another throw. Raging leaves him Exhausted for a turn: half power, no Rage.",
         Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
         Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
@@ -1012,7 +1012,7 @@ export default class GameController {
         }
 
         if (discBeingThrown.kind === 'Barbarian') {
-          this.barbarianController?.uniqueNPCHitsThisThrow.clear();
+          this.barbarianController?.onNewThrow(discBeingThrown);
         }
         if (discBeingThrown.kind === 'Rogue') {
           this.rogueController?.onNewThrow(discBeingThrown);
@@ -1095,10 +1095,16 @@ export default class GameController {
     let multiplier = disc.throwPowerMultiplier;
     if (disc.rageIsActiveForNextThrow) multiplier *= 2.5;
     const maxSpeed = disc.kind === 'Bomb' ? 1.8 : 1;
-    const cap = precision ? maxSpeed * PRECISION_POWER_CAP : maxSpeed;
+    const limit = maxSpeed * this._throwPowerScale(disc); // an Exhausted Barbarian throws weaker
+    const cap = precision ? limit * PRECISION_POWER_CAP : limit;
     const raw = (adjustedWorldDrag * THROW_SENSITIVITY * multiplier) / disc.mass;
     const speed = Math.max(Math.min(raw, cap), THROW_MIN_SPEED);
     return { speed, fraction: speed / maxSpeed };
+  }
+
+  /** Scale on the disc's maximum throw power (1 unless e.g. the Barbarian is Exhausted). */
+  _throwPowerScale(disc) {
+    return this.barbarianController?.throwPowerScale(disc) ?? 1;
   }
 
   /**
@@ -1108,7 +1114,7 @@ export default class GameController {
    */
   _precisionDragScale(disc) {
     if (!disc) return 1;
-    const capFraction = PRECISION_POWER_CAP;
+    const capFraction = PRECISION_POWER_CAP * this._throwPowerScale(disc);
     let lo = 0, hi = 1000;
     for (let i = 0; i < 30; i++) {
       const mid = (lo + hi) / 2;
@@ -1262,7 +1268,7 @@ clamp(value, min, max) {
 
         const necromancer = this.necromancerController?.getDisc();
         if (necromancer && !necromancer.dead) {
-            this.necromancerController.mana = Math.min(this.necromancerController.mana + 1, 6);
+            this.necromancerController.mana += 1;
             if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
         }
 
@@ -1992,7 +1998,7 @@ disc.isCurrentlyInLavaState = true;
                   const actor = this.currentDisc;
                   if (actor && actor.type === 'player') {
                       if (actor.kind === 'Barbarian') {
-                          this.barbarianController.rageCharges++;
+                          this.barbarianController.onKill(actor);
                       } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
                           this.wizardController.manaEarnedThisTurn++;
                       } else if (actor.kind === 'Rogue' || actor.kind === 'Bomb') {
@@ -2566,7 +2572,8 @@ disc.isCurrentlyInLavaState = true;
     const resourceLine = res
       ? `\n${res.units[0].toUpperCase()}${res.units.slice(1)}: ${res.controller[res.field]}`
       : '';
-    this.discInfoDescriptionElement.innerText = `${heartsLine}Attack: ${attackPower}${resourceLine}\n\n${descriptionText}`;
+    const statusLine = disc.exhausted ? '\nStatus: Exhausted' : '';
+    this.discInfoDescriptionElement.innerText = `${heartsLine}Attack: ${attackPower}${resourceLine}${statusLine}\n\n${descriptionText}`;
 
     // Reset classes and apply new ones
     this.discInfoPopupElement.className = 'popup'; // Base class
@@ -2891,11 +2898,6 @@ disc.isCurrentlyInLavaState = true;
     const maxFuzzDegrees = 15;
     const fuzzFactor = (100 - disc.skillLevel) / 100;
 
-    // Clear Barbarian-specific unique NPC hit tracking before calculating throw trajectory
-    if (disc.kind === 'Barbarian') {
-      this.barbarianController?.uniqueNPCHitsThisThrow.clear();
-    }
-
     let bestDir = idealDir;
     let bestSpeed =
       Math.min(minDist / 10, 1) * (0.7 + 0.3 * (disc.skillLevel / 100));
@@ -2959,7 +2961,7 @@ disc.takeHit(1, null); // Apply 1 damage
             const actor = this.currentDisc;
             if (actor && actor.type === 'player') {
                 if (actor.kind === 'Barbarian') {
-                    this.barbarianController.rageCharges++;
+                    this.barbarianController.onKill(actor);
                 } else if (actor.kind === 'Wizard' || actor.kind === 'Orb') {
                     this.wizardController.manaEarnedThisTurn++;
                 } else if (actor.kind === 'Rogue' || actor.kind === 'Bomb') {
