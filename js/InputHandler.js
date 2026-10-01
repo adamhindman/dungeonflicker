@@ -108,6 +108,12 @@ export default class InputHandler {
                 this.gameController.itemManager.cancelTeleportTargeting();
                 return;
             }
+            if (this.gameController.itemManager && this.gameController.itemManager.shieldMoveActive) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.gameController.itemManager.cancelShieldMove();
+                return;
+            }
             if (this.isPointerDown) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -196,7 +202,8 @@ export default class InputHandler {
             case '5':
             case '6':
             case '7':
-            case '8': {
+            case '8':
+            case '9': {
                 // Numbered keys = action/spell buttons (6+ are Sanctuary items).
                 // Prefer a button with a matching data-shortcut attribute (stable regardless of
                 // which other buttons are visible). Fall back to position-based selection for

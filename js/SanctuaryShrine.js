@@ -22,6 +22,9 @@ const BOB_SPEED = 1.6;      // radians per second
 const GOLD = 0xffc53d;
 const SHADOW_RADIUS = ORB_RADIUS * 1.7;
 const SHADOW_OPACITY = 0.9;
+const LIGHT_INTENSITY = 45;
+const VANISH_DURATION = 0.7; // seconds for the orb to shrink away after a resurrection
+const VANISH_SWELL = 0.12;   // it first swells by this much before shrinking
 
 /** A soft round shadow: black in the middle fading to transparent at the edge. */
 function makeShadowTexture() {
@@ -67,7 +70,9 @@ export class SanctuaryShrine {
         depthWrite: false, blending: AdditiveBlending,
       }),
     );
-    const light = new PointLight(0xffc040, 45, 20, 1.6);
+    const light = new PointLight(0xffc040, LIGHT_INTENSITY, 20, 1.6);
+    this._light = light;
+    this._vanishElapsed = null;
 
     this.mesh = new Group();
     this.mesh.add(this._orb, halo, light);
@@ -93,14 +98,38 @@ export class SanctuaryShrine {
     }
   }
 
-  /** Bobs the orb gently up and down; its shadow tightens as it dips. Call every frame. */
+  /**
+   * Bobs the orb gently up and down; its shadow tightens as it dips. While
+   * vanishing, the orb (with its light and shadow) swells slightly and then
+   * shrinks to nothing. Call every frame.
+   */
   update(deltaTime) {
     if (!this.mesh) return;
     this._bobTime += deltaTime;
     const bob = Math.sin(this._bobTime * BOB_SPEED); // -1 (low) … 1 (high)
     this.mesh.position.y = FLOAT_HEIGHT + bob * BOB_AMPLITUDE;
-    this._shadow.scale.setScalar(1 + bob * 0.06);
-    this._shadow.material.opacity = SHADOW_OPACITY * (1 - bob * 0.12);
+
+    let size = 1;
+    if (this._vanishElapsed !== null) {
+      this._vanishElapsed += deltaTime;
+      const t = Math.min(this._vanishElapsed / VANISH_DURATION, 1);
+      // Swell over the first 20%, then shrink with an accelerating ease-in.
+      size = t < 0.2
+        ? 1 + VANISH_SWELL * Math.sin((t / 0.2) * Math.PI / 2)
+        : (1 + VANISH_SWELL) * (1 - ((t - 0.2) / 0.8) ** 2);
+      if (t >= 1) { this.teardown(); return; }
+    }
+    this.mesh.scale.setScalar(size);
+    this._light.intensity = LIGHT_INTENSITY * Math.min(size, 1);
+    this._shadow.scale.setScalar((1 + bob * 0.06) * size);
+    this._shadow.material.opacity = SHADOW_OPACITY * (1 - bob * 0.12) * Math.min(size, 1);
+  }
+
+  /** Starts the shrink-away animation; the orb removes itself when it finishes. */
+  _vanish() {
+    if (!this.mesh || this._vanishElapsed !== null) return;
+    this._vanishElapsed = 0;
+    if (this.gc.soundManager) this.gc.soundManager.stopHeartbeat();
   }
 
   /** Removes the orb and its shadow and stops its heartbeat. Call before Level.unload(). */
@@ -124,7 +153,8 @@ export class SanctuaryShrine {
 
   /** @returns {SanctuaryShrine|null} this prop if the ray hits the orb. */
   pickAt(raycaster) {
-    return this._orb && raycaster.intersectObject(this._orb, false).length > 0 ? this : null;
+    if (!this._orb || this._vanishElapsed !== null) return null; // not clickable while vanishing
+    return raycaster.intersectObject(this._orb, false).length > 0 ? this : null;
   }
 
   /** Title, cost line and description for the shared disc-info popup. */
@@ -135,14 +165,15 @@ export class SanctuaryShrine {
     const allyName = ally ? ally.discName : 'your fallen ally';
 
     let description =
-      `Spend ${RESURRECT_COST} mana or charges to resurrect ${allyName} ` +
-      `with full health and their starting mana or charges.`;
+      `The Big Golden Orb can bring back the fallen. Spend ${RESURRECT_COST} mana or charges ` +
+      `to resurrect ${allyName} with full health and their starting mana or charges. ` +
+      `Any items they had are lost.`;
     if (payer && res) {
       description += `\n\n${payer.discName} has ${formatAmount(res, res.controller[res.field])}.`;
       description += this.canActivate() ? ' Click to resurrect.' : ` Not enough ${res.units} yet.`;
     }
-    const cost = res ? formatAmount(res, RESURRECT_COST) : `${RESURRECT_COST} mana`;
-    return { name: 'Resurrect Ally', cost, description };
+    const cost = `Costs ${res ? formatAmount(res, RESURRECT_COST) : `${RESURRECT_COST} mana`}`;
+    return { name: 'Big Golden Orb', cost, description };
   }
 
   canActivate() {
@@ -157,6 +188,7 @@ export class SanctuaryShrine {
     const payerRes = getResource(this.gc, this._getPayer().kind);
     payerRes.controller[payerRes.field] -= RESURRECT_COST;
 
+    this.gc.itemManager?.discardSetAside(ally.kind); // the orb doesn't return their items
     ally.revive(ally.maxHitPoints);
     const allyRes = getResource(this.gc, ally.kind);
     if (allyRes) allyRes.controller[allyRes.field] = allyRes.start;
@@ -165,7 +197,7 @@ export class SanctuaryShrine {
       this.gc.soundManager.playBreath(ally.mesh.position.clone());
     }
 
-    this.teardown();
+    this._vanish();
     this.gc.updateDiscNames();
     this.gc._updateSpotlights();
   }

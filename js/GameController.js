@@ -22,6 +22,10 @@ import { NotificationManager } from './NotificationManager.js';
 import { SanctuaryShrine } from './SanctuaryShrine.js';
 import { SanctuaryShop } from './SanctuaryShop.js';
 import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
+import { getResource, isMainPC } from './PartyResources.js';
+
+// A Rogue hiding for a Sneak Attack fades into the shadows.
+const HIDDEN_OPACITY = 0.3;
 
 // A Sanctuary room follows every this-many cleared combat rooms.
 const SANCTUARY_INTERVAL = 1; // TODO: restore to 3 after testing
@@ -537,7 +541,8 @@ export default class GameController {
     if (this.gameOverState.active) {
       return;
     }
-    if (this.wizardController?.flameStrikeTargetingActive || this.itemManager?.teleportTargetingActive) {
+    if (this.wizardController?.flameStrikeTargetingActive || this.itemManager?.teleportTargetingActive ||
+        this.itemManager?.shieldMoveActive) {
       return;
     }
     if (this.soundManager) this.soundManager.notifyUserInteraction();
@@ -552,6 +557,12 @@ export default class GameController {
         this.startNextLevel(this.currentDisc);
         return;
       }
+    }
+
+    // Clicking your own Hardy Shield starts choosing a new spot for it.
+    if (!this.waitingForDiscToStop && this.itemManager?.pickShield(this.raycaster)) {
+      this.itemManager.startShieldMove(true);
+      return;
     }
 
     // Sanctuary props swallow the click (no aiming) when hit — unless a disc is
@@ -824,6 +835,12 @@ export default class GameController {
     const clickThreshold = 2; // Pixels to differentiate a click from a drag
 
     const clickedDisc = this.pointerDisc; // Disc under cursor at pointerdown, set in handlePointerDownInteraction
+
+    // Choosing a new Hardy Shield spot: this release picks the hovered spot (or cancels).
+    if (this.itemManager?.shieldMoveActive) {
+      this.itemManager.confirmShieldMove();
+      return;
+    }
 
     if (dragLength <= clickThreshold) { // It's a click/tap
       // Warp Ring destination click (stays in targeting mode if the spot is blocked)
@@ -1259,6 +1276,15 @@ clamp(value, min, max) {
   /** The Sanctuary prop (altar or shop item) under the raycaster, if any. */
   _pickProp() {
     return this.sanctuaryShrine?.pickAt(this.raycaster) || this.sanctuaryShop?.pickAt(this.raycaster) || null;
+  }
+
+  /**
+   * Whether the player may end the turn now (End Turn button / Space). Not
+   * while a thrown disc is still moving: that throw's results (damage, knife
+   * landing, the character's own follow-up) still belong to this turn.
+   */
+  canEndTurnNow() {
+    return !this.gameOverState.active && !this.waitingForDiscToStop && !this.levelTransitionInProgress;
   }
 
   /** Refreshes the turn panel and every character's action buttons after mana/HP changes. */
@@ -1707,7 +1733,7 @@ clamp(value, min, max) {
                   // Reset textured faces to white so tints (e.g. low-HP pulse) clear when no longer active.
                   child.material.color.set(child.material.map ? 0xffffff : child.material.color.getHex());
                 }
-                child.material.opacity = disc.isGhost ? GHOST_OPACITY : 0.9;
+                child.material.opacity = disc.isGhost ? GHOST_OPACITY : disc.isHidden ? HIDDEN_OPACITY : 0.9;
                 child.material.transparent = true;
               }
             });
@@ -1718,7 +1744,7 @@ clamp(value, min, max) {
             } else {
               disc.mesh.material.color.set(disc.mesh.material.color.getHex());
             }
-            disc.mesh.material.opacity = disc.isGhost ? GHOST_OPACITY : 0.9;
+            disc.mesh.material.opacity = disc.isGhost ? GHOST_OPACITY : disc.isHidden ? HIDDEN_OPACITY : 0.9;
             disc.mesh.material.transparent = true;
           }
         }
@@ -2439,7 +2465,12 @@ disc.isCurrentlyInLavaState = true;
     const descriptionText = disc.description || "No description available.";
     this.discInfoHpElement.innerText = '';
     const heartsLine = (filledHearts || emptyHearts) ? `${filledHearts}${emptyHearts}\n` : '';
-    this.discInfoDescriptionElement.innerText = `${heartsLine}Attack: ${attackPower}\n\n${descriptionText}`;
+    // Characters' mana/charges: what they can spend in the Sanctuary.
+    const res = isMainPC(disc) ? getResource(this, disc.kind) : null;
+    const resourceLine = res
+      ? `\n${res.units[0].toUpperCase()}${res.units.slice(1)}: ${res.controller[res.field]}`
+      : '';
+    this.discInfoDescriptionElement.innerText = `${heartsLine}Attack: ${attackPower}${resourceLine}\n\n${descriptionText}`;
 
     // Reset classes and apply new ones
     this.discInfoPopupElement.className = 'popup'; // Base class
@@ -2478,15 +2509,67 @@ disc.isCurrentlyInLavaState = true;
     });
   }
 
-  /** Living player discs for NPCs to aim at, preferring ones not phased by a Ghost Ring. */
+  /**
+   * Living player discs for NPCs to aim at. A Rogue hidden by Sneak Attack is
+   * never a target; discs phased by a Ghost Ring are only targeted when no one
+   * else is left.
+   */
   _aiTargetablePlayers() {
-    const alive = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead);
+    const alive = this.discs.filter(d => d.type === 'player' && d.hitPoints > 0 && !d.dead && !d.isHidden);
     const solid = alive.filter(d => !d.isGhost);
     return solid.length > 0 ? solid : alive;
   }
 
+  /**
+   * An enemy with nothing to attack (every living player disc is hidden) moves
+   * in a random direction instead, preferring a path clear of walls and ending
+   * on open floor.
+   */
+  _aiRandomMove(disc) {
+    const walls = this.level.getAllWalls().map(w => new Box3().setFromObject(w));
+    const pathBlocked = (start, end) => {
+      const steps = Math.ceil(start.distanceTo(end) * 4);
+      for (let i = 1; i <= steps; i++) {
+        const point = start.clone().lerp(end, i / steps);
+        if (walls.some(box => box.containsPoint(point))) return true;
+      }
+      return false;
+    };
+
+    const start = disc.mesh.position.clone();
+    let dir = null;
+    let speed = 0;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const candidate = new Vector3(Math.cos(angle), 0, Math.sin(angle));
+      const candidateSpeed = 0.25 + Math.random() * 0.35;
+      const end = start.clone().add(candidate.clone().multiplyScalar(candidateSpeed * 10));
+      dir = candidate;
+      speed = candidateSpeed;
+      if (!pathBlocked(start, end) && this.isPositionValid(end.x, end.z, disc.radius)) break;
+    }
+
+    const finalSpeed = (speed * disc.throwPowerMultiplier) / disc.mass;
+    disc.velocity.set(dir.x * finalSpeed, 0, dir.z * finalSpeed);
+    disc.moving = true;
+    disc.hasThrown = true;
+    if (this.uiManager) this.uiManager.updateMoveStatusChip(disc);
+    disc.resetDamageState();
+    this.thrownDisc = disc;
+    this.waitingForDiscToStop = true;
+  }
+
   async aiThrow(disc) {
     if (!disc || disc.dead) return;
+
+    // Every living player disc is hidden: wander instead of attacking. (A Blob
+    // with a corpse to eat still goes for it.)
+    const someoneHidden = this.discs.some(d => d.type === 'player' && d.isHidden && !d.dead);
+    if (someoneHidden && this._aiTargetablePlayers().length === 0 &&
+        !(disc.kind === 'Blob' && this.discs.some(d => d.dead))) {
+      this._aiRandomMove(disc);
+      return;
+    }
 
     // Special targeting for FireElemental:
     //   - Within SELF_THROW_RANGE of a PC → throw itself (fall through)

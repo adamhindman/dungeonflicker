@@ -50,7 +50,7 @@ const CHARACTERS = [
     skills: [
       'Gets 2 throws per turn.',
       'Bomb: lob a timed explosive that blasts everything nearby.',
-      'Sneak Attack: ricochet off walls to deal bonus damage.',
+      'Sneak Attack: hide, then strike next turn with ricochet shots that grow stronger off walls.',
       'Health Potion: throw a healing flask onto the field.',
     ],
   },

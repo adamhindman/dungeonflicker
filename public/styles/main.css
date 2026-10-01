@@ -25,6 +25,16 @@ body {
     display: flex;
     flex-direction: column;
     height: 100%;
+    /* No text selection anywhere in the game UI: drags (aiming, camera) must not highlight text. */
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* …except where the player types (feedback form). */
+input,
+textarea {
+    -webkit-user-select: text;
+    user-select: text;
 }
 
 #throw-info {

@@ -55,7 +55,7 @@ export class PhysicsEngine {
           gc.soundManager.playBounce(disc.mesh.position.clone());
         }
         if (hitBoundary && gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-          gc.rogueController.sneakAttackBonusCount++;
+          gc.rogueController.onSneakBounce(disc);
         }
 
         // Ghost Ring discs only collide with the room's outer walls.
@@ -66,7 +66,7 @@ export class PhysicsEngine {
             gc.soundManager.playBounce(disc.mesh.position.clone());
           }
           if (hitWall && gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-            gc.rogueController.sneakAttackBonusCount++;
+            gc.rogueController.onSneakBounce(disc);
           }
         });
 
@@ -98,7 +98,7 @@ export class PhysicsEngine {
                   gc.soundManager.playBounce(disc.mesh.position.clone());
                 }
                 if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-                  gc.rogueController.sneakAttackBonusCount++;
+                  gc.rogueController.onSneakBounce(disc);
                 }
               }
             }
@@ -189,7 +189,7 @@ export class PhysicsEngine {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
               if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-                gc.rogueController.sneakAttackBonusCount++;
+                gc.rogueController.onSneakBounce(disc);
               }
             }
           }
@@ -217,6 +217,9 @@ export class PhysicsEngine {
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
+              if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+                gc.rogueController.onSneakBounce(disc);
+              }
             }
           }
         }
@@ -240,6 +243,9 @@ export class PhysicsEngine {
               disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
+              }
+              if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+                gc.rogueController.onSneakBounce(disc);
               }
             }
           }
@@ -428,11 +434,6 @@ export class PhysicsEngine {
             d1.mesh.position.add(normal.clone().multiplyScalar(separationOverlap * (d2.mass / totalMass)));
             d2.mesh.position.sub(normal.clone().multiplyScalar(separationOverlap * (totalMass === 0 ? 0 : d1.mass / totalMass)));
 
-            // Sneak Attack: count this disc-disc collision
-            if (gc.rogueController?.isSneakAttackThrow && (d1 === gc.thrownDisc || d2 === gc.thrownDisc)) {
-              gc.rogueController.sneakAttackBonusCount++;
-            }
-
             // Apply damage rules — both discs must be alive (Bombs deal no disc-collision damage)
             if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead && d1.kind !== 'Bomb' && d2.kind !== 'Bomb') {
               // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed)
@@ -446,7 +447,7 @@ export class PhysicsEngine {
                   if (npc.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(npc.discName)) {
                     gc.necromancerController.manaEarnedThisTurn += 1;
                     gc.npcsKilledForRageCharge.add(npc.discName);
-                    gc.necromancerController.updateActionButtons();
+                    gc.necromancerController?.updateActionButtons();
                   }
                 } else if (gc.currentDisc === npc) {
                   animated.takeHit(npc.attackDamage, npc);
@@ -465,7 +466,7 @@ export class PhysicsEngine {
                   gc.wizardController.manaEarnedThisTurn += 1;
                   gc.npcsKilledForRageCharge.add(npc.discName);
                   gc.barbarianController?.updateRageButtonVisibility();
-                  gc.wizardController.updateActionButtons();
+                  gc.wizardController?.updateActionButtons();
                 }
 
                 orb.takeHit(999, npc); // Orb is consumed upon impact with an NPC
@@ -496,7 +497,7 @@ export class PhysicsEngine {
                       const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
                       damageToDeal = d1.rageWasUsedThisThrow ? (2 + bonusDamage) : (d1.attackDamage + bonusDamage);
                     } else if (d1.kind === 'Rogue' && gc.rogueController?.isSneakAttackThrow) {
-                      damageToDeal = gc.rogueController.sneakAttackBonusCount;
+                      damageToDeal = gc.rogueController.sneakAttackDamage();
                     }
                     d2.takeHit(damageToDeal, d1);
 
@@ -548,9 +549,9 @@ export class PhysicsEngine {
                           gc.necromancerController.manaEarnedThisTurn += 1;
                         }
                         gc.npcsKilledForRageCharge.add(d1.discName);
-                        gc.barbarianController.updateRageButtonVisibility();
-                        gc.wizardController.updateActionButtons();
-                        gc.necromancerController.updateActionButtons();
+                        gc.barbarianController?.updateRageButtonVisibility();
+                        gc.wizardController?.updateActionButtons();
+                        gc.necromancerController?.updateActionButtons();
                       }
                     }
                   }
@@ -571,7 +572,7 @@ export class PhysicsEngine {
                       const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
                       damageToDeal = d2.rageWasUsedThisThrow ? (2 + bonusDamage) : (d2.attackDamage + bonusDamage);
                     } else if (d2.kind === 'Rogue' && gc.rogueController?.isSneakAttackThrow) {
-                      damageToDeal = gc.rogueController.sneakAttackBonusCount;
+                      damageToDeal = gc.rogueController.sneakAttackDamage();
                     }
                     d1.takeHit(damageToDeal, d2);
 
@@ -599,7 +600,7 @@ export class PhysicsEngine {
                         gc.rogueController.updateActionButtons();
                       }
                       gc.npcsKilledForRageCharge.add(d1.discName);
-                      gc.barbarianController.updateRageButtonVisibility();
+                      gc.barbarianController?.updateRageButtonVisibility();
                     }
                     if (!d2.canDoReboundDamage) {
                       gc.playerDamagedNPCsThisThrow.add(d1.discName);
@@ -628,9 +629,9 @@ export class PhysicsEngine {
                           gc.necromancerController.manaEarnedThisTurn += 1;
                         }
                         gc.npcsKilledForRageCharge.add(d2.discName);
-                        gc.barbarianController.updateRageButtonVisibility();
-                        gc.wizardController.updateActionButtons();
-                        gc.necromancerController.updateActionButtons();
+                        gc.barbarianController?.updateRageButtonVisibility();
+                        gc.wizardController?.updateActionButtons();
+                        gc.necromancerController?.updateActionButtons();
                       }
                     }
                   }
@@ -681,7 +682,7 @@ export class PhysicsEngine {
                       gc.npcsKilledForRageCharge.add(npc.discName);
                     }
                   });
-                  gc.barbarianController.updateRageButtonVisibility();
+                  gc.barbarianController?.updateRageButtonVisibility();
 
                   if (!actor.canDoReboundDamage) {
                     gc.playerDamagedNPCsThisThrow.add(d1.discName);
@@ -694,6 +695,9 @@ export class PhysicsEngine {
         }
       }
     }
+
+    // ── Hardy Shields: discs bounce off them ─────────────────────────────────
+    gc.itemManager?.resolveShieldCollisions();
 
     return false; // no early exit needed
   }

@@ -94,12 +94,17 @@ export default class UIManager {
     }
 
     showFloatingText(disc, amount, isHealing) {
-        const textElement = document.createElement("div");
         const displayAmount = Math.abs(amount);
-        textElement.textContent = `${isHealing ? '+' : '-'}${displayAmount} HP`;
+        this.showFloatingLabel(disc, `${isHealing ? '+' : '-'}${displayAmount} HP`, isHealing ? "#4488ff" : "#ff4444");
+    }
+
+    /** Floats `text` up from above `disc`, like the HP change numbers. */
+    showFloatingLabel(disc, text, color) {
+        const textElement = document.createElement("div");
+        textElement.textContent = text;
         Object.assign(textElement.style, {
             position: "absolute",
-            color: isHealing ? "#4488ff" : "#ff4444",
+            color,
             fontWeight: "bold",
             fontFamily: "Arial, sans-serif",
             textShadow: "1px 1px 2px black, -1px -1px 2px black, 1px -1px 2px black, -1px 1px 2px black",

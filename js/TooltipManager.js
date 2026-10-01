@@ -32,10 +32,12 @@ class TooltipManager {
    *
    * @param {HTMLElement} button
    * @param {string}      eventKey  - firstTimeEvents key to gate on
-   * @param {string}      text      - tooltip body text
+   * @param {string|function(): string} text - tooltip body text, or a function
+   *   returning it (read on each hover, for text that changes with game state)
    */
   register(button, eventKey, text) {
     if (!button) return;
+    const getText = typeof text === 'function' ? text : () => text;
 
     let hoverTimer = null;
 
@@ -44,11 +46,11 @@ class TooltipManager {
       if (firstTimeEvents.has(eventKey)) {
         // Post-tutorial: show reminder after 1 second of hovering
         hoverTimer = setTimeout(() => {
-          if (!this._completing) this._show(button, text, eventKey);
+          if (!this._completing) this._show(button, getText(), eventKey);
         }, 1000);
         return;
       }
-      this._show(button, text, eventKey);
+      this._show(button, getText(), eventKey);
     });
 
     button.addEventListener('mouseleave', () => {

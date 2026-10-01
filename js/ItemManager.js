@@ -3,14 +3,19 @@
 // the action-bar buttons for owned items, and the item behaviours.
 //
 // Inventories are keyed by character kind, so they carry over between rooms
-// (discs are rebuilt each room) and survive death + resurrection.
+// (discs are rebuilt each room). A dead character's items are set aside; the
+// Necromancer's Resurrect Ally returns them, the Big Golden Orb does not.
 
 import {
   AdditiveBlending, BackSide, Box3, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial,
   Plane, TorusGeometry, Vector3,
 } from 'three';
 import Disc from './Disc.js';
-import { KNIFE_BLADE_NARROWING, KNIFE_BLADE_THICKNESS, KNIFE_STEEL, makeKnifeBlade } from './ItemModels.js';
+import { firstTimeEvents } from './FirstTimeEvents.js';
+import { tooltipManager } from './TooltipManager.js';
+import {
+  KNIFE_BLADE_THICKNESS, KNIFE_STEEL, SHIELD_THICKNESS, makeKnifeBlade, makeShieldMesh,
+} from './ItemModels.js';
 import { getResource, formatAmount, isMainPC } from './PartyResources.js';
 
 export const GHOST_OPACITY = 0.55;
@@ -24,10 +29,10 @@ export const ITEMS = {
   warpRing: {
     name: 'Warp Ring',
     cost: 1,
-    useCost: 2,
+    useCost: 1,
     color: 0xff1fd2, // hot magenta
     model: 'ring',
-    description: 'Instantly jump to any open spot in the room. Each use costs 2 mana or charges. ' +
+    description: 'Instantly jump to any open spot in the room. Each use costs 1 mana or charge. ' +
       'Can be used before or after moving.',
   },
   ghostRing: {
@@ -50,11 +55,49 @@ export const ITEMS = {
       'turn, on top of your normal move. It can\'t be destroyed and enemies pass over it; move ' +
       'over it to pick it back up. It returns to you when you leave the room.',
   },
+  hardyShield: {
+    name: 'Hardy Shield',
+    cost: 3,
+    color: 0xff8c1a, // blaze orange
+    model: 'shield',
+    description: 'A steel shield that stands beside you and faces a fixed direction. Discs bounce ' +
+      'off it, and it blocks blasts and explosions coming from its side. On your turn, click it ' +
+      '(or press 9) to move it to one of its other two spots for free.',
+  },
 };
+
+/** True if segment P1–P2 crosses segment Q1–Q2 (all in the XZ plane). */
+function segmentsCross(p1x, p1z, p2x, p2z, q1x, q1z, q2x, q2z) {
+  const cross = (ax, az, bx, bz, cx, cz) => (bx - ax) * (cz - az) - (bz - az) * (cx - ax);
+  const d1 = cross(q1x, q1z, q2x, q2z, p1x, p1z);
+  const d2 = cross(q1x, q1z, q2x, q2z, p2x, p2z);
+  const d3 = cross(p1x, p1z, p2x, p2z, q1x, q1z);
+  const d4 = cross(p1x, p1z, p2x, p2z, q2x, q2z);
+  return d1 * d2 < 0 && d3 * d4 < 0;
+}
+
+/** firstTimeEvents key for an item's first use; its tooltip shows on hover until then. */
+const itemUsedEvent = itemId => `item_${itemId}_used`;
 
 const WARP_RING_KEY = '6';
 const GHOST_RING_KEY = '7';
 const KNIFE_KEY = '8';
+const SHIELD_KEY = '9';
+
+// Hardy Shield spots: world directions around its owner, 120° apart. 0° is
+// north (−Z, away from the default camera), then south-east and south-west.
+const SHIELD_SLOT_ANGLES = [0, 120, 240].map(deg => deg * Math.PI / 180);
+const SHIELD_GAP = 0.35;            // between the owner's edge and the shield's inner face
+const SHIELD_LENGTH_FACTOR = 1.8;   // shield length as a multiple of the owner's radius
+const SHIELD_RESTITUTION = 0.8;     // same bounciness as walls
+const SHIELD_GHOST_OPACITY = 0.3;
+const SHIELD_GHOST_HOVER_OPACITY = 0.6;
+// The owner's own summoned discs pass through their shield so they can be thrown past it.
+const OWN_SUB_DISC_KINDS = {
+  Wizard: ['Orb', 'HealingOrb'],
+  Rogue: ['Bomb', 'RoguePotion'],
+  Necromancer: ['AnimatedDead'],
+};
 
 const KNIFE_RADIUS = 0.45;        // collision size (the blade's point reaches a little further)
 const KNIFE_READY_DISTANCE = 2;   // how far from its owner a readied knife waits
@@ -75,6 +118,7 @@ export class ItemManager {
   constructor(gc) {
     this.gc = gc;
     this.inventories = {};           // kind → { [itemId]: true } for each owned item
+    this._setAside = {};             // kind → items of a dead character, until resurrection
     this.teleportTargetingActive = false;
     this._teleportRing = null;
     this._teleportTarget = new Vector3();
@@ -87,15 +131,22 @@ export class ItemManager {
     this._knives = {};               // kind → { disc, landed } while the knife is out of its owner's hand
     this._knifeThrownBy = new Set(); // kinds that have thrown their knife this turn
     this._turnHeldForKnife = false;  // an automatic turn end is waiting on a readied knife
+    this.shieldButton = null;
+    this._shieldSlots = {};          // kind → chosen spot (index into SHIELD_SLOT_ANGLES); kept between rooms
+    this._shields = {};              // kind → { mesh, owner } while the owner is alive in this room
+    this.shieldMoveActive = false;   // choosing a new spot for the current character's shield
+    this._shieldMove = null;         // { kind, ghosts: [{ slot, mesh }], hovered, ignoreNextClick }
   }
 
   init(actionButtonsContainer) {
-    this.warpRingButton = this._createButton(actionButtonsContainer, 'warp-ring-button', WARP_RING_KEY);
-    this.warpRingButton.addEventListener('click', () => this.startTeleportTargeting());
-    this.ghostRingButton = this._createButton(actionButtonsContainer, 'ghost-ring-button', GHOST_RING_KEY);
-    this.ghostRingButton.addEventListener('click', () => this.toggleGhostRing());
-    this.knifeButton = this._createButton(actionButtonsContainer, 'knife-button', KNIFE_KEY);
-    this.knifeButton.addEventListener('click', () => this.toggleKnife());
+    this.warpRingButton = this._createButton(actionButtonsContainer, 'warp-ring-button', WARP_RING_KEY,
+      'warpRing', () => this.startTeleportTargeting());
+    this.ghostRingButton = this._createButton(actionButtonsContainer, 'ghost-ring-button', GHOST_RING_KEY,
+      'ghostRing', () => this.toggleGhostRing());
+    this.knifeButton = this._createButton(actionButtonsContainer, 'knife-button', KNIFE_KEY,
+      'throwingKnife', () => this.toggleKnife());
+    this.shieldButton = this._createButton(actionButtonsContainer, 'shield-button', SHIELD_KEY,
+      'hardyShield', () => this.startShieldMove());
   }
 
   /**
@@ -105,16 +156,23 @@ export class ItemManager {
    */
   placeButtons(container) {
     if (!container) return;
-    container.append(this.warpRingButton, this.ghostRingButton, this.knifeButton);
+    container.append(this.warpRingButton, this.ghostRingButton, this.knifeButton, this.shieldButton);
     const endTurnButtons = [...container.querySelectorAll('button')].filter(b => b.id.includes('end-turn'));
     container.append(...endTurnButtons);
   }
 
-  _createButton(container, id, shortcut) {
+  /**
+   * Creates an item's action-bar button. It uses the same hover tooltip as
+   * the characters' powers, with text that follows the item's current state
+   * (set by _setButton).
+   */
+  _createButton(container, id, shortcut, itemId, onClick) {
     const button = document.createElement('button');
     button.id = id;
     button.dataset.shortcut = shortcut;
     button.style.display = 'none';
+    button.addEventListener('click', onClick);
+    tooltipManager.register(button, itemUsedEvent(itemId), () => button.dataset.tooltip || '');
     if (container) container.appendChild(button);
     return button;
   }
@@ -122,6 +180,8 @@ export class ItemManager {
   /** Clears every inventory (new game). */
   reset() {
     this.inventories = {};
+    this._setAside = {};
+    this._shieldSlots = {};
     this.onLevelUnload();
   }
 
@@ -139,6 +199,8 @@ export class ItemManager {
     this._knives = {};
     this._knifeThrownBy.clear();
     this._turnHeldForKnife = false;
+    this.cancelShieldMove();
+    for (const kind of Object.keys(this._shields)) this._removeShield(kind);
   }
 
   getInventory(kind) {
@@ -175,8 +237,44 @@ export class ItemManager {
   update(deltaTime) {
     this._updateTeleportTargeting();
     this._updateTeleportEffect(deltaTime);
+    this._dropItemsOfDead();
     this._updateKnives();
+    this._syncShields();
+    this._updateShieldMove();
     this._updateButtons();
+  }
+
+  /**
+   * A character who dies has their items set aside: the inventory empties, a
+   * Ghost Ring switches off, and a knife lying on the floor goes back with the
+   * rest (the shield goes via _syncShields). If they come back to life by any
+   * means other than the Big Golden Orb (i.e. the Necromancer's Resurrect
+   * Ally), the items are returned; the orb discards them (discardSetAside).
+   */
+  _dropItemsOfDead() {
+    for (const disc of this.gc.discs) {
+      if (!isMainPC(disc)) continue;
+      const inv = this.inventories[disc.kind];
+      const setAside = this._setAside[disc.kind];
+
+      if (disc.dead && inv && Object.keys(inv).length > 0) {
+        this._setAside[disc.kind] = { ...setAside, ...inv };
+        this.inventories[disc.kind] = {};
+        disc.isGhost = false;
+        this._removeKnife(disc.kind);
+        this._buttonStateKey = '';
+      } else if (!disc.dead && setAside) {
+        Object.assign(this.getInventory(disc.kind), setAside);
+        delete this._setAside[disc.kind];
+        this._buttonStateKey = '';
+      }
+    }
+  }
+
+  /** The Big Golden Orb's price: a character it resurrects doesn't get their items back. */
+  discardSetAside(kind) {
+    delete this._setAside[kind];
+    delete this._shieldSlots[kind];
   }
 
   /** The living main character whose turn it is, or null. */
@@ -189,7 +287,7 @@ export class ItemManager {
 
   /** True while discs are in motion or an item effect is playing. */
   _busy() {
-    return !!(this.gc.waitingForDiscToStop || this._teleport || this.teleportTargetingActive);
+    return !!(this.gc.waitingForDiscToStop || this._teleport || this.teleportTargetingActive || this.shieldMoveActive);
   }
 
   _updateButtons() {
@@ -213,9 +311,11 @@ export class ItemManager {
     const knifeReady = !!(knifeOut && !knifeOut.landed);
     const knifeBlocker = hasKnife && !knifeReady ? this._knifeBlocker(disc) : null;
 
+    const hasShield = !!(inv && inv.hardyShield && this._shields[disc.kind]);
+
     // Only touch the DOM when something changed.
     const key = [hasWarp, warpCost, warpBlocker, hasRing, ghost, busy, ringBlocker,
-      hasKnife, knifeReady, knifeBlocker].join('|');
+      hasKnife, knifeReady, knifeBlocker, hasShield].join('|');
     if (key === this._buttonStateKey) return;
     this._buttonStateKey = key;
 
@@ -228,10 +328,13 @@ export class ItemManager {
         ? 'Turn off the Ghost Ring.'
         : `Turn on the Ghost Ring (costs 1 HP and ${res ? formatAmount(res, 1) : '1 mana'}, then the same each turn).`));
     this._setButton(this.knifeButton, hasKnife, busy || !!knifeBlocker,
-      `<kbd>${KNIFE_KEY}</kbd> ${knifeReady ? 'Put Away Knife' : 'Ready Knife'}`,
+      `<kbd>${KNIFE_KEY}</kbd> Knife`,
       knifeBlocker || (knifeReady
         ? 'Put the knife back in your hand.'
         : 'Ready the Throwing Knife beside you, then flick it at an enemy (1 damage).'));
+    this._setButton(this.shieldButton, hasShield, busy,
+      `<kbd>${SHIELD_KEY}</kbd> Move Shield`,
+      'Move the Hardy Shield to one of its other two spots (free). You can also click the shield itself.');
   }
 
   _setButton(button, visible, disabled, html, title) {
@@ -239,7 +342,7 @@ export class ItemManager {
     button.style.display = visible ? 'inline-block' : 'none';
     button.disabled = !visible || disabled;
     button.innerHTML = html;
-    button.title = title;
+    button.dataset.tooltip = title;
   }
 
   // ─── Ghost Ring ───────────────────────────────────────────────────────────
@@ -351,6 +454,7 @@ export class ItemManager {
   toggleGhostRing() {
     const disc = this.activeCharacter();
     if (!disc || this._busy() || !this.getInventory(disc.kind).ghostRing) return;
+    firstTimeEvents.track(itemUsedEvent('ghostRing'));
 
     if (disc.isGhost) {
       if (this._ghostOffBlocker(disc)) return;
@@ -393,6 +497,7 @@ export class ItemManager {
   toggleKnife() {
     const disc = this.activeCharacter();
     if (!disc || this._busy() || !this.getInventory(disc.kind).throwingKnife) return;
+    firstTimeEvents.track(itemUsedEvent('throwingKnife'));
     const knife = this._knives[disc.kind];
     if (knife && !knife.landed) {
       this._removeKnife(disc.kind);
@@ -423,7 +528,6 @@ export class ItemManager {
       disc.mesh.material.dispose();
       disc.mesh.geometry = blade.geometry;
       disc.mesh.material = blade.material;
-      disc.mesh.scale.x = KNIFE_BLADE_NARROWING;
       disc.mesh.rotation.y = Math.atan2(kx - x, kz - z); // point away from the owner
 
       disc.owner = owner;
@@ -576,6 +680,237 @@ export class ItemManager {
     }
   }
 
+  // ─── Hardy Shield ─────────────────────────────────────────────────────────
+  //
+  // A thin steel slab standing beside its owner at one of three spots 120°
+  // apart. The spots are fixed world directions: the shield travels with its
+  // owner but never turns with them. Other discs bounce off it as if it were
+  // part of the owner's body, and it stops blasts coming from its side.
+
+  /** Geometry of a shield at `slot` around `owner`: centre, face normal and tangent (unit XZ vectors). */
+  _shieldPose(owner, slot) {
+    const a = SHIELD_SLOT_ANGLES[slot];
+    const nx = Math.sin(a), nz = -Math.cos(a);          // outward face direction
+    const dist = owner.radius + SHIELD_GAP + SHIELD_THICKNESS / 2;
+    return {
+      x: owner.mesh.position.x + nx * dist,
+      z: owner.mesh.position.z + nz * dist,
+      nx, nz,
+      tx: -nz, tz: nx,                                   // along the shield's length
+      halfLength: owner.radius * SHIELD_LENGTH_FACTOR / 2,
+      rotationY: Math.PI - a,                            // turns the mesh's local +Z to (nx, nz)
+    };
+  }
+
+  /** Places a shield mesh (real or ghost) at `slot` around `owner`. */
+  _placeShieldMesh(mesh, owner, slot) {
+    const pose = this._shieldPose(owner, slot);
+    const floor = this.gc.level ? this.gc.level.getTerrainHeightAt(pose.x, pose.z) : 0;
+    mesh.position.set(pose.x, floor, pose.z);
+    mesh.rotation.y = pose.rotationY;
+  }
+
+  /**
+   * Keeps a shield beside every living character who owns one, and removes
+   * shields whose owner is dead or gone. Runs every frame (and before shield
+   * collisions), so shields appear on room entry and after a resurrection.
+   */
+  _syncShields() {
+    const gc = this.gc;
+    const owners = new Set();
+    for (const disc of gc.discs) {
+      if (!isMainPC(disc) || disc.dead || !this.getInventory(disc.kind).hardyShield) continue;
+      owners.add(disc.kind);
+      let shield = this._shields[disc.kind];
+      if (!shield || shield.owner !== disc) {
+        if (shield) this._removeShield(disc.kind);
+        const mesh = makeShieldMesh(disc.radius * SHIELD_LENGTH_FACTOR, ITEMS.hardyShield.color);
+        gc.scene.add(mesh);
+        shield = this._shields[disc.kind] = { mesh, owner: disc };
+        this._buttonStateKey = '';
+      }
+      this._placeShieldMesh(shield.mesh, disc, this._shieldSlots[disc.kind] ?? 0);
+      // A ghostly owner's shield is ghostly too (it doesn't block anything then).
+      const ghostly = !!disc.isGhost;
+      shield.mesh.traverse(o => {
+        if (!o.material) return;
+        o.material.transparent = ghostly;
+        o.material.opacity = ghostly ? GHOST_OPACITY : 1;
+      });
+    }
+    for (const kind of Object.keys(this._shields)) {
+      if (!owners.has(kind)) this._removeShield(kind);
+    }
+  }
+
+  _removeShield(kind) {
+    const shield = this._shields[kind];
+    if (!shield) return;
+    delete this._shields[kind];
+    this._disposeMesh(shield.mesh);
+    if (this._shieldMove && this._shieldMove.kind === kind) this.cancelShieldMove();
+    this._buttonStateKey = '';
+  }
+
+  /**
+   * Bounces discs off every shield. Called by PhysicsEngine after disc-to-disc
+   * collisions. A shield acts as part of its owner's body: the impulse is shared
+   * with the owner by mass, so a shield hit nudges its owner, and a moving
+   * owner shoves discs with their shield. Shield contact never deals damage.
+   */
+  resolveShieldCollisions() {
+    this._syncShields();
+    const gc = this.gc;
+    for (const shield of Object.values(this._shields)) {
+      const owner = shield.owner;
+      if (owner.isGhost) continue;
+      const pose = this._shieldPose(owner, this._shieldSlots[owner.kind] ?? 0);
+      const ownSubKinds = OWN_SUB_DISC_KINDS[owner.kind] || [];
+
+      for (const disc of gc.discs) {
+        if (disc === owner || disc.isGhost || !disc.mesh) continue;
+        if (ownSubKinds.includes(disc.kind)) continue;
+        if (disc.kind === 'Knife' && (disc.owner === owner || !disc.moving)) continue;
+
+        // Circle vs. rectangle, in the shield's own (tangent, normal) frame.
+        const dx = disc.mesh.position.x - pose.x;
+        const dz = disc.mesh.position.z - pose.z;
+        const u = dx * pose.tx + dz * pose.tz;
+        const v = dx * pose.nx + dz * pose.nz;
+        const cu = Math.max(-pose.halfLength, Math.min(u, pose.halfLength));
+        const cv = Math.max(-SHIELD_THICKNESS / 2, Math.min(v, SHIELD_THICKNESS / 2));
+        let du = u - cu, dv = v - cv;
+        let dist = Math.hypot(du, dv);
+        if (dist >= disc.radius) continue;
+
+        let penetration;
+        if (dist < 1e-6) {
+          // Centre inside the slab: push out through the nearer face.
+          du = 0; dv = v >= 0 ? 1 : -1; dist = 1;
+          penetration = disc.radius + SHIELD_THICKNESS / 2 - Math.abs(v);
+        } else {
+          penetration = disc.radius - dist;
+        }
+        // Contact normal in world space, pointing from the shield to the disc.
+        const nx = (du * pose.tx + dv * pose.nx) / dist;
+        const nz = (du * pose.tz + dv * pose.nz) / dist;
+        disc.mesh.position.x += nx * penetration;
+        disc.mesh.position.z += nz * penetration;
+
+        const relVn = (disc.velocity.x - owner.velocity.x) * nx + (disc.velocity.z - owner.velocity.z) * nz;
+        if (relVn >= 0) continue; // already separating
+        const impulse = -(1 + SHIELD_RESTITUTION) * relVn / (1 / disc.mass + 1 / owner.mass);
+        disc.velocity.x += nx * impulse / disc.mass;
+        disc.velocity.z += nz * impulse / disc.mass;
+        owner.velocity.x -= nx * impulse / owner.mass;
+        owner.velocity.z -= nz * impulse / owner.mass;
+        disc.moving = true;
+        owner.moving = true;
+        if (gc.soundManager && relVn < -0.05) gc.soundManager.playWardenHit(disc.mesh.position.clone());
+      }
+    }
+  }
+
+  /**
+   * True if `disc`'s own Hardy Shield stands between it and an area attack
+   * centred at (sx, sz), i.e. the line from the blast to the disc crosses the shield.
+   */
+  shieldBlocks(disc, sx, sz) {
+    const shield = disc && this._shields[disc.kind];
+    if (!shield || shield.owner !== disc || disc.isGhost) return false;
+    const pose = this._shieldPose(disc, this._shieldSlots[disc.kind] ?? 0);
+    const ax = pose.x - pose.tx * pose.halfLength, az = pose.z - pose.tz * pose.halfLength;
+    const bx = pose.x + pose.tx * pose.halfLength, bz = pose.z + pose.tz * pose.halfLength;
+    const px = disc.mesh.position.x, pz = disc.mesh.position.z;
+    return segmentsCross(sx, sz, px, pz, ax, az, bx, bz);
+  }
+
+  /** @returns {object|null} the current character's shield if the ray hits it. */
+  pickShield(raycaster) {
+    const disc = this.activeCharacter();
+    const shield = disc && this._shields[disc.kind];
+    if (!shield || disc.isGhost) return null;
+    return raycaster.intersectObject(shield.mesh, true).length > 0 ? shield : null;
+  }
+
+  /**
+   * Shows see-through shields at the other two spots; clicking one moves the
+   * shield there (free). Clicking anywhere else, or Esc, cancels.
+   * @param {boolean} fromClick - started by clicking the shield, so the same
+   *   click's release must not count as choosing a spot
+   */
+  startShieldMove(fromClick = false) {
+    const disc = this.activeCharacter();
+    const shield = disc && this._shields[disc.kind];
+    if (!shield || this._busy()) return;
+    firstTimeEvents.track(itemUsedEvent('hardyShield'));
+
+    const current = this._shieldSlots[disc.kind] ?? 0;
+    const ghosts = [];
+    for (let slot = 0; slot < SHIELD_SLOT_ANGLES.length; slot++) {
+      if (slot === current) continue;
+      const mesh = makeShieldMesh(disc.radius * SHIELD_LENGTH_FACTOR, ITEMS.hardyShield.color);
+      mesh.traverse(o => {
+        if (!o.material) return;
+        o.material.transparent = true;
+        o.material.opacity = SHIELD_GHOST_OPACITY;
+        o.material.depthWrite = false;
+      });
+      this._placeShieldMesh(mesh, disc, slot);
+      this.gc.scene.add(mesh);
+      ghosts.push({ slot, mesh });
+    }
+    this.shieldMoveActive = true;
+    this._shieldMove = { kind: disc.kind, owner: disc, ghosts, hovered: null, ignoreNextClick: fromClick };
+    this.gc.controlsEnabled = false;
+    if (this.gc.controls) this.gc.controls.enabled = false;
+    if (this.gc.uiManager) this.gc.uiManager.updateThrowInfo('Click a new spot for the shield  •  Esc to cancel', true);
+    this._buttonStateKey = '';
+  }
+
+  cancelShieldMove() {
+    if (!this.shieldMoveActive) return;
+    this._shieldMove.ghosts.forEach(g => this._disposeMesh(g.mesh));
+    this._shieldMove = null;
+    this.shieldMoveActive = false;
+    if (this.gc.renderer) this.gc.renderer.domElement.style.cursor = '';
+    this.gc.controlsEnabled = true;
+    if (this.gc.controls) this.gc.controls.enabled = true;
+    if (this.gc.uiManager) this.gc.uiManager.updateThrowInfo('', false);
+    this._buttonStateKey = '';
+  }
+
+  /** Called on a click while choosing: moves the shield to the hovered spot, else cancels. */
+  confirmShieldMove() {
+    const move = this._shieldMove;
+    if (!move) return;
+    if (move.ignoreNextClick) { move.ignoreNextClick = false; return; }
+    if (move.hovered !== null) {
+      this._shieldSlots[move.kind] = move.hovered;
+      if (this.gc.soundManager) this.gc.soundManager.playWardenHit(move.owner.mesh.position.clone());
+    }
+    this.cancelShieldMove();
+  }
+
+  /** Keeps the spot previews beside the owner and highlights the one under the cursor. */
+  _updateShieldMove() {
+    const move = this._shieldMove;
+    if (!move) return;
+    if (move.owner.dead || this.activeCharacter() !== move.owner) { this.cancelShieldMove(); return; }
+    const gc = this.gc;
+    gc.raycaster.setFromCamera(gc.mouse, gc.camera);
+    move.hovered = null;
+    for (const g of move.ghosts) {
+      this._placeShieldMesh(g.mesh, move.owner, g.slot);
+      if (move.hovered === null && gc.raycaster.intersectObject(g.mesh, true).length > 0) move.hovered = g.slot;
+    }
+    for (const g of move.ghosts) {
+      const opacity = g.slot === move.hovered ? SHIELD_GHOST_HOVER_OPACITY : SHIELD_GHOST_OPACITY;
+      g.mesh.traverse(o => { if (o.material) o.material.opacity = opacity; });
+    }
+    gc.renderer.domElement.style.cursor = move.hovered !== null ? 'pointer' : '';
+  }
+
   // ─── Warp Ring ────────────────────────────────────────────────────────────
 
   _canAffordWarp(disc) {
@@ -586,6 +921,7 @@ export class ItemManager {
   startTeleportTargeting() {
     const disc = this.activeCharacter();
     if (!disc || this._busy() || !this.getInventory(disc.kind).warpRing || !this._canAffordWarp(disc)) return;
+    firstTimeEvents.track(itemUsedEvent('warpRing'));
 
     this.teleportTargetingActive = true;
     this._teleportDisc = disc;

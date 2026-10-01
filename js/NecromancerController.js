@@ -322,6 +322,7 @@ export class NecromancerController {
   }
 
   async _handleEndTurnButtonClick() {
+    if (!this.gc.canEndTurnNow()) return;
     const necro = this.getDisc();
     if (necro) {
       this._applyDrainLifeOnTurnEnd();
@@ -846,7 +847,7 @@ export class NecromancerController {
         this.gc.currentDisc = disc;
         this.gc.logCurrentTurn();
         this.gc._updateSpotlights();
-        this.gc.barbarianController.updateRageButtonVisibility();
+        this.gc.barbarianController?.updateRageButtonVisibility();
         this.updateActionButtons();
         this.updateEndTurnButtonVisibility();
       }
@@ -862,10 +863,10 @@ export class NecromancerController {
         if (necroIndex !== -1) this.gc.currentTurnIndex = necroIndex;
         this.gc.logCurrentTurn();
         this.gc._updateSpotlights();
-        this.gc.barbarianController.updateRageButtonVisibility();
+        this.gc.barbarianController?.updateRageButtonVisibility();
         this.updateActionButtons();
         this.updateEndTurnButtonVisibility();
-        this.gc.barbarianController.updateEndTurnButtonVisibility();
+        this.gc.barbarianController?.updateEndTurnButtonVisibility();
 
         const unmovedAnimated = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead && !this.movedThisTurn.has(d)).length;
         const canStillCast = this.canCastSpells(necromancerDisc);

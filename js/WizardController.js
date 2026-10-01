@@ -224,6 +224,7 @@ export class WizardController {
   }
 
   async _handleEndTurnButtonClick() {
+    if (!this.gc.canEndTurnNow()) return;
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (currentDisc && currentDisc.kind === 'Wizard' && !currentDisc.dead) {
       await this.gc._proceedToNextPlayerTurn();
@@ -420,6 +421,7 @@ export class WizardController {
       const dz = disc.mesh.position.z - wizardPos.z;
       const dist = Math.sqrt(dx * dx + dz * dz);
       if (dist > 0 && dist <= BLAST_RADIUS) {
+        if (this.gc.itemManager?.shieldBlocks(disc, wizardPos.x, wizardPos.z)) return; // Hardy Shield
         const force = BLAST_FORCE * (1 - dist / BLAST_RADIUS);
         disc.velocity.x += (dx / dist) * force;
         disc.velocity.z += (dz / dist) * force;
@@ -680,6 +682,7 @@ export class WizardController {
           const dz = disc.mesh.position.z - targetZ;
           const dist = Math.sqrt(dx * dx + dz * dz);
           if (dist <= STRIKE_RADIUS) {
+            if (this.gc.itemManager?.shieldBlocks(disc, targetX, targetZ)) return; // Hardy Shield
             const force = 0.5 * (1 - dist / STRIKE_RADIUS);
             const length = dist > 0 ? dist : 0.1;
             disc.velocity.x += (dx / length) * force;
@@ -749,10 +752,10 @@ export class WizardController {
         if (wizardIndex !== -1) this.gc.currentTurnIndex = wizardIndex;
         this.gc.logCurrentTurn();
         this.gc._updateSpotlights();
-        this.gc.barbarianController.updateRageButtonVisibility();
+        this.gc.barbarianController?.updateRageButtonVisibility();
         this.updateActionButtons();
         this.updateEndTurnButtonVisibility();
-        this.gc.barbarianController.updateEndTurnButtonVisibility();
+        this.gc.barbarianController?.updateEndTurnButtonVisibility();
       } else {
         await this.gc._proceedToNextPlayerTurn();
       }
@@ -769,7 +772,7 @@ export class WizardController {
       this.gc.currentDisc = disc;
       this.gc.logCurrentTurn();
       this.gc._updateSpotlights();
-      this.gc.barbarianController.updateRageButtonVisibility();
+      this.gc.barbarianController?.updateRageButtonVisibility();
       this.updateActionButtons();
       this.updateEndTurnButtonVisibility();
     }

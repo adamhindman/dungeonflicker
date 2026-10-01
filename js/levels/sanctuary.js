@@ -1,14 +1,15 @@
 import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, MeshStandardMaterial, RepeatWrapping } from "three";
 
 // Sanctuary floorplan (north = -Z, the far wall; camera sits south): a central
-// aisle with one long alcove on each side, each holding two item spots.
+// aisle with one long alcove on each side. The shop's items stand in one line
+// across the room, just in front of the resurrection orb.
 //
 //              ┌─door─┐
 //              │chancel│
 //      ┌───────┘      └───────┐
-//      │ item     orb     item │  ← row 1: resurrection orb + two shop items
+//      │          orb          │  ← resurrection orb (only when an ally is dead)
+//      │ item  item  item  item │  ← the four shop items
 //      │                       │
-//      │ item             item │  ← row 2: reserved for two more shop items
 //      └───────┐      ┌───────┘
 //              │ nave │  ← party starts here
 //              └──────┘
@@ -21,7 +22,9 @@ const NORTH_Z    = -19;  // chancel end wall (door)
 const SOUTH_Z    = 19;   // nave end wall
 const ALCOVE_N_Z = -13;  // north edge of the alcoves
 const ALCOVE_S_Z = 7;    // south edge of the alcoves
-const ITEM_ROWS_Z = [-9, 3]; // z of each row of item spots, door end first
+const ALTAR_Z    = -9;   // where the resurrection orb floats
+const SHOP_Z     = -4;   // the line of shop items, between the orb and the party
+const SHOP_XS    = [-9, -3, 3, 9]; // across the aisle and into both alcoves
 
 export function loadSanctuary() {
   const wallH     = this.wallHeight;
@@ -39,11 +42,8 @@ export function loadSanctuary() {
     { x0: -ALCOVE_X, x1: -HALF_ARM, z0: ALCOVE_N_Z, z1: ALCOVE_S_Z }, // west alcove
     { x0: HALF_ARM,  x1: ALCOVE_X,  z0: ALCOVE_N_Z, z1: ALCOVE_S_Z }, // east alcove
   ];
-  // Two item spots per alcove, door-end row first. The resurrection orb floats
-  // in the aisle, level with the first row.
-  const alcoveX = (HALF_ARM + ALCOVE_X) / 2;
-  this.altarPosition = { x: 0, z: ITEM_ROWS_Z[0] };
-  this.shopPositions = ITEM_ROWS_Z.flatMap(z => [{ x: -alcoveX, z }, { x: alcoveX, z }]);
+  this.altarPosition = { x: 0, z: ALTAR_Z };
+  this.shopPositions = SHOP_XS.map(x => ({ x, z: SHOP_Z }));
 
   // ── Floor ──────────────────────────────────────────────────────────────────
   // One mesh built from the walkable rects, with world-space UVs so the tiles

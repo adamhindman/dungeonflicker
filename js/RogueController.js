@@ -1,11 +1,22 @@
-import { SphereGeometry, Mesh, MeshBasicMaterial } from 'three';
+import {
+  Mesh, MeshBasicMaterial, SphereGeometry,
+} from 'three';
 import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
 
 const BOMB_CHARGE_COST = 2;
-const SNEAK_ATTACK_CHARGE_COST = 1;
+const SNEAK_ATTACK_CHARGE_COST = 2;
 const POTION_CHARGE_COST = 1;
+
+// Sneak Attack: hide this turn; if the Rogue deals no damage for the rest of
+// the turn it stays hidden (enemies target anyone else first) until the end of
+// its next turn, when its own throws strike from hiding.
+const SNEAK_BASE_DAMAGE = 2;          // a hit from hiding: double the Rogue's normal hit…
+                                      // …plus 1 per wall/obstacle bounce before it
+const SNEAK_BOUNCE_DEBOUNCE_MS = 80;  // one wall contact can register on two colliders
+const SNEAK_COLOR = 0xb388ff;
+const SNEAK_LABEL_COLOR = '#c9a6ff';
 
 export class RogueController {
   constructor(gc) {
@@ -17,9 +28,11 @@ export class RogueController {
     this.bomb = null;
     this.potions = [];
 
-    this.isSneakAttackThrow = false;
-    this.sneakAttackPending = false;
-    this.sneakAttackBonusCount = 0;
+    this.hideState = 'none';             // 'none' | 'hiding' (this turn) | 'hidden' (until end of next turn)
+    this._revealAfterThrow = false;      // hit an enemy during a strike throw: reveal once it stops
+    this.isSneakAttackThrow = false;     // the Rogue throw in flight is striking from hiding
+    this.sneakAttackBonusCount = 0;      // wall/obstacle bounces so far in that throw
+    this._lastSneakBounceAt = 0;
 
     this.bombButton = null;
     this.sneakAttackButton = null;
@@ -45,7 +58,7 @@ export class RogueController {
     tooltipManager.register(
       this.sneakAttackButton,
       'rogue_sneak_attack_used',
-      'Spend 1 charge to empower your next Rogue throw. Each collision during that throw increases damage.'
+      () => this._sneakTooltip()
     );
     tooltipManager.register(
       this.potionButton,
@@ -119,7 +132,7 @@ export class RogueController {
   // ─── Button handlers ─────────────────────────────────────────────────────────
 
   async _handleEndTurnClick() {
-    if (this.gc.gameOverState.active) return;
+    if (!this.gc.canEndTurnNow()) return;
     const disc = this.getDisc();
     if (!disc || disc.dead) return;
     if (this.bomb && !this.bomb.dead) this._explodeBomb();
@@ -139,12 +152,14 @@ export class RogueController {
   }
 
   _handleSneakAttackClick() {
-    const rogueDisc = this.getDisc();
-    if (!rogueDisc || rogueDisc.dead || this.charges < SNEAK_ATTACK_CHARGE_COST) return;
-    if (this.sneakAttackPending || this.isSneakAttackThrow) return;
-    this.sneakAttackPending = true;
+    const rogueDisc = this._rogueWhoseTurnItIs();
+    if (!rogueDisc || this.charges < SNEAK_ATTACK_CHARGE_COST) return;
+    if (this.hideState !== 'none') return;
+    this.hideState = 'hiding';
+    rogueDisc.isHidden = true;
     this.charges -= SNEAK_ATTACK_CHARGE_COST;
     firstTimeEvents.track('rogue_sneak_attack_used');
+    if (this.gc.uiManager) this.gc.uiManager.showFloatingLabel(rogueDisc, 'Hidden', SNEAK_LABEL_COLOR);
     this.updateActionButtons();
     if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(rogueDisc);
   }
@@ -233,6 +248,7 @@ export class RogueController {
       // actually inside the blast radius.
       const edgeDist = Math.max(0, dist - (disc.radius || 0));
       if (edgeDist <= EXPLODE_RADIUS) {
+        if (this.gc.itemManager?.shieldBlocks(disc, bombPos.x, bombPos.z)) return; // Hardy Shield
         const wasAliveNpc = disc.type === 'NPC' && disc.hitPoints > 0 && !disc.dead;
         disc.takeHit(EXPLODE_DAMAGE, this.bomb);
         if (wasAliveNpc && disc.hitPoints <= 0 && !this.gc.npcsKilledForRageCharge.has(disc.discName)) {
@@ -346,11 +362,13 @@ export class RogueController {
   // ─── Post-throw disc-stopped logic ───────────────────────────────────────────
 
   async onDiscStopped(disc) {
-    // Reset sneak attack state when Rogue disc stops
+    // Sneak Attack throw over; hitting an enemy with it revealed the Rogue.
     if (disc.kind === 'Rogue' && this.isSneakAttackThrow) {
       this.isSneakAttackThrow = false;
       this.sneakAttackBonusCount = 0;
+      disc.setSpotlightIntensity(disc === this.gc.currentDisc);
     }
+    if (this._revealAfterThrow) this._reveal();
 
     // If the Rogue died, end turn immediately
     if (disc.dead && disc.kind === 'Rogue') {
@@ -396,20 +414,106 @@ export class RogueController {
 
   onNewThrow(thrownDisc) {
     if (thrownDisc.kind !== 'Rogue') return;
-    if (this.sneakAttackPending) {
+    // Hidden since the end of a previous turn: this turn's Rogue throws strike from hiding.
+    if (this.hideState === 'hidden') {
       this.isSneakAttackThrow = true;
       this.sneakAttackBonusCount = 0;
-      this.sneakAttackPending = false;
+      this._lastSneakBounceAt = 0;
     }
   }
 
+  /** Called for every turn end (anyone's); gc.currentTurnIndex is still the turn that is ending. */
   onTurnEnd() {
+    const ending = this.gc.discs[this.gc.currentTurnIndex];
+    if (ending && ending.kind === 'Rogue' && ending.type === 'player') {
+      if (this.hideState === 'hidden') {
+        this._reveal();                  // the strike turn is over
+      } else if (this.hideState === 'hiding') {
+        this.hideState = 'hidden';       // dealt no damage since hiding: stays hidden until its next turn ends
+      }
+    }
     this.isSneakAttackThrow = false;
-    this.sneakAttackPending = false;
     this.sneakAttackBonusCount = 0;
+    this._revealAfterThrow = false;
     [this.bombButton, this.sneakAttackButton, this.potionButton, this.endTurnButton].forEach(btn => {
       if (btn) btn.style.display = 'none';
     });
+  }
+
+  // ─── Sneak Attack ─────────────────────────────────────────────────────────────
+
+  /** The living Rogue disc if it is currently the Rogue's turn, else null. */
+  _rogueWhoseTurnItIs() {
+    const disc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
+    return disc && disc.type === 'player' && disc.kind === 'Rogue' && !disc.dead && !this.gc.gameOverState.active
+      ? disc : null;
+  }
+
+  /**
+   * Called by Disc.takeHit whenever the Rogue (disc, bomb or knife) deals
+   * damage. Damage before hiding doesn't matter; damage after pressing Sneak
+   * Attack on the hiding turn cancels it. While striking from hiding, it
+   * reveals the Rogue (after the current throw, so one ricochet can still hit
+   * several enemies).
+   */
+  onDamageDealt() {
+    if (!this._rogueWhoseTurnItIs()) return;
+    if (this.hideState === 'hiding') {
+      this._reveal();
+    } else if (this.hideState === 'hidden') {
+      if (this.isSneakAttackThrow && this.gc.thrownDisc && this.gc.thrownDisc.kind === 'Rogue') {
+        this._revealAfterThrow = true;
+      } else {
+        this._reveal();
+      }
+    }
+  }
+
+  _reveal() {
+    const wasHidden = this.hideState !== 'none';
+    this.hideState = 'none';
+    this._revealAfterThrow = false;
+    const rogueDisc = this.gc.discs.find(d => d.type === 'player' && d.kind === 'Rogue');
+    if (rogueDisc) {
+      rogueDisc.isHidden = false;
+      if (wasHidden && !rogueDisc.dead && this.gc.uiManager) {
+        this.gc.uiManager.showFloatingLabel(rogueDisc, 'Revealed', SNEAK_LABEL_COLOR);
+      }
+    }
+    this.updateActionButtons();
+  }
+
+  /** Damage dealt to each enemy a strike-from-hiding throw hits. */
+  sneakAttackDamage() {
+    return SNEAK_BASE_DAMAGE + this.sneakAttackBonusCount;
+  }
+
+  /** A wall/obstacle bounce during a Sneak Attack throw: +1 damage, a floating "+N" and a brighter glow. */
+  onSneakBounce(disc) {
+    const now = performance.now();
+    if (now - this._lastSneakBounceAt < SNEAK_BOUNCE_DEBOUNCE_MS) return;
+    this._lastSneakBounceAt = now;
+    this.sneakAttackBonusCount++;
+    if (this.gc.uiManager) this.gc.uiManager.showFloatingLabel(disc, `+${this.sneakAttackBonusCount}`, SNEAK_LABEL_COLOR);
+    if (disc.spotlight) {
+      disc.spotlight.color.setHex(SNEAK_COLOR);
+      disc.spotlight.intensity = 80 + 60 * this.sneakAttackBonusCount;
+      disc.spotlight.distance = 25;
+    }
+  }
+
+  _sneakTooltip() {
+    const cost = `${SNEAK_ATTACK_CHARGE_COST} charges`;
+    if (this.hideState === 'hiding') {
+      return 'Hidden. Deal no damage for the rest of this turn to stay hidden until the end of your next turn.';
+    }
+    if (this.hideState === 'hidden') {
+      return `Striking from hiding: each enemy your Rogue hits takes ${SNEAK_BASE_DAMAGE} damage, ` +
+        '+1 for every wall or obstacle bounce before it. Hitting an enemy reveals you.';
+    }
+    return `Spend ${cost} to hide. If you deal no damage for the rest of this turn, enemies target ` +
+      `others first, and on your next turn each enemy your Rogue hits takes ${SNEAK_BASE_DAMAGE} damage, ` +
+      '+1 for every wall or obstacle bounce before the hit.';
   }
 
   onRoundEnd() {
@@ -424,8 +528,14 @@ export class RogueController {
     this.throwsRemaining = 2;
     this.bomb = null;
     this.potions = [];
+    this._resetSneak();
+  }
+
+  /** Clears all Sneak Attack state (new room or new game; discs are rebuilt, so hiding ends). */
+  _resetSneak() {
+    this.hideState = 'none';
+    this._revealAfterThrow = false;
     this.isSneakAttackThrow = false;
-    this.sneakAttackPending = false;
     this.sneakAttackBonusCount = 0;
   }
 
@@ -434,9 +544,7 @@ export class RogueController {
     this.throwsRemaining = 2;
     this.bomb = null;
     this.potions = [];
-    this.isSneakAttackThrow = false;
-    this.sneakAttackPending = false;
-    this.sneakAttackBonusCount = 0;
+    this._resetSneak();
     this._cleanupParticles();
   }
 
@@ -468,15 +576,11 @@ export class RogueController {
 
     if (this.sneakAttackButton) {
       const canSneak = isRogueTurn &&
-        this.throwsRemaining > 0 &&
-        this.charges >= SNEAK_ATTACK_CHARGE_COST &&
-        !this.sneakAttackPending &&
-        !this.isSneakAttackThrow;
+        this.hideState === 'none' &&
+        this.charges >= SNEAK_ATTACK_CHARGE_COST;
       this.sneakAttackButton.style.display = isRogueTurn ? 'inline-block' : 'none';
       this.sneakAttackButton.disabled = !canSneak;
-      this.sneakAttackButton.innerHTML = this.sneakAttackPending
-        ? `<kbd>2</kbd> Sneak Attack (READY)`
-        : `<kbd>2</kbd> Sneak Attack`;
+      this.sneakAttackButton.innerHTML = '<kbd>2</kbd> Sneak Attack';
     }
 
     if (this.potionButton) {
@@ -499,6 +603,9 @@ export class RogueController {
   // ─── Per-frame update ─────────────────────────────────────────────────────────
 
   update(deltaTime) {
+    // A dead Rogue can't stay hidden.
+    if (this.hideState !== 'none' && !this.getDisc()) this._reveal();
+
     const GRAVITY = 9.8;
     const toRemove = [];
     for (const p of this._explosionParticles) {

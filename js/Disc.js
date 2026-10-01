@@ -462,6 +462,11 @@ export default class Disc {
     this.hitPoints = Math.max(this.hitPoints - damageAmount, 0);
     const actualDamage = oldHP - this.hitPoints;
 
+    // Any damage by the Rogue (its disc, bomb or knife) breaks a Sneak Attack hide.
+    if (actualDamage > 0 && attacker && (attacker.kind === 'Rogue' || attacker.kind === 'Bomb')) {
+      this.gameController?.rogueController?.onDamageDealt();
+    }
+
     if (actualDamage > 0 && this.gameController && this.gameController.uiManager && this.kind !== 'Orb' && this.kind !== 'HealingOrb' && this.kind !== 'Fireball') {
       this.gameController.uiManager.showFloatingText(this, actualDamage, false);
     }

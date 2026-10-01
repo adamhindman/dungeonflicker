@@ -1,5 +1,5 @@
 // js/SanctuaryShop.js
-// Two random items displayed in the Sanctuary's alcoves. The character whose
+// Four random items displayed in a line across the Sanctuary. The character whose
 // turn it is can buy one with their own mana/charges; a bought item disappears
 // for the rest of this visit.
 //
@@ -9,10 +9,10 @@
 
 import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { ITEMS } from './ItemManager.js';
-import { makeKnifeModel, makeRingModel } from './ItemModels.js';
+import { makeKnifeModel, makeRingModel, makeShieldModel } from './ItemModels.js';
 import { getResource, formatAmount } from './PartyResources.js';
 
-const OFFER_COUNT = 2;
+const OFFER_COUNT = 4;
 const PEDESTAL_RADIUS = 0.4;   // plain coloured disc for items without a model
 const PEDESTAL_HEIGHT = 0.2;
 const SPIN_SPEED = 1.5;        // radians per second
@@ -46,8 +46,9 @@ export class SanctuaryShop {
       mesh.position.set(pos.x, 0, pos.z);
 
       let spinner = null;
-      if (item.model === 'ring' || item.model === 'knife') {
-        spinner = item.model === 'ring' ? makeRingModel(item.color) : makeKnifeModel(item.color);
+      const makeModel = { ring: makeRingModel, knife: makeKnifeModel, shield: makeShieldModel }[item.model];
+      if (makeModel) {
+        spinner = makeModel(item.color);
         mesh.add(spinner);
       } else {
         const disc = new Mesh(
@@ -107,7 +108,7 @@ export class SanctuaryShop {
     const item = ITEMS[itemId];
     const buyer = this._buyer();
     const res = buyer && getResource(this.gc, buyer.kind);
-    const cost = res ? formatAmount(res, item.cost) : `${item.cost} mana`;
+    const cost = `Costs ${res ? formatAmount(res, item.cost) : `${item.cost} mana`}`;
 
     let description = item.description;
     if (buyer && res) {

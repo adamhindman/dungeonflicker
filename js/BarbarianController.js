@@ -52,7 +52,7 @@ export class BarbarianController {
   }
 
   async _handleEndTurnButtonClick() {
-    if (this.gc.gameOverState.active) return;
+    if (!this.gc.canEndTurnNow()) return;
     const currentDisc = this.gc.currentTurnIndex !== -1 ? this.gc.discs[this.gc.currentTurnIndex] : null;
     if (currentDisc && currentDisc.type === 'player' && currentDisc.kind === 'Barbarian' && !currentDisc.dead) {
       await this.gc._proceedToNextPlayerTurn();
