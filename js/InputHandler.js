@@ -96,6 +96,18 @@ export default class InputHandler {
             return;
         }
 
+        // Cheats for testing: Shift+N = next room, Shift+H = +3 HP and +3 mana/charges.
+        if (event.shiftKey && key === 'n') {
+            event.preventDefault();
+            this.gameController.cheatNextRoom?.();
+            return;
+        }
+        if (event.shiftKey && key === 'h') {
+            event.preventDefault();
+            this.gameController.cheatRestore?.();
+            return;
+        }
+
         // Hold Tab: show every disc's flick range (instead of moving browser focus).
         if (key === 'tab') {
             event.preventDefault();

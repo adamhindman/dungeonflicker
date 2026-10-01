@@ -1352,6 +1352,36 @@ clamp(value, min, max) {
     return !this.gameOverState.active && !this.waitingForDiscToStop && !this.levelTransitionInProgress;
   }
 
+  // ─── Cheats (for testing) ─────────────────────────────────────────────────
+
+  /** Cheat (Shift+N): leave the room as if through the door (Sanctuary rules still apply). */
+  async cheatNextRoom() {
+    if (this.levelTransitionInProgress || this.gameOverState.active) return;
+    const trigger = isMainPC(this.currentDisc) && !this.currentDisc.dead
+      ? this.currentDisc
+      : this.discs.find(d => isMainPC(d) && !d.dead);
+    await this.startNextLevel(trigger || null);
+  }
+
+  /** Cheat (Shift+H): every living party character gains 3 HP and 3 mana/charges, up to their maximums. */
+  cheatRestore() {
+    if (this.gameOverState.active) return;
+    for (const disc of this.discs) {
+      if (!isMainPC(disc) || disc.dead) continue;
+      disc.restoreHealth(3); // capped at max HP; shows its own "+N HP"
+      const res = getResource(this, disc.kind);
+      if (!res) continue;
+      const before = res.controller[res.field];
+      res.controller[res.field] = Math.min(before + 3, res.max ?? Infinity);
+      const gained = res.controller[res.field] - before;
+      if (gained > 0 && this.uiManager) {
+        this.uiManager.showFloatingLabel(disc, `+${gained} ${gained === 1 ? res.unit : res.units}`, '#7fb8ff');
+      }
+    }
+    this.updateDiscNames();
+    this._refreshActionUI();
+  }
+
   /** Refreshes the turn panel and every character's action buttons after mana/HP changes. */
   _refreshActionUI() {
     if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);

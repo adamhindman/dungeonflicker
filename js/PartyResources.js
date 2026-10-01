@@ -4,14 +4,15 @@
 
 const RESOURCES = {
   Wizard:      { controller: 'wizardController',      field: 'mana',        start: 3, unit: 'mana',   units: 'mana' },
-  Necromancer: { controller: 'necromancerController', field: 'mana',        start: 3, unit: 'mana',   units: 'mana' },
+  Necromancer: { controller: 'necromancerController', field: 'mana',        start: 3, unit: 'mana',   units: 'mana', max: 6 },
   Barbarian:   { controller: 'barbarianController',   field: 'rageCharges', start: 0, unit: 'charge', units: 'charges' },
   Rogue:       { controller: 'rogueController',       field: 'charges',     start: 0, unit: 'charge', units: 'charges' },
 };
 
 /**
- * @returns {{controller: object, field: string, start: number, unit: string, units: string}|null}
- *   the resource for a character kind, or null if that character isn't in play.
+ * @returns {{controller: object, field: string, start: number, unit: string, units: string, max?: number}|null}
+ *   the resource for a character kind (`max` only where the class caps it),
+ *   or null if that character isn't in play.
  */
 export function getResource(gc, kind) {
   const res = RESOURCES[kind];

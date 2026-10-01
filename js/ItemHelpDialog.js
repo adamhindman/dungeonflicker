@@ -1,7 +1,7 @@
 // js/ItemHelpDialog.js
 // A small dialog shown when a character buys an item in the Sanctuary,
-// explaining what the item does and how to use it (from the item's `help`
-// lines in ItemManager's ITEMS). A "Don't show this again" checkbox hides the
+// explaining what the item does and how to use it: the item's `helpIntro` (an
+// italic flavour paragraph) and `help` bullet lines from ItemManager's ITEMS. A "Don't show this again" checkbox hides the
 // dialog for that item from then on; the choice is kept in localStorage.
 
 import { ITEMS } from './ItemManager.js';
@@ -43,7 +43,7 @@ export class ItemHelpDialog {
   /** Shows the help for `itemId`, bought by `buyerName`, unless the player chose to hide it. */
   show(itemId, buyerName) {
     const item = ITEMS[itemId];
-    if (!item || !item.help || loadHidden().has(itemId)) return;
+    if (!item || !(item.help || item.helpIntro) || loadHidden().has(itemId)) return;
     this.close();
     this._itemId = itemId;
 
@@ -59,7 +59,8 @@ export class ItemHelpDialog {
           ${buyerName ? `<div class="item-help-subtitle">${buyerName} got a new item</div>` : ''}
         </div>
       </div>
-      <ul class="item-help-lines">${item.help.map(line => `<li>${line}</li>`).join('')}</ul>
+      ${item.helpIntro ? `<p class="item-help-intro">${item.helpIntro}</p>` : ''}
+      ${item.help?.length ? `<ul class="item-help-lines">${item.help.map(line => `<li>${line}</li>`).join('')}</ul>` : ''}
       <div class="item-help-footer">
         <label class="item-help-hide"><input type="checkbox" /> Don't show this again</label>
         <button class="item-help-ok">Got it</button>
