@@ -637,7 +637,7 @@ export class ItemManager {
   /** A knife kill earns the owner the same reward as a kill with their own disc. */
   _rewardKill(owner) {
     const gc = this.gc;
-    if (owner.kind === 'Barbarian' && gc.barbarianController) gc.barbarianController.rageCharges++;
+    if (owner.kind === 'Barbarian' && gc.barbarianController) gc.barbarianController.onKill(owner);
     else if (owner.kind === 'Wizard' && gc.wizardController) gc.wizardController.manaEarnedThisTurn += 2;
     else if (owner.kind === 'Necromancer' && gc.necromancerController) gc.necromancerController.manaEarnedThisTurn += 2;
     else if (owner.kind === 'Rogue' && gc.rogueController) gc.rogueController.charges++;

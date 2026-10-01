@@ -4,7 +4,7 @@
 
 const RESOURCES = {
   Wizard:      { controller: 'wizardController',      field: 'mana',        start: 3, unit: 'mana',   units: 'mana' },
-  Necromancer: { controller: 'necromancerController', field: 'mana',        start: 3, unit: 'mana',   units: 'mana', max: 6 },
+  Necromancer: { controller: 'necromancerController', field: 'mana',        start: 3, unit: 'mana',   units: 'mana' },
   Barbarian:   { controller: 'barbarianController',   field: 'rageCharges', start: 0, unit: 'charge', units: 'charges' },
   Rogue:       { controller: 'rogueController',       field: 'charges',     start: 0, unit: 'charge', units: 'charges' },
 };

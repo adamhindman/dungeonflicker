@@ -141,8 +141,14 @@ textarea {
         font-weight: bold;
         order: -1;
     }
-    #move-status-chip {
+    #turn-status-chips {
         order: -1;
+        display: flex;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+    #move-status-chip,
+    #exhausted-chip {
         pointer-events: none;
         padding: 0.35rem 0.85rem;
         border-radius: 0;
@@ -161,6 +167,13 @@ textarea {
     #move-status-chip[data-state="used"] {
         background-color: rgba(0,0,0,.25);
         color: rgba(255,255,255, .5);
+    }
+    /* Barbarian the turn after a Rage: a warning, hover for the tooltip */
+    #exhausted-chip {
+        pointer-events: auto;
+        cursor: help;
+        background-color: orangered;
+        color: white;
     }
     button {
         pointer-events: auto;

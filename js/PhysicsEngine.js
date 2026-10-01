@@ -54,9 +54,7 @@ export class PhysicsEngine {
         if (hitBoundary && gc.soundManager && disc.velocity.length() > 0.05) {
           gc.soundManager.playBounce(disc.mesh.position.clone());
         }
-        if (hitBoundary && gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-          gc.rogueController.onSneakBounce(disc);
-        }
+        if (hitBoundary) this._onWallBounce(disc);
 
         // Ghost Ring discs only collide with the room's outer walls.
         const walls = gc.level.getAllWalls(!!disc.isGhost);
@@ -65,9 +63,7 @@ export class PhysicsEngine {
           if (hitWall && gc.soundManager && disc.velocity.length() > 0.05) {
             gc.soundManager.playBounce(disc.mesh.position.clone());
           }
-          if (hitWall && gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-            gc.rogueController.onSneakBounce(disc);
-          }
+          if (hitWall) this._onWallBounce(disc);
         });
 
         if (gc.level && gc.level.crusherConfig && !disc.isGhost) {
@@ -97,9 +93,7 @@ export class PhysicsEngine {
                 if (gc.soundManager && disc.velocity.length() > 0.05) {
                   gc.soundManager.playBounce(disc.mesh.position.clone());
                 }
-                if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-                  gc.rogueController.onSneakBounce(disc);
-                }
+                this._onWallBounce(disc);
               }
             }
           } else if (obs.type === 'triangle') {
@@ -188,9 +182,7 @@ export class PhysicsEngine {
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
-              if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-                gc.rogueController.onSneakBounce(disc);
-              }
+              this._onWallBounce(disc);
             }
           }
         }
@@ -217,9 +209,7 @@ export class PhysicsEngine {
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
-              if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-                gc.rogueController.onSneakBounce(disc);
-              }
+              this._onWallBounce(disc);
             }
           }
         }
@@ -244,9 +234,7 @@ export class PhysicsEngine {
               if (gc.soundManager && disc.velocity.length() > 0.05) {
                 gc.soundManager.playBounce(disc.mesh.position.clone());
               }
-              if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
-                gc.rogueController.onSneakBounce(disc);
-              }
+              this._onWallBounce(disc);
             }
           }
         }
@@ -486,16 +474,13 @@ export class PhysicsEngine {
               else if (gc.thrownDisc !== null && d1 === gc.currentDisc) {
                 if (d1.type === "player" && d2.type === "NPC") {
                   if (d1.canDoReboundDamage || !gc.playerDamagedNPCsThisThrow.has(d2.discName)) {
-                    if (d1.kind === 'Barbarian' && d2.type === 'NPC') {
-                      if (d2.hitPoints > 0 && !d2.dead) {
-                        gc.barbarianController.uniqueNPCHitsThisThrow.add(d2.discName);
-                      }
+                    if (d1.kind === 'Barbarian') {
+                      gc.barbarianController.onEnemyStruck(d2);
                     }
 
                     let damageToDeal = d1.attackDamage;
                     if (d1.kind === 'Barbarian') {
-                      const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
-                      damageToDeal = d1.rageWasUsedThisThrow ? (2 + bonusDamage) : (d1.attackDamage + bonusDamage);
+                      damageToDeal = gc.barbarianController.hitDamage(d1);
                     } else if (d1.kind === 'Rogue' && gc.rogueController?.isSneakAttackThrow) {
                       damageToDeal = gc.rogueController.sneakAttackDamage();
                     }
@@ -508,12 +493,7 @@ export class PhysicsEngine {
 
                     if (d2.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d2.discName)) {
                       if (d1.kind === 'Barbarian') {
-                        gc.barbarianController.rageCharges++;
-                        if (d1.rageWasUsedThisThrow) {
-                          d1.restoreHealth(1);
-                          gc.updateDiscNames();
-                          if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(gc.currentDisc);
-                        }
+                        gc.barbarianController.onKill(d1);
                       } else if (d1.kind === 'Wizard') {
                         gc.wizardController.manaEarnedThisTurn += 2;
                       } else if (d1.kind === 'Orb') {
@@ -536,8 +516,7 @@ export class PhysicsEngine {
                     if (!d1.hasCausedDamage || d1.canDoReboundDamage) {
                       let damageToDeal = d1.attackDamage;
                       if (d1.kind === 'Barbarian') {
-                        const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
-                        damageToDeal = d1.rageWasUsedThisThrow ? (2 + bonusDamage) : (d1.attackDamage + bonusDamage);
+                        damageToDeal = gc.barbarianController.hitDamage(d1);
                       }
                       d2.takeHit(damageToDeal, d1);
                       d1.hasCausedDamage = true;
@@ -561,16 +540,13 @@ export class PhysicsEngine {
               else if (gc.thrownDisc !== null && d2 === gc.currentDisc) {
                 if (d2.type === "player" && d1.type === "NPC") {
                   if (d2.canDoReboundDamage || !gc.playerDamagedNPCsThisThrow.has(d1.discName)) {
-                    if (d2.kind === 'Barbarian' && d1.type === 'NPC') {
-                      if (d1.hitPoints > 0 && !d1.dead) {
-                        gc.barbarianController.uniqueNPCHitsThisThrow.add(d1.discName);
-                      }
+                    if (d2.kind === 'Barbarian') {
+                      gc.barbarianController.onEnemyStruck(d1);
                     }
 
                     let damageToDeal = d2.attackDamage;
                     if (d2.kind === 'Barbarian') {
-                      const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
-                      damageToDeal = d2.rageWasUsedThisThrow ? (2 + bonusDamage) : (d2.attackDamage + bonusDamage);
+                      damageToDeal = gc.barbarianController.hitDamage(d2);
                     } else if (d2.kind === 'Rogue' && gc.rogueController?.isSneakAttackThrow) {
                       damageToDeal = gc.rogueController.sneakAttackDamage();
                     }
@@ -583,12 +559,7 @@ export class PhysicsEngine {
 
                     if (d1.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(d1.discName)) {
                       if (d2.kind === 'Barbarian') {
-                        gc.barbarianController.rageCharges++;
-                        if (d2.rageWasUsedThisThrow) {
-                          d2.restoreHealth(1);
-                          gc.updateDiscNames();
-                          if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(gc.currentDisc);
-                        }
+                        gc.barbarianController.onKill(d2);
                       } else if (d2.kind === 'Wizard') {
                         gc.wizardController.manaEarnedThisTurn += 2;
                       } else if (d2.kind === 'Orb') {
@@ -611,8 +582,7 @@ export class PhysicsEngine {
                     if (!d2.hasCausedDamage || d2.canDoReboundDamage) {
                       let damageToDeal = d2.attackDamage;
                       if (d2.kind === 'Barbarian') {
-                        const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
-                        damageToDeal = d2.rageWasUsedThisThrow ? (2 + bonusDamage) : (d2.attackDamage + bonusDamage);
+                        damageToDeal = gc.barbarianController.hitDamage(d2);
                       }
                       d1.takeHit(damageToDeal, d2);
                       d2.hasCausedDamage = true;
@@ -644,10 +614,9 @@ export class PhysicsEngine {
                   let damageToDeal = actor.attackDamage;
 
                   if (actor.kind === 'Barbarian') {
-                    gc.barbarianController.uniqueNPCHitsThisThrow.add(d1.discName);
-                    gc.barbarianController.uniqueNPCHitsThisThrow.add(d2.discName);
-                    const bonusDamage = gc.barbarianController.uniqueNPCHitsThisThrow.size;
-                    damageToDeal = actor.rageWasUsedThisThrow ? (2 + bonusDamage) : (actor.attackDamage + bonusDamage);
+                    gc.barbarianController.onEnemyStruck(d1);
+                    gc.barbarianController.onEnemyStruck(d2);
+                    damageToDeal = gc.barbarianController.hitDamage(actor);
                   }
 
                   d1.takeHit(damageToDeal, actor);
@@ -663,12 +632,7 @@ export class PhysicsEngine {
                   [d1, d2].forEach(npc => {
                     if (npc.hitPoints <= 0 && !gc.npcsKilledForRageCharge.has(npc.discName)) {
                       if (actor.kind === 'Barbarian') {
-                        gc.barbarianController.rageCharges++;
-                        if (actor.rageWasUsedThisThrow) {
-                          actor.restoreHealth(1);
-                          gc.updateDiscNames();
-                          if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(gc.currentDisc);
-                        }
+                        gc.barbarianController.onKill(actor);
                       } else if (actor.kind === 'Wizard') {
                         gc.wizardController.manaEarnedThisTurn += 2;
                       } else if (actor.kind === 'Orb') {
@@ -700,6 +664,15 @@ export class PhysicsEngine {
     gc.itemManager?.resolveShieldCollisions();
 
     return false; // no early exit needed
+  }
+
+  /** `disc` bounced off a wall or obstacle: feeds Sneak Attack and Wall Slam. */
+  _onWallBounce(disc) {
+    const gc = this.gc;
+    if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {
+      gc.rogueController.onSneakBounce(disc);
+    }
+    gc.barbarianController?.onWallBounce(disc);
   }
 
   _handleCrusherCollision(disc, crusher) {
