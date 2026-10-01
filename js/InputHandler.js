@@ -34,6 +34,9 @@ export default class InputHandler {
         document.addEventListener('keydown', this._handleKeyDown, { capture: true });
 
         window.addEventListener('keyup', this._handleKeyUp);
+        // A held Tab never sends keyup if the window loses focus: hide the range circles then.
+        this._handleBlur = () => this.gameController.rangeOverlay?.hide();
+        window.addEventListener('blur', this._handleBlur);
         // Note: The window resize listener is still in GameController as it directly affects camera and renderer.
     }
 
@@ -90,6 +93,13 @@ export default class InputHandler {
         if (event.shiftKey && key === 'm') {
             event.preventDefault();
             firstTimeEvents.clear();
+            return;
+        }
+
+        // Hold Tab: show every disc's flick range (instead of moving browser focus).
+        if (key === 'tab') {
+            event.preventDefault();
+            this.gameController.rangeOverlay?.show();
             return;
         }
 
@@ -231,6 +241,11 @@ export default class InputHandler {
     _handleKeyUp(event) {
         const key = (event.key || '').toLowerCase();
 
+        if (key === 'tab') {
+            this.gameController.rangeOverlay?.hide();
+            return;
+        }
+
         // Extra safety: cancel if Escape is released
         if (key === 'escape' || key === 'esc' || event.code === 'Escape' || event.keyCode === 27) {
             if (this.isPointerDown) {
@@ -287,5 +302,6 @@ export default class InputHandler {
         window.removeEventListener('keydown', this._handleKeyDown, { capture: true });
         document.removeEventListener('keydown', this._handleKeyDown, { capture: true });
         window.removeEventListener('keyup', this._handleKeyUp);
+        window.removeEventListener('blur', this._handleBlur);
     }
 }

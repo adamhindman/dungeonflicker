@@ -23,12 +23,28 @@ import { SanctuaryShrine } from './SanctuaryShrine.js';
 import { SanctuaryShop } from './SanctuaryShop.js';
 import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
 import { getResource, isMainPC } from './PartyResources.js';
+import { RangeOverlay } from './RangeOverlay.js';
+
+// Flick tuning: drag length (screen px × camera distance) → throw speed.
+const THROW_DRAG_THRESHOLD = 2;    // drags shorter than this (in world-drag units) don't throw
+const THROW_SENSITIVITY = 0.004;
+const THROW_MIN_SPEED = 0.05;
+const ROGUE_CURVE_RANGE = 220;     // Rogue's gentler low-end response curve
+// Precision aiming (hold Shift), for short, exact flicks: mouse movement is
+// slowed so that PRECISION_DRAG_RANGE px of it spans 0 → PRECISION_POWER_CAP
+// of full power, whatever the camera zoom or character. (Normal drags reach
+// full power within a few pixels, so a fixed ratio wouldn't give a usable range.)
+const PRECISION_DRAG_RANGE = 150;
+const PRECISION_POWER_CAP = 0.5;
+const AIM_LINE_LENGTH = 10;        // world length of the aiming line at full power
+const AIM_LINE_COLOR = 0xffffff;
+const AIM_LINE_PRECISION_COLOR = 0xffc53d;
 
 // A Rogue hiding for a Sneak Attack fades into the shadows.
 const HIDDEN_OPACITY = 0.3;
 
 // A Sanctuary room follows every this-many cleared combat rooms.
-const SANCTUARY_INTERVAL = 1; // TODO: restore to 3 after testing
+const SANCTUARY_INTERVAL = 3;
 
 let instance = null;
 
@@ -272,6 +288,7 @@ export default class GameController {
     if (!this.actionButtonsContainer) {
       // Depending on how critical this is, you might want to return or throw an error
     }
+    this.rangeOverlay = new RangeOverlay(this);
     this.itemManager = new ItemManager(this);
     this.itemManager.init(this.actionButtonsContainer);
     // Initialize throw direction line helper for drag aim visualization
@@ -692,8 +709,10 @@ export default class GameController {
     if (allowAiming && this.currentDisc && this.currentDisc.mesh) { // Ensure currentDisc and its mesh exist
         this.controlsEnabled = false;
         this.controls.enabled = false;
+        // Aim drag, accumulated move by move so Shift can slow it down (precision aiming).
+        this._aimDrag = { x: 0, y: 0, lastX: event.clientX, lastY: event.clientY, precision: event.shiftKey };
         if (this.uiManager) {
-            this.uiManager.updateThrowInfo("Magnitude: 0 Angle: 0°", true);
+            this.uiManager.updateThrowInfo("Power: 0% Angle: 0°", true);
         }
         // Initialize throw direction line previous positions to the current disc's position
         if (this.throwDirectionLine) {
@@ -705,6 +724,7 @@ export default class GameController {
             this._prevLineEnd = this._prevLineStart.clone();
         }
     } else {
+        this._aimDrag = null;
         this.controlsEnabled = true;
         this.controls.enabled = true;
         if (this.uiManager) {
@@ -722,16 +742,19 @@ export default class GameController {
       return;
     }
     // The check for isPointerDown is now handled by InputHandler before calling this method.
-    // this.pointerDownPos is replaced by initialPointerDownPos passed as an argument.
-    const deltaX = event.clientX - initialPointerDownPos.x; // Use passed initialPointerDownPos
-    const deltaY = event.clientY - initialPointerDownPos.y; // Use passed initialPointerDownPos
+    const aim = this._accumulateAimDrag(event, initialPointerDownPos);
+    const deltaX = aim.x;
+    const deltaY = aim.y;
     const dragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     if (dragLength > 0) {
       const angleRadians = Math.atan2(-deltaY, deltaX);
       let angleDegrees = angleRadians * (180 / Math.PI);
       if (angleDegrees < 0) angleDegrees += 360;
+      const power = this._throwPower(this.currentDisc, dragLength, aim.precision);
+      const powerPct = power ? Math.round(power.fraction * 100) : 0;
       if (this.uiManager) {
-        this.uiManager.updateThrowInfo(`Magnitude: ${dragLength.toFixed(1)} Angle: ${angleDegrees.toFixed(1)}°`, true);
+        this.uiManager.updateThrowInfo(
+          `Power: ${powerPct}% Angle: ${angleDegrees.toFixed(1)}°${aim.precision ? ' • Precision' : ''}`, true);
       }
 
       if (!this.controlsEnabled && this.currentDisc && this.currentDisc.mesh && this.throwDirectionLine) {
@@ -753,8 +776,9 @@ export default class GameController {
         direction.normalize();
         direction.negate();
 
-        const maxLineLength = 10;
-        const lineLength = Math.min(dragLength / 10, 1) * maxLineLength;
+        // The line's length is the true throw power: full length = full power.
+        const lineLength = power ? power.fraction * AIM_LINE_LENGTH : 0;
+        this.throwDirectionLine.material.color.setHex(aim.precision ? AIM_LINE_PRECISION_COLOR : AIM_LINE_COLOR);
 
         const startPos = this.currentDisc.mesh.position.clone();
         const endPos = startPos
@@ -942,23 +966,16 @@ export default class GameController {
         return;
       }
 
-      const deltaX = event.clientX - initialPointerDownPos.x;
-      const deltaY = event.clientY - initialPointerDownPos.y;
-      const screenDragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY); // Renamed for clarity
+      // The aim drag (slowed down while Shift was held), including this last move.
+      const aim = this._accumulateAimDrag(event, initialPointerDownPos);
+      this._aimDrag = null;
+      const deltaX = aim.x;
+      const deltaY = aim.y;
+      const screenDragLength = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      const power = this._throwPower(this.currentDisc, screenDragLength, aim.precision);
 
-      const cameraDistance = this.controls.getDistance();
-      const effectiveWorldDrag = screenDragLength * cameraDistance;
-
-      const WORLD_DRAG_THRESHOLD = 2; // Tune this value
-      const WORLD_THROW_SENSITIVITY = .004; // Tune this value
-      // const dragThreshold = 3; // Old pixel-based threshold, now replaced by WORLD_DRAG_THRESHOLD
-      const minSpeed = 0.05; // This might still be relevant for disc stopping
-
-      if (effectiveWorldDrag > WORLD_DRAG_THRESHOLD) {
+      if (power) {
         const discBeingThrown = this.currentDisc;
-
-
-        const dragBeyondThreshold = effectiveWorldDrag - WORLD_DRAG_THRESHOLD;
         const normX = deltaX / screenDragLength;
         const normY = deltaY / screenDragLength;
 
@@ -979,27 +996,9 @@ export default class GameController {
 
         const directionX = direction.x;
         const directionZ = direction.z;
-
-        let adjustedWorldDrag = effectiveWorldDrag;
-        if (discBeingThrown.kind === 'Rogue') {
-          // Rogue-only low-end response curve:
-          // make short drags much easier to control, while preserving normal
-          // long-drag behavior so full-strength throws remain available.
-          const ROGUE_CURVE_RANGE = 220;
-          const clamped = Math.min(ROGUE_CURVE_RANGE, Math.max(0, dragBeyondThreshold));
-          const normalized = clamped / ROGUE_CURVE_RANGE;
-          const curved = normalized * normalized;
-          const curvedDrag = curved * ROGUE_CURVE_RANGE;
-          const linearRemainder = Math.max(0, dragBeyondThreshold - ROGUE_CURVE_RANGE);
-          adjustedWorldDrag = WORLD_DRAG_THRESHOLD + curvedDrag + linearRemainder;
-        }
-
-        const throwForceMagnitude = adjustedWorldDrag * WORLD_THROW_SENSITIVITY;
-
-        let actualThrowPowerMultiplier = discBeingThrown.throwPowerMultiplier;
+        const speed = power.speed; // already includes Rage's ×2.5 and the precision cap
 
         if (discBeingThrown.rageIsActiveForNextThrow) {
-          actualThrowPowerMultiplier *= 2.5;
           discBeingThrown.rageIsActiveForNextThrow = false;
           // Orbs should not get rebound damage, even if a rage-like effect was active
           if (discBeingThrown.kind !== 'Orb') {
@@ -1011,13 +1010,6 @@ export default class GameController {
           }
           this.barbarianController?.updateRageButtonVisibility();
         }
-
-        const maxSpeed = discBeingThrown.kind === 'Bomb' ? 1.8 : 1;
-        // const normLength = Math.min(adjustedLength / 10, 1); // Old logic, adjustedLength is not defined in this scope with new logic
-        // const scaledLength = normLength * normLength; // Old logic
-        let speed = (throwForceMagnitude * actualThrowPowerMultiplier) / discBeingThrown.mass;
-        speed = Math.min(speed, maxSpeed); // Apply maxSpeed cap (maxSpeed is defined above as 1 by default)
-        if (speed < minSpeed) speed = minSpeed;
 
         if (discBeingThrown.kind === 'Barbarian') {
           this.barbarianController?.uniqueNPCHitsThisThrow.clear();
@@ -1055,10 +1047,82 @@ export default class GameController {
     this.cameraController.setPanningState(key, isPressed);
   }
 
+  /**
+   * Adds the pointer's movement since the last event to the aim drag. While
+   * Shift is held the movement is scaled down (precision aiming), so pressing
+   * or releasing Shift mid-drag never makes the aim jump.
+   * @returns {{x: number, y: number, precision: boolean}} the drag in screen px
+   */
+  _accumulateAimDrag(event, initialPointerDownPos) {
+    const aim = this._aimDrag;
+    if (!aim) {
+      return {
+        x: event.clientX - initialPointerDownPos.x,
+        y: event.clientY - initialPointerDownPos.y,
+        precision: false,
+      };
+    }
+    const scale = event.shiftKey ? this._precisionDragScale(this.currentDisc) : 1;
+    aim.x += (event.clientX - aim.lastX) * scale;
+    aim.y += (event.clientY - aim.lastY) * scale;
+    aim.lastX = event.clientX;
+    aim.lastY = event.clientY;
+    aim.precision = event.shiftKey;
+    return aim;
+  }
+
+  /**
+   * The throw a drag of `dragPx` screen pixels would make with `disc`, or null
+   * if the drag is too short to throw. Shared by the aiming line and the throw
+   * itself so the line always shows the real power.
+   * @returns {{speed: number, fraction: number}|null} fraction is of full power
+   */
+  _throwPower(disc, dragPx, precision) {
+    const effectiveWorldDrag = dragPx * this.controls.getDistance();
+    if (effectiveWorldDrag <= THROW_DRAG_THRESHOLD) return null;
+
+    let adjustedWorldDrag = effectiveWorldDrag;
+    if (disc.kind === 'Rogue') {
+      // Rogue-only low-end response curve: short drags are much easier to
+      // control, while long drags still reach full strength.
+      const beyond = effectiveWorldDrag - THROW_DRAG_THRESHOLD;
+      const normalized = Math.min(ROGUE_CURVE_RANGE, beyond) / ROGUE_CURVE_RANGE;
+      const curvedDrag = normalized * normalized * ROGUE_CURVE_RANGE;
+      const linearRemainder = Math.max(0, beyond - ROGUE_CURVE_RANGE);
+      adjustedWorldDrag = THROW_DRAG_THRESHOLD + curvedDrag + linearRemainder;
+    }
+
+    let multiplier = disc.throwPowerMultiplier;
+    if (disc.rageIsActiveForNextThrow) multiplier *= 2.5;
+    const maxSpeed = disc.kind === 'Bomb' ? 1.8 : 1;
+    const cap = precision ? maxSpeed * PRECISION_POWER_CAP : maxSpeed;
+    const raw = (adjustedWorldDrag * THROW_SENSITIVITY * multiplier) / disc.mass;
+    const speed = Math.max(Math.min(raw, cap), THROW_MIN_SPEED);
+    return { speed, fraction: speed / maxSpeed };
+  }
+
+  /**
+   * How much a pixel of Shift-held mouse movement counts as, so that
+   * PRECISION_DRAG_RANGE px of it reaches the precision power cap for `disc`
+   * at the current zoom. Found by bisection, so it also covers the Rogue's curve.
+   */
+  _precisionDragScale(disc) {
+    if (!disc) return 1;
+    const capFraction = PRECISION_POWER_CAP;
+    let lo = 0, hi = 1000;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + hi) / 2;
+      const power = this._throwPower(disc, mid, false);
+      if (power && power.fraction >= capFraction) hi = mid; else lo = mid;
+    }
+    return hi / PRECISION_DRAG_RANGE;
+  }
+
   cancelAiming() {
     // Called by InputHandler when Escape is pressed during a drag/aim operation.
     // InputHandler itself will set its internal isPointerDown to false.
     // GameController needs to reset its aiming-specific state.
+    this._aimDrag = null;
     this.necromancerController?.cancelTargetSelection();
     this.pointerDisc = null;
     this.currentDisc = null; // Reset currentDisc so pointerup doesn't trigger a throw
@@ -1266,6 +1330,7 @@ clamp(value, min, max) {
     this.sanctuaryShrine?.teardown();
     this.sanctuaryShop?.teardown();
     this.itemManager?.onLevelUnload();
+    this.rangeOverlay?.hide();
     if (this.discInfoPopupSelectedDisc && !this.discs.includes(this.discInfoPopupSelectedDisc)) {
       this._hideDiscInfoPopup();
     }
@@ -1755,6 +1820,7 @@ clamp(value, min, max) {
     this.wizardController?.update(deltaTime);
     this.rogueController?.update(deltaTime);
     this.itemManager?.update(deltaTime);
+    this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
 
