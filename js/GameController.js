@@ -48,7 +48,7 @@ const HIDDEN_OPACITY = 0.3;
 // A Sanctuary room follows every this-many cleared combat rooms.
 const SANCTUARY_INTERVAL = 3;
 // TESTING: start the game in this room type (e.g. 'boss'); null for the normal sequence.
-const FIRST_ROOM_OVERRIDE = 'boss';
+const FIRST_ROOM_OVERRIDE = null;
 
 let instance = null;
 
