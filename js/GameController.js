@@ -147,7 +147,7 @@ export default class GameController {
     this._hoverPendingDisc = null;
 
     this.discDescriptions = {
-        Barbarian: "Deals 2 damage to every enemy he hits. Enemies he knocks into walls take extra damage. Every blow he takes feeds his Rage, and while raging, each kill earns him another throw. Raging leaves him Exhausted for a turn: half power, no Rage. He can also Taunt, forcing nearby enemies to attack him.",
+        Barbarian: "Deals 2 damage to every enemy he hits. Enemies he knocks into walls take extra damage. Every blow he takes feeds his Rage, and while raging, he keeps throwing as long as every throw kills something. Raging leaves him Exhausted for a turn: he moves a quarter as far, deals 1 damage, and can't Rage. He can also Taunt, forcing nearby enemies to attack him.",
         Wizard: "A versatile offensive and defensive spellcaster who earns 1 mana every round. Confure mystical orbs, heal allies, and call upon the deadly Flame Strike.",
         Necromancer: "Control dead enemies, resurrect allies, drain monsters of their life force, and feast on corpses to restore your loathsome strength.",
         Skeleton: "Just your basic walking skeleton. Does 1 damage per hit.",
@@ -1498,11 +1498,13 @@ clamp(value, min, max) {
     this.rogueController?.onLevelStart();
 
     // Reload level (generates new room/obstacles). A Sanctuary follows every
-    // SANCTUARY_INTERVAL cleared rooms and doesn't advance the level number,
-    // except after the boss: the rooms loop straight back to the first one
-    // (the Sanctuary comes before the boss).
+    // SANCTUARY_INTERVAL cleared rooms, and always comes right before the
+    // boss; it doesn't advance the level number. None follows the boss: the
+    // rooms loop straight back to the first one.
     if (this.level) {
-      if (!leavingSanctuary && !leavingBoss && this.currentLevelNumber % SANCTUARY_INTERVAL === 0) {
+      const nextIsBoss = this._shapeForLevel(this.currentLevelNumber + 1) === 'boss';
+      const sanctuaryDue = this.currentLevelNumber % SANCTUARY_INTERVAL === 0 || nextIsBoss;
+      if (!leavingSanctuary && !leavingBoss && sanctuaryDue) {
         this.level.nextShape = 'sanctuary';
       } else {
         this.currentLevelNumber++;

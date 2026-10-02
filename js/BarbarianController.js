@@ -9,8 +9,11 @@ const RAGE_CHARGE_COST = 3;
 const RAGE_FIRST_HIT_DAMAGE = 2; // the opening blow of a Rage
 const RAGE_HIT_DAMAGE = 1;       // every hit after it
 const WALL_SLAM_DAMAGE = 1;
-// Exhausted (the turn after a Rage): no Rage, and throws at this fraction of full power.
-const EXHAUSTED_POWER_SCALE = 0.5;
+// Exhausted (the turn after a Rage): no Rage, his hits deal EXHAUSTED_HIT_DAMAGE,
+// and his top throw speed is scaled by EXHAUSTED_POWER_SCALE. A slide is
+// proportional to launch speed, so he travels about a quarter as far.
+const EXHAUSTED_POWER_SCALE = 0.25;
+const EXHAUSTED_HIT_DAMAGE = 1;
 // Taunt: costs this much to switch on, then stays on until switched off.
 // Enemies whose centre is within TAUNT_RADIUS of his must attack him.
 const TAUNT_CHARGE_COST = 1;
@@ -29,10 +32,11 @@ export class BarbarianController {
 
     this.rageCharges = 0;
     this.hasMoved = false;
-    // Rampage: once a raged throw is made, Rage stays on for the rest of the
-    // turn and every kill banks one more throw.
+    // Rampage: once a raged throw is made, he throws again (still raging) for
+    // as long as each throw kills something; the first throw that doesn't
+    // ends the Rage.
     this.rampaging = false;
-    this.rampageThrows = 0;
+    this._killedThisThrow = false;
     this._rageFirstHitPending = false; // set when a Rage starts; its first hit hits harder
     // Wall Slam: enemies the Barbarian has knocked this throw that haven't
     // hit a wall yet.
@@ -62,7 +66,7 @@ export class BarbarianController {
     tooltipManager.register(
       rageButton,
       'barbarian_rage_used',
-      'Spend 3 charges to Rage before you throw: a mighty throw that strikes enemies again and again, 1 damage per hit. Every kill earns another throw and 1 HP. Afterwards you are Exhausted for a turn. Earn charges by killing enemies and by taking hits.'
+      'Spend 3 charges to Rage before you throw: a mighty throw that strikes enemies again and again, 1 damage per hit. Each kill heals 1 HP, and as long as every throw kills something you throw again; the first throw that kills nothing ends the Rage. Afterwards you are Exhausted for a turn. Earn charges by killing enemies and by taking hits.'
     );
     tooltipManager.register(
       this.tauntButton,
@@ -310,9 +314,8 @@ export class BarbarianController {
     }
     this.hasMoved = true;
     this._slamTargets.clear();
-    if (this.rampaging && this.rampageThrows > 0 && !this.gc.roundWon) {
-      // Rampage: a banked kill buys another raged throw.
-      this.rampageThrows--;
+    if (this.rampaging && this._killedThisThrow && !this.gc.roundWon) {
+      // Rampage: a raged throw that killed earns another raged throw.
       this._heartbeatRate += HEARTBEAT_RATE_STEP;
       this.gc.soundManager?.setRageHeartbeatRate(this._heartbeatRate);
       disc.hasThrown = false;
@@ -330,6 +333,7 @@ export class BarbarianController {
   /** Called as the Barbarian is thrown (after Rage has been applied to the throw). */
   onNewThrow(disc) {
     this._slamTargets.clear();
+    this._killedThisThrow = false;
     if (disc.rageWasUsedThisThrow && !this.rampaging) {
       this.rampaging = true;
       this._rageFirstHitPending = true;
@@ -338,11 +342,13 @@ export class BarbarianController {
 
   /**
    * Damage of one Barbarian hit: a flat attackDamage + HIT_BONUS_DAMAGE to
-   * every enemy (it no longer grows with each enemy in the throw), but while raging the Rage's first hit deals RAGE_FIRST_HIT_DAMAGE and
-   * every later one a flat RAGE_HIT_DAMAGE (Rampage's extra throws are
-   * strong enough).
+   * every enemy (it no longer grows with each enemy in the throw). While
+   * raging, the Rage's first hit deals RAGE_FIRST_HIT_DAMAGE and every later
+   * one a flat RAGE_HIT_DAMAGE (Rampage's extra throws are strong enough).
+   * While Exhausted, EXHAUSTED_HIT_DAMAGE.
    */
   hitDamage(barbarian) {
+    if (barbarian.exhausted) return EXHAUSTED_HIT_DAMAGE;
     if (barbarian.rageWasUsedThisThrow) {
       if (this._rageFirstHitPending) {
         this._rageFirstHitPending = false;
@@ -365,14 +371,15 @@ export class BarbarianController {
   }
 
   /**
-   * The Barbarian killed an enemy: 1 Rage charge, or while Rampaging,
-   * 1 HP and one more throw instead (Rage burns charges, it never refunds them).
+   * The Barbarian killed an enemy: 1 Rage charge, or while Rampaging, 1 HP
+   * instead, and this throw keeps the Rage going (Rage burns charges, it
+   * never refunds them).
    */
   onKill(barbarian) {
     if (!this.rampaging) {
       this.rageCharges++;
     } else {
-      this.rampageThrows++;
+      this._killedThisThrow = true;
       barbarian.restoreHealth(1);
       this.gc.updateDiscNames();
       if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(this.gc.currentDisc);
@@ -419,7 +426,7 @@ export class BarbarianController {
       this.gc.soundManager?.stopExhaustedBreath();
     }
     this.rampaging = false;
-    this.rampageThrows = 0;
+    this._killedThisThrow = false;
   }
 
   /** A turn begins: on his Exhausted turn he breathes heavily (only during that turn). */
@@ -445,6 +452,6 @@ export class BarbarianController {
     this.hasMoved = false;
     this._slamTargets.clear();
     this.rampaging = false;
-    this.rampageThrows = 0;
+    this._killedThisThrow = false;
   }
 }

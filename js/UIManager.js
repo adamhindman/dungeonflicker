@@ -32,7 +32,7 @@ export default class UIManager {
             this.exhaustedChipElement.classList.add("element-hidden");
             statusChips.appendChild(this.exhaustedChipElement);
             tooltipManager.register(this.exhaustedChipElement, 'barbarian_exhausted_chip',
-                'Raging last turn left the Barbarian exhausted: this turn he throws at half power and can\'t Rage.',
+                'Raging last turn left the Barbarian exhausted: this turn he moves only a quarter as far, deals 1 damage, and can\'t Rage.',
                 { completeOnClick: false });
 
             // Create container for action buttons

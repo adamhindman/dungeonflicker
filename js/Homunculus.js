@@ -2,6 +2,9 @@ import Disc from './Disc.js';
 import { isMainPC } from './PartyResources.js';
 
 export const HOMUNCULUS_CAP = 16; // most homunculi alive at once
+// Homunculus corpses kept on the board; older ones fade away. Every disc
+// carries its own spotlight, so dozens of corpses would bog the renderer down.
+const CORPSES_KEPT = 6;
 
 /**
  * Grows up to `count` homunculi beside `parent` (Paracelsus or an alembic),
@@ -97,5 +100,17 @@ export default class Homunculus extends Disc {
             /* description: */ description
         );
         this.originalKind = original.kind; // which party member it copies
+        this.diedAt = null;                // when it died, to find the oldest corpses
+    }
+
+    /** Dies; then only the CORPSES_KEPT most recent homunculus corpses stay, the rest fade away. */
+    die(silent = false) {
+        if (this.dead) return;
+        super.die(silent);
+        this.diedAt = performance.now();
+        const corpses = this.gameController.discs
+            .filter(d => d.kind === 'Homunculus' && d.dead && !d.isDissolving)
+            .sort((a, b) => a.diedAt - b.diedAt);
+        corpses.slice(0, Math.max(0, corpses.length - CORPSES_KEPT)).forEach(d => d.startDissolve(1));
     }
 }
