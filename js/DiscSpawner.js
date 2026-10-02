@@ -391,6 +391,7 @@ export class DiscSpawner {
     // The boss room: Paracelsus at the far end with his first homunculi in
     // front of him, and his alembics in their spots.
     if (gc.level?.isBossRoom) {
+      gc.soundManager?.loadHomunculusSounds();
       const discs = [barbarian, wizard, necromancer, rogue].filter(Boolean);
       const { x, z } = gc.level.bossStart;
       const paracelsus = new Paracelsus(gc.scene, x, z, gc, gc.discDescriptions.Paracelsus);

@@ -1893,6 +1893,7 @@ clamp(value, min, max) {
     this.itemManager?.update(deltaTime);
     this.barbarianController?.update(deltaTime);
     this.blastRings?.update(deltaTime);
+    for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
     this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
@@ -2898,6 +2899,7 @@ disc.isCurrentlyInLavaState = true;
       disc.hasThrown = true;
       if (this.uiManager) this.uiManager.updateMoveStatusChip(disc);
       disc.resetDamageState();
+      disc.onAttackLaunched?.();
       this.thrownDisc = disc;
       this.waitingForDiscToStop = true;
       return;
@@ -2993,6 +2995,7 @@ disc.isCurrentlyInLavaState = true;
     disc.hasThrown = true;
     if (this.uiManager) this.uiManager.updateMoveStatusChip(disc);
     disc.resetDamageState();
+    disc.onAttackLaunched?.();
     this.thrownDisc = disc; // Set thrownDisc for AI turns
     this.waitingForDiscToStop = true;
   }

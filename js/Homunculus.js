@@ -1,3 +1,4 @@
+import { Mesh, MeshBasicMaterial, TorusGeometry } from 'three';
 import Disc from './Disc.js';
 import { isMainPC } from './PartyResources.js';
 
@@ -5,6 +6,17 @@ export const HOMUNCULUS_CAP = 16; // most homunculi alive at once
 // Homunculus corpses kept on the board; older ones fade away. Every disc
 // carries its own spotlight, so dozens of corpses would bog the renderer down.
 const CORPSES_KEPT = 6;
+// Idle chatter: every IDLE_INTERVAL seconds each living homunculus has an
+// IDLE_CHANCE of muttering one of its idle lines.
+const IDLE_INTERVAL = 5;
+const IDLE_CHANCE = 0.25;
+// The ring shown around a homunculus while it says an idle line.
+const BARK_RING_COLOR = 0xfff2b0;
+const BARK_RING_OPACITY = 0.85;
+const BARK_RING_GAP = 0.2;         // between the disc's edge and the ring
+const BARK_RING_THICKNESS = 0.07;
+const BARK_RING_FADE = 0.15;       // seconds to fade in and out
+const BARK_RING_MIN_SECONDS = 0.8; // shown at least this long, even for a short line
 
 /**
  * Grows up to `count` homunculi beside `parent` (Paracelsus or an alembic),
@@ -101,12 +113,84 @@ export default class Homunculus extends Disc {
         );
         this.originalKind = original.kind; // which party member it copies
         this.diedAt = null;                // when it died, to find the oldest corpses
+        this._idleTimer = Math.random() * IDLE_INTERVAL; // staggered so they don't all roll at once
+    }
+
+    /** Called every frame: now and then, mutters an idle line, ringed while it speaks. */
+    updateIdleChatter(dt) {
+        this._updateBarkRing(dt);
+        if (this.dead) return;
+        this._idleTimer += dt;
+        if (this._idleTimer < IDLE_INTERVAL) return;
+        this._idleTimer = 0; // one roll per interval, even after a long frame (e.g. a hidden tab)
+        if (Math.random() < IDLE_CHANCE) {
+            const duration = this._voice('idle');
+            if (duration) this._showBarkRing(duration);
+        }
+    }
+
+    /** A thin glowing ring around the disc for `duration` seconds, so the bark has a face. */
+    _showBarkRing(duration) {
+        if (!this._barkRing) {
+            const ring = new Mesh(
+                new TorusGeometry(this.radius + BARK_RING_GAP, BARK_RING_THICKNESS, 8, 48),
+                new MeshBasicMaterial({ color: BARK_RING_COLOR, transparent: true, opacity: 0, depthWrite: false }),
+            );
+            ring.rotation.x = Math.PI / 2;
+            this.mesh.add(ring);
+            this._barkRing = { ring, age: 0, duration };
+        }
+        Object.assign(this._barkRing, { age: 0, duration: Math.max(duration, BARK_RING_MIN_SECONDS) });
+    }
+
+    /** Fades the bark ring in, pulses it while the line plays, then fades it out. */
+    _updateBarkRing(dt) {
+        const bark = this._barkRing;
+        if (!bark) return;
+        bark.age += dt;
+        if (this.dead || bark.age >= bark.duration) { this._hideBarkRing(); return; }
+        const fadeIn = Math.min(bark.age / BARK_RING_FADE, 1);
+        const fadeOut = Math.min((bark.duration - bark.age) / BARK_RING_FADE, 1);
+        const pulse = 0.8 + 0.2 * Math.sin(bark.age * Math.PI * 4);
+        bark.ring.material.opacity = BARK_RING_OPACITY * Math.min(fadeIn, fadeOut) * pulse;
+    }
+
+    _hideBarkRing() {
+        if (!this._barkRing) return;
+        const { ring } = this._barkRing;
+        ring.parent?.remove(ring);
+        ring.geometry.dispose();
+        ring.material.dispose();
+        this._barkRing = null;
+    }
+
+    dispose() {
+        this._hideBarkRing();
+        super.dispose();
+    }
+
+    /** Cries out in pain when hurt but still standing. */
+    takeHit(damageAmount = 1, attacker = null) {
+        const oldHP = this.hitPoints;
+        super.takeHit(damageAmount, attacker);
+        if (this.hitPoints < oldHP && this.hitPoints > 0) this._voice('pain');
+    }
+
+    /** Shrieks as it's flicked at its target. */
+    onAttackLaunched() {
+        this._voice('attack');
+    }
+
+    /** Plays a random sound from the homunculus pool for `event`; returns its length in seconds. */
+    _voice(event) {
+        return this.gameController?.soundManager?.playHomunculus(event, this.mesh.position.clone());
     }
 
     /** Dies; then only the CORPSES_KEPT most recent homunculus corpses stay, the rest fade away. */
     die(silent = false) {
         if (this.dead) return;
         super.die(silent);
+        if (!silent) this._voice('death');
         this.diedAt = performance.now();
         const corpses = this.gameController.discs
             .filter(d => d.kind === 'Homunculus' && d.dead && !d.isDissolving)
