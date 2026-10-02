@@ -57,6 +57,7 @@ export default class Level {
     this.circleRadius = null;       // set when room is circular; null = rectangular
     this._circularWalls = null;     // [{theta, sideLen, isDoor}] for vine scatter
     this.nextShape = null;          // override: room id string; null = random fallback
+    this.shape = null;              // the loaded room's id ('rect', 'donut', …)
 
     // Hexagonal room support
     this.hexRings = null;           // set when room is hexagonal: { HIGH_Y, LOW_Y, RB_in, RC_in, RD_in, RE_in }
@@ -259,6 +260,7 @@ export default class Level {
     // Consume the shape override, or pick randomly (40% circular, 60% rectangular).
     const shape = this.nextShape || (Math.random() < 0.4 ? 'circle' : 'rect');
     this.nextShape = null;
+    this.shape = shape;
     if (shape === 'circle') {
       this._loadCircular();
     } else if (shape === 'hexagon') {

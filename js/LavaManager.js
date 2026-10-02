@@ -107,10 +107,12 @@ return;
         irregularity: 0.08,
         yPosition:    PIT_Y + 0.05,
       });
+      centerPool.isPit = true; // discs burned here hiss
       if (centerPool.getMesh()) {
         gc.scene.add(centerPool.getMesh());
         gc.lavaPools.push(centerPool);
       }
+      gc.soundManager?.startVolcanoLoop(); // stopped by GameController._clearRoomState()
 
       // Ring pools — placed on the flat ring, clear of walls, pillars, and each other.
       const numRingPools  = 2 + Math.floor(Math.random() * 2); // 2 or 3

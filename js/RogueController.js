@@ -1,6 +1,3 @@
-import {
-  Mesh, MeshBasicMaterial, SphereGeometry,
-} from 'three';
 import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
@@ -39,8 +36,6 @@ export class RogueController {
     this.potionButton = null;
     this.endTurnButton = null;
     this._actionButtonsContainer = null;
-
-    this._explosionParticles = [];
   }
 
   init(actionButtonsContainer) {
@@ -270,7 +265,7 @@ export class RogueController {
       if (this.gc.barbarianController) this.gc.barbarianController.updateRageButtonVisibility();
     }
 
-    this._spawnExplosionParticles(bombPos);
+    this.gc.explosionParticles.spawn(bombPos);
     this._removeBomb();
 
     this.gc.updateAllDiscDeadStates();
@@ -278,32 +273,6 @@ export class RogueController {
     if (this.gc.soundManager) this.gc.soundManager.playRogueGrenadeExplode(bombPos);
     if (this.gc.uiManager && this.gc.currentDisc) {
       this.gc.uiManager.updateCurrentTurnDiscName(this.gc.currentDisc);
-    }
-  }
-
-  _spawnExplosionParticles(pos) {
-    const COUNT = 36;
-    const colors = [0xFF6600, 0xFF3300, 0xFF9900, 0xFFCC00, 0xFF4400, 0xFFAA00];
-    for (let i = 0; i < COUNT; i++) {
-      const angle = (i / COUNT) * Math.PI * 2 + Math.random() * 0.3;
-      const speed = 3.5 + Math.random() * 5.5;
-      const geo = new SphereGeometry(0.14 + Math.random() * 0.2, 5, 4);
-      const mat = new MeshBasicMaterial({
-        color: colors[Math.floor(Math.random() * colors.length)],
-        transparent: true,
-        opacity: 1.0,
-      });
-      const mesh = new Mesh(geo, mat);
-      mesh.position.copy(pos);
-      this.gc.scene.add(mesh);
-      this._explosionParticles.push({
-        mesh, material: mat, geometry: geo,
-        vx: Math.cos(angle) * speed * (0.6 + Math.random() * 0.8),
-        vy: 2.5 + Math.random() * 5.5,
-        vz: Math.sin(angle) * speed * (0.6 + Math.random() * 0.8),
-        elapsed: 0,
-        duration: 0.55 + Math.random() * 0.5,
-      });
     }
   }
 
@@ -545,16 +514,6 @@ export class RogueController {
     this.bomb = null;
     this.potions = [];
     this._resetSneak();
-    this._cleanupParticles();
-  }
-
-  _cleanupParticles() {
-    for (const p of this._explosionParticles) {
-      this.gc.scene.remove(p.mesh);
-      p.geometry.dispose();
-      p.material.dispose();
-    }
-    this._explosionParticles = [];
   }
 
   // ─── UI ──────────────────────────────────────────────────────────────────────
@@ -605,24 +564,5 @@ export class RogueController {
   update(deltaTime) {
     // A dead Rogue can't stay hidden.
     if (this.hideState !== 'none' && !this.getDisc()) this._reveal();
-
-    const GRAVITY = 9.8;
-    const toRemove = [];
-    for (const p of this._explosionParticles) {
-      p.elapsed += deltaTime;
-      if (p.elapsed >= p.duration) { toRemove.push(p); continue; }
-      const t = p.elapsed / p.duration;
-      p.mesh.position.x += p.vx * deltaTime;
-      p.mesh.position.y += (p.vy - GRAVITY * p.elapsed) * deltaTime;
-      p.mesh.position.z += p.vz * deltaTime;
-      p.material.opacity = 1.0 - t;
-    }
-    for (const p of toRemove) {
-      this.gc.scene.remove(p.mesh);
-      p.geometry.dispose();
-      p.material.dispose();
-      const idx = this._explosionParticles.indexOf(p);
-      if (idx !== -1) this._explosionParticles.splice(idx, 1);
-    }
   }
 }

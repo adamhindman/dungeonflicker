@@ -37,13 +37,28 @@ const NPC_HEX_COLORS = [
  * Holds a reference to GameController (gc) to access the scene, level geometry,
  * lava pools, disc descriptions, and the position-validity check.
  */
+// Per-room enemy tweaks, keyed by room id (Level.shape). `kinds` are the only
+// kinds the room's budget may buy (null = any); `bonus` are free extras on top
+// of it. Rooms not listed use DEFAULT_ROSTER.
+const DEFAULT_ROSTER = { kinds: null, bonus: { kind: 'Skeleton', min: 3, max: 5 } };
+const ROOM_ROSTERS = {
+  // The lava pit room is all lava-proof Fire Elementals.
+  donut: { kinds: ['FireElemental'], bonus: { kind: 'FireElemental', min: 1, max: 2 } },
+};
+
+// Free bonus NPC templates by kind.
+const BONUS_TEMPLATES = {
+  Skeleton:      { kind: 'Skeleton', cost: 1, skillLevel: 80 },
+  FireElemental: { kind: 'FireElemental', cost: 3, skillLevel: 85 },
+};
+
 export class DiscSpawner {
   constructor(gc) {
     this.gc = gc;
   }
 
   // Challenge ratings: Skeleton=1, Warden=3, Blob level N = N+1
-  _buildNpcPool(budget) {
+  _buildNpcPool(budget, roster = DEFAULT_ROSTER) {
     const result = [];
     let remaining = budget;
     const kindCounts = {};
@@ -62,7 +77,7 @@ export class DiscSpawner {
 
     // Each kind has equal weight; blob level is resolved randomly within affordable range
     const pickTemplate = () => {
-      const options = [];
+      let options = [];
       if (remaining >= 1) options.push({ kind: 'Skeleton', cost: 1, skillLevel: 80 });
       if (remaining >= 3) options.push({ kind: 'FireElemental', cost: 3, skillLevel: 85 });
       if (remaining >= 3) options.push({ kind: 'Warden', cost: 3, skillLevel: 85 });
@@ -71,6 +86,7 @@ export class DiscSpawner {
         const level = 1 + Math.floor(Math.random() * maxLevel);
         options.push({ kind: 'Blob', cost: level + 2, skillLevel: 75, startingLevel: level });
       }
+      if (roster.kinds) options = options.filter(o => roster.kinds.includes(o.kind));
       if (options.length === 0) return null;
       return options[Math.floor(Math.random() * options.length)];
     };
@@ -405,13 +421,16 @@ export class DiscSpawner {
 
     // Budget: 10 points on level 1, +2 per room cleared
     const budget = 9 + (gc.currentLevelNumber - 1) * 2;
-    const baseNpcDefinitions = this._buildNpcPool(budget);
+    const roster = ROOM_ROSTERS[gc.level?.shape] ?? DEFAULT_ROSTER;
+    const baseNpcDefinitions = this._buildNpcPool(budget, roster);
 
-    // Always add 3-5 free skeletons on top of the budget composition
-    const bonusSkeletonCount = 3 + Math.floor(Math.random() * 3);
-    const existingSkeletonCount = baseNpcDefinitions.filter(d => d.kind === 'Skeleton').length;
-    for (let i = 0; i < bonusSkeletonCount; i++) {
-      baseNpcDefinitions.push({ kind: 'Skeleton', cost: 1, skillLevel: 80, name: `Skeleton ${existingSkeletonCount + i + 1}` });
+    // Free bonus NPCs on top of the budget composition (3-5 skeletons unless the room says otherwise)
+    const { kind: bonusKind, min, max } = roster.bonus;
+    const bonusCount = min + Math.floor(Math.random() * (max - min + 1));
+    const existingBonusKindCount = baseNpcDefinitions.filter(d => d.kind === bonusKind).length;
+    const bonusLabel = bonusKind === 'FireElemental' ? 'Fire Elemental' : bonusKind;
+    for (let i = 0; i < bonusCount; i++) {
+      baseNpcDefinitions.push({ ...BONUS_TEMPLATES[bonusKind], name: `${bonusLabel} ${existingBonusKindCount + i + 1}` });
     }
 
     const npcData = baseNpcDefinitions.map((def, index) => ({

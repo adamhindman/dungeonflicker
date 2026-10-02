@@ -14,6 +14,10 @@ const JELLY_SQUEEZE_URLS = soundsIn('jelly', 'jelly-squeeze-');
 
 const DEATH_CRY_URLS = soundsIn('cries');
 
+// The Donut room's lava pit: a hiss when a disc is burned in it, a burst when it erupts.
+const LAVA_HISS_URLS = soundsIn('fire', 'hiss');
+const LAVA_BURST_URLS = soundsIn('fire', 'burst-');
+
 // Homunculus voices: a pool per event, discovered from public/sounds/homunculi/<event>/.
 const HOMUNCULUS_SOUND_URLS = {
   attack: soundsIn('homunculi/attack'),
@@ -79,6 +83,11 @@ export class SoundManager {
     this.menuOpenBuffer = null;
     this.rogueGrenadeExplodeBuffer = null;
     this.deathCryBuffers = [];
+    this.lavaHissBuffers = [];
+    this.lavaBurstBuffers = [];
+    this.volcanoLoopBuffer = null;
+    this._volcanoLoop = null;          // the Donut room's background rumble while it loops
+    this._volcanoLoopPending = false;  // start it once the buffer loads
     this.homunculusBuffers = { attack: [], pain: [], death: [], idle: [] }; // filled by loadHomunculusSounds
     this._homunculusSoundsRequested = false;
     this.gameOverBuffer = null;
@@ -171,6 +180,16 @@ export class SoundManager {
     });
     Promise.all(JELLY_SQUEEZE_URLS.map(url => load(url))).then(buffers => {
       this.jellySqueezeBuffers = buffers.filter(Boolean);
+    });
+    Promise.all(LAVA_HISS_URLS.map(url => load(url))).then(buffers => {
+      this.lavaHissBuffers = buffers.filter(Boolean);
+    });
+    Promise.all(LAVA_BURST_URLS.map(url => load(url))).then(buffers => {
+      this.lavaBurstBuffers = buffers.filter(Boolean);
+    });
+    load('/sounds/fire/volcano-loop.mp3').then(buffer => {
+      this.volcanoLoopBuffer = buffer || null;
+      if (this._volcanoLoopPending) this.startVolcanoLoop();
     });
     load('/sounds/energy/teleport.mp3').then(buffer => { this.teleportBuffer = buffer || null; });
     Promise.all([
@@ -608,6 +627,38 @@ export class SoundManager {
 
     sound.play();
     sound.onEnded = () => { this.gc.scene.remove(obj); };
+  }
+
+  /** A disc is burned by the Donut room's lava pit: one of the hisses, at random. */
+  playLavaHiss(position) {
+    this._play(this.lavaHissBuffers, position, 1.0);
+  }
+
+  /** The Donut room's lava pit erupts: one of the bursts, at random. */
+  playLavaBurst(position) {
+    this._play(this.lavaBurstBuffers, position, 1.0);
+  }
+
+  /**
+   * Donut room: loops the volcano rumble under the music until
+   * stopVolcanoLoop(). Starts once the sound has loaded if it hasn't yet.
+   */
+  startVolcanoLoop() {
+    this._volcanoLoopPending = false;
+    if (this._volcanoLoop) return;
+    if (!this.volcanoLoopBuffer) {
+      this._volcanoLoopPending = true;
+      return;
+    }
+    const sound = this._playBuffer(this.volcanoLoopBuffer, 0.3);
+    sound.setLoop(true);
+    this._volcanoLoop = sound;
+  }
+
+  stopVolcanoLoop() {
+    this._volcanoLoopPending = false;
+    if (this._volcanoLoop?.isPlaying) this._volcanoLoop.stop();
+    this._volcanoLoop = null;
   }
 
   playBlobHit(position) {

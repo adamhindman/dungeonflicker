@@ -26,6 +26,8 @@ import { getResource, isMainPC } from './PartyResources.js';
 import { RangeOverlay } from './RangeOverlay.js';
 import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
+import ExplosionParticles from './ExplosionParticles.js';
+import PitEruption from './PitEruption.js';
 
 // Flick tuning: drag length (screen px × camera distance) → throw speed.
 const THROW_DRAG_THRESHOLD = 2;    // drags shorter than this (in world-drag units) don't throw
@@ -238,6 +240,8 @@ export default class GameController {
     // Initialize scene and rendering
     this.scene = new Scene();
     this.blastRings = new BlastRings(this.scene); // Paracelsus's Radius Blast shockwaves
+    this.explosionParticles = new ExplosionParticles(this.scene); // grenade and lava-pit blasts
+    this.pitEruption = new PitEruption(this); // the Donut room's erupting lava pit
 
     // Camera, renderer, and OrbitControls are owned by CameraController.
     // After init(), gc.camera / gc.renderer / gc.controls point at those same objects
@@ -1358,6 +1362,9 @@ clamp(value, min, max) {
     clearTimeout(this._sanctuaryDoorTimer);
     this._sanctuaryDoorTimer = null;
     this.bossIntro?.close();
+    this.pitEruption?.reset();
+    this.soundManager?.stopVolcanoLoop();
+    this.explosionParticles?.clear();
     this.sanctuaryShrine?.teardown();
     this.sanctuaryShop?.teardown();
     this.itemManager?.onLevelUnload();
@@ -1426,7 +1433,7 @@ clamp(value, min, max) {
     // Testing: the first room can be forced to a given room type.
     if (n === 1 && FIRST_ROOM_OVERRIDE) return FIRST_ROOM_OVERRIDE;
     // Level sequence cycles through the authored room types, ending with the boss.
-    const sequence = ['rect', 'circle', 'crusher', 'bullseye', 'donut', 'boss'];
+    const sequence = ['rect', 'circle', 'crusher', 'donut', 'bullseye', 'boss'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1893,6 +1900,8 @@ clamp(value, min, max) {
     this.itemManager?.update(deltaTime);
     this.barbarianController?.update(deltaTime);
     this.blastRings?.update(deltaTime);
+    this.explosionParticles?.update(deltaTime);
+    this.pitEruption?.update(deltaTime);
     for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
     this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
@@ -2004,6 +2013,8 @@ clamp(value, min, max) {
     // Lava pool collision detection
     if (this.lavaPools && this.lavaPools.length > 0) {
       [...this.discs].forEach(disc => {
+        // A disc flung from the lava pit flies over lava without touching it.
+        if (this.pitEruption?.isAirborne(disc)) return;
 
         // Rudimentary way to track if a disc is in lava for this frame.
         // Ideally, `isCurrentlyInLavaState` would be a property on the Disc class.
@@ -2027,7 +2038,9 @@ disc.isCurrentlyInLavaState = true;
                 if (disc.kind === 'RoguePotion') {
                   this.rogueController?.onPotionDied(disc);
                 } else {
+                  const hpBefore = disc.hitPoints;
                   disc.takeHit(1, null); // Damage on entry
+                  if (lavaPool.isPit && disc.hitPoints < hpBefore) this.soundManager?.playLavaHiss(disc.mesh.position);
                 }
               }
 
@@ -2380,6 +2393,9 @@ disc.isCurrentlyInLavaState = true;
 
         await this._waitForCrusherFlingToSettle();
       }
+
+      // The Donut room's lava pit may erupt, flinging its contents back onto the ring.
+      await this.pitEruption.onRoundStart();
     }
 
     if (this.checkGameOverConditions()) {
@@ -3011,7 +3027,9 @@ disc.isCurrentlyInLavaState = true;
 
     for (const lavaPool of this.lavaPools) {
       if (lavaPool.isPointInside(disc.mesh.position.x, disc.mesh.position.z)) {
-disc.takeHit(1, null); // Apply 1 damage
+        const hpBefore = disc.hitPoints;
+        disc.takeHit(1, null); // Apply 1 damage
+        if (lavaPool.isPit && disc.hitPoints < hpBefore) this.soundManager?.playLavaHiss(disc.mesh.position);
 
         // Reward player for lava kills at start of turn
         if (disc.type === 'NPC' && disc.hitPoints <= 0 && !this.npcsKilledForRageCharge.has(disc.discName)) {

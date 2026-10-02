@@ -281,6 +281,7 @@ export class PhysicsEngine {
     // ── Snap every disc's Y to terrain height (hex and donut levels) ──────────
     if (gc.level && (gc.level.hexRings || gc.level.donutRings)) {
       for (const disc of gc.discs) {
+        if (gc.pitEruption?.isAirborne(disc)) continue; // flung from the lava pit
         const h = gc.level.getTerrainHeightAt(disc.mesh.position.x, disc.mesh.position.z);
         disc.mesh.position.y = h + disc.basePositionY;
       }
@@ -295,6 +296,8 @@ export class PhysicsEngine {
 
         // Ghost Ring discs pass through every other disc
         if (d1.isGhost || d2.isGhost) continue;
+        // Discs flung from the lava pit fly over everything
+        if (gc.pitEruption?.isAirborne(d1) || gc.pitEruption?.isAirborne(d2)) continue;
 
         // Throwing Knife: everything passes over it, except that a knife in
         // flight strikes the first enemy it touches.
