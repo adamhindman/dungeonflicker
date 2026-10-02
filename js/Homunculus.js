@@ -36,8 +36,12 @@ export function growHomunculi(parent, count, discs, { spots = [] } = {}) {
     const originals = discs.filter(d => isMainPC(d) && d.imagePath);
     if (originals.length === 0) return;
     let insertAt = discs.indexOf(parent) + 1;
+    // Deal the party out like a shuffled deck, so a batch is a mix of everyone
+    // before anyone repeats.
+    let deck = [];
     for (let i = 0; i < Math.min(count, HOMUNCULUS_CAP - alive); i++) {
-        const original = originals[Math.floor(Math.random() * originals.length)];
+        if (deck.length === 0) deck = shuffled(originals);
+        const original = deck.pop();
         const radius = original.radius / 2;
         const preset = spots[i];
         const spot = preset && isFreeSpot(gc, preset.x, preset.z, radius, discs)
@@ -50,6 +54,16 @@ export function growHomunculi(parent, count, discs, { spots = [] } = {}) {
         discs.splice(insertAt++, 0, homunculus);
     }
     if (discs === gc.discs) gc.updateDiscNames();
+}
+
+/** A shuffled copy of `items` (Fisher–Yates). */
+function shuffled(items) {
+    const out = [...items];
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
 }
 
 /** Whether a disc of `radius` fits at (x, z): on the floor and clear of other discs. */

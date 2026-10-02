@@ -162,7 +162,7 @@ export default class GameController {
         RoguePotion: "A healing flask thrown by the Rogue. Restores 2 HP to the first ally it touches.",
         Paracelsus: "An alchemist who grows homunculi in the image of his enemies, in alembics around the room. He avoids a fair fight: he flees anyone who comes close, and blasts away anyone who lingers near him. His pendant shields him once he has taken 2 damage in a round.",
         Homunculus: "A small, imperfect copy of one of the party, grown in Paracelsus's flasks. 2 HP, 1 damage.",
-        Alembic: "One of Paracelsus's flasks. Grows 1–3 homunculi every round until it's broken. They all shatter when he falls."
+        Alembic: "One of Paracelsus's flasks. Grows 1–3 homunculi every round until it's broken. The flasks break when he falls, but the homunculi fight on."
     };
 
     // Event listeners for keydown, keyup, pointerdown, pointermove, pointerup

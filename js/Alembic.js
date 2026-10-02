@@ -9,7 +9,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * An alembic: one of Paracelsus's breakable flasks in the boss room. It never
  * moves; on its turn it grows 1–3 homunculi beside it. Breaking it (3 HP)
- * stops the flow, and all of them shatter when Paracelsus falls. A broken
+ * stops the flow, and every alembic breaks when Paracelsus falls (his
+ * homunculi don't). A broken
  * alembic dissolves away rather than leaving a corpse.
  */
 export default class Alembic extends Disc {
