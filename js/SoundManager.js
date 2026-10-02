@@ -18,6 +18,14 @@ const DEATH_CRY_URLS = Object.values(
   import.meta.glob('../public/sounds/cries/*.mp3', { eager: true, query: '?url', import: 'default' })
 );
 
+// Homunculus voices: a pool per event, discovered from public/sounds/homunculi/<event>/.
+const HOMUNCULUS_SOUND_URLS = {
+  attack: Object.values(import.meta.glob('../public/sounds/homunculi/attack/*.mp3', { eager: true, query: '?url', import: 'default' })),
+  pain:   Object.values(import.meta.glob('../public/sounds/homunculi/pain/*.mp3',   { eager: true, query: '?url', import: 'default' })),
+  death:  Object.values(import.meta.glob('../public/sounds/homunculi/death/*.mp3',  { eager: true, query: '?url', import: 'default' })),
+  idle:   Object.values(import.meta.glob('../public/sounds/homunculi/idle/*.mp3',   { eager: true, query: '?url', import: 'default' })),
+};
+
 const BREATH_FILES = [
   'magic-elements-vocal-breath-inhale-01.mp3',
   'magic-elements-vocal-breath-inhale-02.mp3',
@@ -75,6 +83,8 @@ export class SoundManager {
     this.menuOpenBuffer = null;
     this.rogueGrenadeExplodeBuffer = null;
     this.deathCryBuffers = [];
+    this.homunculusBuffers = { attack: [], pain: [], death: [], idle: [] }; // filled by loadHomunculusSounds
+    this._homunculusSoundsRequested = false;
     this.gameOverBuffer = null;
     this.fireballCastBuffer = null;
     this.fireballHitBuffer = null;
@@ -206,6 +216,7 @@ export class SoundManager {
 
     sound.play();
     sound.onEnded = () => { this.gc.scene.remove(obj); };
+    return buffer.duration;
   }
 
   playDiscHit(position) {
@@ -214,6 +225,33 @@ export class SoundManager {
 
   playWardenHit(position) {
     this._play(this.wardenHitBuffers, position, 0.5);
+  }
+
+  /**
+   * Loads the homunculus voices. They're only heard in the boss room, which
+   * most runs never reach, so they load when that room is built rather than
+   * at startup. Safe to call more than once.
+   */
+  loadHomunculusSounds() {
+    if (this._homunculusSoundsRequested) return;
+    this._homunculusSoundsRequested = true;
+    const loader = new AudioLoader();
+    for (const [event, urls] of Object.entries(HOMUNCULUS_SOUND_URLS)) {
+      Promise.all(urls.map(url => new Promise(resolve => {
+        loader.load(url, buffer => resolve(buffer), undefined, () => resolve(null));
+      }))).then(buffers => {
+        this.homunculusBuffers[event] = buffers.filter(Boolean);
+      });
+    }
+  }
+
+  /**
+   * A random homunculus voice for `event`: 'attack' (it's flicked at
+   * a target), 'pain' (it's hurt but lives), 'death' or 'idle' (random muttering).
+   * Returns the clip's length in seconds, or undefined if nothing played.
+   */
+  playHomunculus(event, position) {
+    return this._play(this.homunculusBuffers[event] ?? [], position, 1.0);
   }
 
   playBounce(position) {
