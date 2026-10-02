@@ -41,6 +41,7 @@ export default class InputHandler {
     }
 
     _handlePointerDown(event) {
+        if (this.gameController.inputBlocked) return;
         this.isPointerDown = true;
         this.pointerDownInitialPos.x = event.clientX;
         this.pointerDownInitialPos.y = event.clientY;
@@ -54,6 +55,7 @@ export default class InputHandler {
     }
 
     _handlePointerHover(event) {
+        if (this.gameController.inputBlocked) return;
         if (this.gameController.handlePointerHover) {
             this.gameController.handlePointerHover(event);
         }
@@ -86,6 +88,9 @@ export default class InputHandler {
 
         const tag = event.target && event.target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        // A modal (e.g. the boss intro) is up: no game shortcuts. Key releases
+        // still go through, so a held camera-pan key doesn't get stuck.
+        if (this.gameController.inputBlocked) return;
 
         const key = (event.key || '').toLowerCase();
         // console.log("InputHandler: KeyDown detected - key:", key, "original event.key:", event.key); // DETAILED DEBUG

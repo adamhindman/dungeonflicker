@@ -19,6 +19,9 @@ const TAUNT_GLOW_RGB = [255, 68, 34];
 const TAUNT_GLOW_OPACITY = 1;   // overall strength (pulses between 50% and 100% of it)
 const TAUNT_GLOW_OUTER = 1.15;  // the glow fades out by this multiple of the radius
 const FLOOR_OFFSET = 0.05;
+// Rage heartbeat: beats per second when Rage starts, and the increase after each raged throw
+const HEARTBEAT_START_RATE = 1;
+const HEARTBEAT_RATE_STEP = 0.5;
 
 export class BarbarianController {
   constructor(gc) {
@@ -38,6 +41,7 @@ export class BarbarianController {
     this.taunting = false;
     this._tauntAura = null; // { group, edge, level } — the ring on the floor around him
     this._tauntPulse = 0;
+    this._heartbeatRate = HEARTBEAT_START_RATE; // Rage heartbeat, beats per second
 
     this.endTurnButton = null;
     this.tauntButton = null;
@@ -135,6 +139,9 @@ export class BarbarianController {
       firstTimeEvents.track('barbarian_rage_used');
       if (this.gc.soundManager) {
         this.gc.soundManager.playRage(playerDisc.mesh.position.clone());
+        // His heart pounds while he rages, faster with every throw
+        this._heartbeatRate = HEARTBEAT_START_RATE;
+        this.gc.soundManager.startRageHeartbeat(this._heartbeatRate);
       }
     }
     this.updateRageButtonVisibility();
@@ -211,7 +218,11 @@ export class BarbarianController {
 
   /** Per frame: keep the Taunt ring under him, gently pulsing. */
   update(deltaTime) {
-    if (this.taunting && !this.getDisc()) this.taunting = false; // he died
+    if (!this.getDisc()) { // he died (or isn't in play)
+      this.taunting = false;
+      this.gc.soundManager?.stopRageHeartbeat();
+      this.gc.soundManager?.stopExhaustedBreath();
+    }
     this._syncTauntAura();
     const aura = this._tauntAura;
     if (!aura) return;
@@ -302,6 +313,8 @@ export class BarbarianController {
     if (this.rampaging && this.rampageThrows > 0 && !this.gc.roundWon) {
       // Rampage: a banked kill buys another raged throw.
       this.rampageThrows--;
+      this._heartbeatRate += HEARTBEAT_RATE_STEP;
+      this.gc.soundManager?.setRageHeartbeatRate(this._heartbeatRate);
       disc.hasThrown = false;
       disc.rageIsActiveForNextThrow = true;
       disc.setSpotlightIntensity(true);
@@ -394,6 +407,7 @@ export class BarbarianController {
       // Rage was spent on this turn's throws; any banked throws are lost,
       // and he is Exhausted for his next turn.
       // (Rage armed but never thrown carries over to the next turn.)
+      this.gc.soundManager?.stopRageHeartbeat();
       if (disc) {
         disc.rageIsActiveForNextThrow = false;
         disc.exhausted = true;
@@ -402,9 +416,17 @@ export class BarbarianController {
     } else if (endingOwnTurn && disc?.exhausted) {
       disc.exhausted = false; // he has sat out his Exhausted turn
       disc.setSpotlightIntensity(false);
+      this.gc.soundManager?.stopExhaustedBreath();
     }
     this.rampaging = false;
     this.rampageThrows = 0;
+  }
+
+  /** A turn begins: on his Exhausted turn he breathes heavily (only during that turn). */
+  onTurnStart(disc) {
+    if (disc && disc.kind === 'Barbarian' && disc.type === 'player' && disc.exhausted) {
+      this.gc.soundManager?.playExhaustedBreath();
+    }
   }
 
   onLevelStart() {
@@ -417,6 +439,8 @@ export class BarbarianController {
     if (disc) disc.exhausted = false;
     this.taunting = false;
     this._disposeTauntAura();
+    this.gc.soundManager?.stopRageHeartbeat();
+    this.gc.soundManager?.stopExhaustedBreath();
     this.rageCharges = 0;
     this.hasMoved = false;
     this._slamTargets.clear();

@@ -85,6 +85,10 @@ export class SoundManager {
     this.heartbeatBuffer = null;
     this._heartbeat = null;         // { obj, sound } while the Sanctuary heartbeat loops
     this._heartbeatPending = null;  // position to start at once the buffer loads
+    this.rageHeartbeatBuffer = null;
+    this._rageHeartbeat = null;     // { rate, timer } while the Barbarian rages
+    this.exhaustedBreathBuffer = null;
+    this._exhaustedBreath = null;   // the breathing sound while it plays
     this.musicBuffer = null;
     this._musicAudio = null;
     this._musicPending = false;
@@ -171,6 +175,9 @@ export class SoundManager {
       this.heartbeatBuffer = buffer || null;
       if (this._heartbeatPending) this.startHeartbeat(this._heartbeatPending);
     });
+
+    load('/sounds/atmosphere/heartbeat-fast.mp3').then(buffer => { this.rageHeartbeatBuffer = buffer || null; });
+    load('/sounds/breath/tired-breathing.mp3').then(buffer => { this.exhaustedBreathBuffer = buffer || null; });
 
     load('/sounds/atmosphere/background-loop.mp3').then(music => {
       this.musicBuffer = music || null;
@@ -382,6 +389,43 @@ export class SoundManager {
     this._heartbeat = null;
   }
 
+  /**
+   * Barbarian Rage: a heartbeat repeated `rate` times per second until
+   * stopRageHeartbeat(). Restarting begins again at the given rate.
+   */
+  startRageHeartbeat(rate = 1) {
+    this.stopRageHeartbeat();
+    const state = { rate, timer: null };
+    const beat = () => {
+      this._playBuffer(this.rageHeartbeatBuffer, 1.0);
+      state.timer = setTimeout(beat, 1000 / state.rate);
+    };
+    this._rageHeartbeat = state;
+    beat();
+  }
+
+  /** Changes the Rage heartbeat's rate (beats per second), from the next beat on. */
+  setRageHeartbeatRate(rate) {
+    if (this._rageHeartbeat) this._rageHeartbeat.rate = rate;
+  }
+
+  stopRageHeartbeat() {
+    if (!this._rageHeartbeat) return;
+    clearTimeout(this._rageHeartbeat.timer);
+    this._rageHeartbeat = null;
+  }
+
+  /** Barbarian's Exhausted turn: heavy breathing, played once (cut off by stopExhaustedBreath). */
+  playExhaustedBreath() {
+    this.stopExhaustedBreath();
+    this._exhaustedBreath = this._playBuffer(this.exhaustedBreathBuffer, 0.15);
+  }
+
+  stopExhaustedBreath() {
+    if (this._exhaustedBreath?.isPlaying) this._exhaustedBreath.stop();
+    this._exhaustedBreath = null;
+  }
+
   /** Warp Ring: played once as the teleport starts; long enough to cover the landing too. */
   playTeleport() {
     this._playBuffer(this.teleportBuffer, 0.8);
@@ -402,6 +446,7 @@ export class SoundManager {
     sound.setBuffer(buffer);
     sound.setVolume(volume);
     sound.play();
+    return sound;
   }
 
   playWizardRadiusBlast(position) {

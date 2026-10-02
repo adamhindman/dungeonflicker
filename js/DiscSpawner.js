@@ -3,6 +3,8 @@ import Skeleton from './Skeleton.js';
 import Warden from './Warden.js';
 import Blob from './Blob.js';
 import FireElemental from './FireElemental.js';
+import Paracelsus from './Paracelsus.js';
+import Alembic from './Alembic.js';
 
 const NECROMANCER_MAX_HEALTH = 6;
 
@@ -211,8 +213,9 @@ export class DiscSpawner {
     const SANCTUARY_PC_SLOTS = [{ x: -3, z: 12 }, { x: 3, z: 12 }, { x: -3, z: 16 }, { x: 3, z: 16 }];
     const ringPCPositions = [];
     const _ringPCPos = (radius) => {
-      if (isSanctuaryLevel) {
-        const pos = SANCTUARY_PC_SLOTS[ringPCPositions.length];
+      const fixedSlots = isSanctuaryLevel ? SANCTUARY_PC_SLOTS : gc.level?.pcStartSlots;
+      if (fixedSlots) {
+        const pos = fixedSlots[ringPCPositions.length];
         ringPCPositions.push(pos);
         return pos;
       }
@@ -383,6 +386,20 @@ export class DiscSpawner {
     // The Sanctuary has no enemies.
     if (isSanctuaryLevel) {
       return [barbarian, wizard, necromancer, rogue].filter(Boolean);
+    }
+
+    // The boss room: Paracelsus at the far end with his first homunculi in
+    // front of him, and his alembics in their spots.
+    if (gc.level?.isBossRoom) {
+      const discs = [barbarian, wizard, necromancer, rogue].filter(Boolean);
+      const { x, z } = gc.level.bossStart;
+      const paracelsus = new Paracelsus(gc.scene, x, z, gc, gc.discDescriptions.Paracelsus);
+      discs.push(paracelsus);
+      paracelsus.placeStartingHomunculi(discs);
+      gc.level.spawnerSpots.forEach((spot, i) => {
+        discs.push(new Alembic(gc.scene, spot.x, spot.z, `Alembic ${i + 1}`, gc, gc.discDescriptions.Alembic));
+      });
+      return discs;
     }
 
     // Budget: 10 points on level 1, +2 per room cleared

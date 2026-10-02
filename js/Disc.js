@@ -149,6 +149,7 @@ export default class Disc {
     this.radius = radius;
     this.height = height;
     this.initialColor = color;
+    this.imagePath = imagePath; // its art, e.g. for Paracelsus's homunculi to copy
     this.discName = discName;
     this.type = type;
     this.kind = kind;

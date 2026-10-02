@@ -1,6 +1,10 @@
 import { PerspectiveCamera, WebGLRenderer, Vector3, Raycaster, Spherical, MathUtils, Quaternion, Matrix4 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
+const DEFAULT_CAMERA_DISTANCE = 40;    // the standard rooms' default view
+const DEFAULT_MAX_DISTANCE    = 45;    // furthest the player can zoom out in them
+const CAMERA_TILT = Math.PI / 3;       // 60° down from horizontal
+
 /**
  * Owns the Three.js camera, renderer, OrbitControls, and all per-frame camera
  * behaviour: panning, smooth rotation, target clamping, and wall-fade.
@@ -17,6 +21,7 @@ export class CameraController {
 
     // Stored at init time for recenterCamera()
     this.initialCameraPosition = null;
+    this._maxDistance = DEFAULT_MAX_DISTANCE;
     this.initialCameraZoom     = null;
     this.initialControlsTarget = null;
 
@@ -54,18 +59,13 @@ export class CameraController {
       1000,
     );
 
-    // Position camera to get approx 60 degree downward tilt to encompass field
-    const distance     = 40; // DO NOT CHANGE THE DISTANCE GOD DAMNIT
-    const angleRadians = Math.PI / 3; // 60 degrees
-    const y = distance * Math.sin(angleRadians);
-    const z = distance * Math.cos(angleRadians);
-    this.camera.position.set(0, y, z);
-    this.camera.lookAt(0, 0, 0);
-
-    // Store initial values so recenterCamera() can restore them
-    this.initialCameraPosition = this.camera.position.clone();
-    this.initialCameraZoom     = this.camera.zoom;
-    this.initialControlsTarget = new Vector3(0, 0, 0);
+    // Position camera to get approx 60 degree downward tilt to encompass field.
+    // DEFAULT_CAMERA_DISTANCE suits every standard room; a room that doesn't fit
+    // sets its own view (Level.cameraView), applied by setRoomView().
+    this.setRoomView(null);
+    this.camera.position.copy(this.initialCameraPosition);
+    this.camera.lookAt(this.initialControlsTarget);
+    this.initialCameraZoom = this.camera.zoom;
 
     // ── Renderer ────────────────────────────────────────────────────────────
     this.renderer = new WebGLRenderer({ antialias: true, alpha: false });
@@ -82,7 +82,7 @@ export class CameraController {
     this.controls.target.set(0, 0, 0);
     this.controls.update();
     this.controls.minDistance   = 6;
-    this.controls.maxDistance   = 45;
+    this.controls.maxDistance   = this._maxDistance;
     // Prevent camera from going below ~15 degrees from horizontal
     this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
 
@@ -193,6 +193,23 @@ export class CameraController {
   }
 
   /** Restore camera to its initial position and zoom, then persist that as the saved free-cam state. */
+  /**
+   * Sets the room's default view, the one recenterCamera() returns to: the
+   * camera `distance` from a target on the floor at (0, 0, targetZ), tilted
+   * 60° down. Pass null for the standard view.
+   * @param {{distance?: number, targetZ?: number}|null} view
+   */
+  setRoomView(view) {
+    const distance = view?.distance ?? DEFAULT_CAMERA_DISTANCE;
+    const targetZ  = view?.targetZ ?? 0;
+    this.initialCameraPosition = new Vector3(
+      0, distance * Math.sin(CAMERA_TILT), targetZ + distance * Math.cos(CAMERA_TILT));
+    this.initialControlsTarget = new Vector3(0, 0, targetZ);
+    // Let the player zoom out a little past the room's default view
+    this._maxDistance = Math.max(DEFAULT_MAX_DISTANCE, distance + 5);
+    if (this.controls) this.controls.maxDistance = this._maxDistance;
+  }
+
   recenterCamera() {
     if (this.camera && this.controls) {
       this.camera.position.copy(this.initialCameraPosition);

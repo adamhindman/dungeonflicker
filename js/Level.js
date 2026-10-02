@@ -10,6 +10,7 @@ import { loadBullseye, stepRings, updateBullseyeAnimation, disposeBullseye } fro
 import { loadDonut, getDonutTerrainHeight, getDonutTerrainSlopeForce, disposeDonut } from "./levels/donut.js";
 import { loadCrusher, setCrusherLength, stepCrushers, updateCrusherAnimation, disposeCrusher } from "./levels/crusher.js";
 import { loadSanctuary } from "./levels/sanctuary.js";
+import { loadBoss } from "./levels/boss.js";
 
 // Keys in Level.walls for meshes that sit inside the room rather than forming
 // its boundary (see getAllWalls(boundaryOnly)).
@@ -77,6 +78,15 @@ export default class Level {
     this.floorRects = null;         // walkable rects for non-rectangular rooms; null = whole field
     this.altarPosition = null;      // { x, z } of the Sanctuary's resurrection prop
     this.shopPositions = null;      // [{ x, z }] of the Sanctuary's shop items
+    // Boss room support
+    this.isBossRoom = false;
+    this.arcWall = null;            // { cx, cz, r }: circle the curved far wall lies on
+    this.pcStartSlots = null;       // [{ x, z }] fixed party start positions, or null = random
+    this.bossStart = null;          // { x, z } where the boss starts
+    this.spawnerSpots = [];         // [{ x, z }] of the boss's homunculus spawners
+    this.homunculiGrown = 0;        // homunculi grown so far in this room (names them)
+    // Any room: its own default camera view { distance, targetZ }, or null = standard
+    this.cameraView = null;
     // Crusher level support
     this.crusherConfig = null;       // clipped-square bounds + alternating crusher state
     this._crusherMeshes = [];
@@ -164,6 +174,9 @@ export default class Level {
         if (!wall) return false;
         if (boundaryOnly && INTERIOR_WALL_PREFIXES.some(p => key.startsWith(p))) return false;
         if (this.circleRadius && key.startsWith('poly_')) return false;
+        // Boss room's curved far wall: same inflated-AABB problem; its radial
+        // clamp (arcWall) in PhysicsEngine is the real boundary.
+        if (this.arcWall && key.startsWith('arc_')) return false;
         if (this.crusherConfig && key.startsWith('clip_visual')) return false;
         // Pillar and triangle obstacles have dedicated collision in PhysicsEngine;
         // including them here causes Box3.setFromObject to produce inflated AABBs.
@@ -258,6 +271,8 @@ export default class Level {
       this._loadCrusher();
     } else if (shape === 'sanctuary') {
       this._loadSanctuary();
+    } else if (shape === 'boss') {
+      loadBoss.call(this);
     } else {
       this._loadRectangular();
     }
@@ -864,6 +879,11 @@ export default class Level {
         z - padding < -this.fieldDepth / 2 ||
         z + padding > this.fieldDepth / 2
       ) return false;
+      // Curved far wall (boss room): stay inside its circle
+      if (this.arcWall) {
+        const { cx, cz, r } = this.arcWall;
+        if (Math.hypot(x - cx, z - cz) + padding > r) return false;
+      }
     }
 
     // Non-rectangular floorplans: every corner of the padded footprint must
@@ -1057,6 +1077,13 @@ export default class Level {
     this.floorRects = null;
     this.altarPosition = null;
     this.shopPositions = null;
+    this.isBossRoom = false;
+    this.arcWall = null;
+    this.pcStartSlots = null;
+    this.bossStart = null;
+    this.spawnerSpots = [];
+    this.homunculiGrown = 0;
+    this.cameraView = null;
     disposeDonut.call(this);
     disposeHexagon.call(this);
     disposeBullseye.call(this);

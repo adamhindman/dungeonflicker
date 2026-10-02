@@ -5,6 +5,7 @@ import {
 import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
+import { applyRadiusBlast } from './RadiusBlast.js';
 
 const FLAME_STRIKE_RADIUS = 3;
 
@@ -413,22 +414,8 @@ export class WizardController {
 
     const BLAST_RADIUS = 8;
     const BLAST_FORCE = 3.5;
-    const wizardPos = wizardDisc.mesh.position;
 
-    this.gc.discs.forEach(disc => {
-      if (disc === wizardDisc || disc.dead) return;
-      const dx = disc.mesh.position.x - wizardPos.x;
-      const dz = disc.mesh.position.z - wizardPos.z;
-      const dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist > 0 && dist <= BLAST_RADIUS) {
-        if (this.gc.itemManager?.shieldBlocks(disc, wizardPos.x, wizardPos.z)) return; // Hardy Shield
-        const force = BLAST_FORCE * (1 - dist / BLAST_RADIUS);
-        disc.velocity.x += (dx / dist) * force;
-        disc.velocity.z += (dz / dist) * force;
-        disc.moving = true;
-        disc.takeHit(1, wizardDisc);
-      }
-    });
+    applyRadiusBlast(this.gc, wizardDisc, BLAST_RADIUS, BLAST_FORCE);
 
     this.gc.updateAllDiscDeadStates();
     this.gc.checkGameOverConditions();

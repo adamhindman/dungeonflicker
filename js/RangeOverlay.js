@@ -33,8 +33,12 @@ function maxLaunchSpeed(disc) {
 
 /** How far the disc's centre slides from a full-power launch on flat, open floor. */
 export function slideDistance(disc) {
+  return slideDistanceForSpeed(disc, maxLaunchSpeed(disc));
+}
+
+/** How far the disc's centre slides on flat, open floor when launched at `speed`. */
+export function slideDistanceForSpeed(disc, speed) {
   const friction = frictionFor(disc);
-  let speed = maxLaunchSpeed(disc);
   let distance = 0;
   for (let i = 0; i < 2000 && speed >= STOP_SPEED; i++) {
     distance += speed;   // PhysicsEngine moves first…

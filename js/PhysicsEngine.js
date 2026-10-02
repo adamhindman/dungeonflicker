@@ -25,6 +25,11 @@ export class PhysicsEngine {
 
     // ── Per-disc movement ──────────────────────────────────────────────────
     for (const disc of [...gc.discs]) {
+      // Immovable discs (Paracelsus's alembics) shrug off every knock.
+      if (disc.immovable && disc.moving) {
+        disc.velocity.set(0, 0, 0);
+        disc.moving = false;
+      }
       if (disc.moving) {
         const isBombDisc = disc.kind === 'Bomb';
         const bounceDamping = isBombDisc ? 0.35 : 0.8;
@@ -202,6 +207,31 @@ export class PhysicsEngine {
             const nz = dz / r;
             disc.mesh.position.x = nx * maxR;
             disc.mesh.position.z = nz * maxR;
+            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+            if (vDotN > 0) {
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+              if (gc.soundManager && disc.velocity.length() > 0.05) {
+                gc.soundManager.playBounce(disc.mesh.position.clone());
+              }
+              this._onWallBounce(disc);
+            }
+          }
+        }
+
+        // Boss room: the curved far wall lies on a circle; keep discs inside it.
+        // (Ghosts too: it's an outer wall.)
+        if (gc.level && gc.level.arcWall) {
+          const { cx, cz, r: R } = gc.level.arcWall;
+          const dx = disc.mesh.position.x - cx;
+          const dz = disc.mesh.position.z - cz;
+          const r  = Math.sqrt(dx * dx + dz * dz);
+          const maxR = R - disc.radius;
+          if (r > maxR && r > 0.001) {
+            const nx = dx / r;
+            const nz = dz / r;
+            disc.mesh.position.x = cx + nx * maxR;
+            disc.mesh.position.z = cz + nz * maxR;
             const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
             if (vDotN > 0) {
               disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;

@@ -12,7 +12,7 @@ const POTION_CHARGE_COST = 1;
 // Sneak Attack: hide this turn; if the Rogue deals no damage for the rest of
 // the turn it stays hidden (enemies target anyone else first) until the end of
 // its next turn, when its own throws strike from hiding.
-const SNEAK_BASE_DAMAGE = 2;          // a hit from hiding: double the Rogue's normal hit…
+const SNEAK_BASE_DAMAGE = 3;          // a hit from hiding: triple the Rogue's normal hit…
                                       // …plus 1 per wall/obstacle bounce before it
 const SNEAK_BOUNCE_DEBOUNCE_MS = 80;  // one wall contact can register on two colliders
 const SNEAK_COLOR = 0xb388ff;

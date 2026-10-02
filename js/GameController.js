@@ -24,6 +24,8 @@ import { SanctuaryShop } from './SanctuaryShop.js';
 import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
 import { getResource, isMainPC } from './PartyResources.js';
 import { RangeOverlay } from './RangeOverlay.js';
+import { BlastRings } from './RadiusBlast.js';
+import { BossIntroDialog } from './BossIntroDialog.js';
 
 // Flick tuning: drag length (screen px × camera distance) → throw speed.
 const THROW_DRAG_THRESHOLD = 2;    // drags shorter than this (in world-drag units) don't throw
@@ -45,6 +47,8 @@ const HIDDEN_OPACITY = 0.3;
 
 // A Sanctuary room follows every this-many cleared combat rooms.
 const SANCTUARY_INTERVAL = 3;
+// TESTING: start the game in this room type (e.g. 'boss'); null for the normal sequence.
+const FIRST_ROOM_OVERRIDE = 'boss';
 
 let instance = null;
 
@@ -155,7 +159,10 @@ export default class GameController {
         HealingOrb: "A red sphere of restorative energy. Heals 1 HP to every living disc it passes through.",
         AnimatedDead: "A reanimated corpse under the Necromancer's command. 1 HP, 1 damage.",
         Bomb: "A timed explosive lobbed by the Rogue. Detonates at the end of the Rogue's turn.",
-        RoguePotion: "A healing flask thrown by the Rogue. Restores 2 HP to the first ally it touches."
+        RoguePotion: "A healing flask thrown by the Rogue. Restores 2 HP to the first ally it touches.",
+        Paracelsus: "An alchemist who grows homunculi in the image of his enemies, in alembics around the room. He avoids a fair fight: he flees anyone who comes close, and blasts away anyone who lingers near him. His pendant shields him once he has taken 2 damage in a round.",
+        Homunculus: "A small, imperfect copy of one of the party, grown in Paracelsus's flasks. 2 HP, 1 damage.",
+        Alembic: "One of Paracelsus's flasks. Grows 1–3 homunculi every round until it's broken. They all shatter when he falls."
     };
 
     // Event listeners for keydown, keyup, pointerdown, pointermove, pointerup
@@ -206,7 +213,9 @@ export default class GameController {
     // Stub method to avoid undefined error
   }
 
+  /** Back to the current room's default view (its own, if it sets one). */
   recenterCamera() {
+    this.cameraController.setRoomView(this.level?.cameraView ?? null);
     this.cameraController.recenterCamera();
   }
 
@@ -228,6 +237,7 @@ export default class GameController {
   async init() {
     // Initialize scene and rendering
     this.scene = new Scene();
+    this.blastRings = new BlastRings(this.scene); // Paracelsus's Radius Blast shockwaves
 
     // Camera, renderer, and OrbitControls are owned by CameraController.
     // After init(), gc.camera / gc.renderer / gc.controls point at those same objects
@@ -261,6 +271,8 @@ export default class GameController {
     this.level = new Level(this.scene);
     this.level.nextShape = this._shapeForLevel(this.currentLevelNumber);
     this.level.load();
+    // A room with its own camera view starts there, rather than at the saved free-cam position.
+    if (this.level.cameraView) this.recenterCamera();
 
     // Initialize disc array and turn index
     this.discs = [];
@@ -283,6 +295,7 @@ export default class GameController {
     this.sanctuaryShrine = new SanctuaryShrine(this);
     this.sanctuaryShop = new SanctuaryShop(this);
     this._sanctuaryDoorTimer = null;
+    this.bossIntro = new BossIntroDialog();
     firstTimeEvents.addListener(key => this.notificationManager.push(key));
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
@@ -337,6 +350,7 @@ export default class GameController {
 
     // Initialize discs for gameplay
     this.initDiscs();
+    this._startBossIfNeeded();
 
     // Generate lava pools
     this.lavaManager.generate();
@@ -1330,9 +1344,20 @@ clamp(value, min, max) {
   }
 
   /** Clears Sanctuary props and in-progress item effects. Call before unloading the level. */
+  /** True while a modal (the boss intro) is up: the board and shortcuts ignore input. */
+  get inputBlocked() {
+    return !!this.bossIntro?.isOpen;
+  }
+
+  /** The boss room opens with its story popup. */
+  _startBossIfNeeded() {
+    if (this.level?.isBossRoom) this.bossIntro?.showWhenRoomVisible('paracelsus');
+  }
+
   _clearRoomState() {
     clearTimeout(this._sanctuaryDoorTimer);
     this._sanctuaryDoorTimer = null;
+    this.bossIntro?.close();
     this.sanctuaryShrine?.teardown();
     this.sanctuaryShop?.teardown();
     this.itemManager?.onLevelUnload();
@@ -1398,8 +1423,10 @@ clamp(value, min, max) {
   }
 
   _shapeForLevel(n) {
-    // Level sequence cycles through the authored room types.
-    const sequence = ['rect', 'circle', 'crusher', 'bullseye', 'donut'];
+    // Testing: the first room can be forced to a given room type.
+    if (n === 1 && FIRST_ROOM_OVERRIDE) return FIRST_ROOM_OVERRIDE;
+    // Level sequence cycles through the authored room types, ending with the boss.
+    const sequence = ['rect', 'circle', 'crusher', 'bullseye', 'donut', 'boss'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1454,6 +1481,7 @@ clamp(value, min, max) {
 
     // Unload current level
     const leavingSanctuary = !!(this.level && this.level.isSanctuary);
+    const leavingBoss = !!(this.level && this.level.isBossRoom);
     this._clearRoomState();
     if (this.level) {
       this.level.unload();
@@ -1470,9 +1498,11 @@ clamp(value, min, max) {
     this.rogueController?.onLevelStart();
 
     // Reload level (generates new room/obstacles). A Sanctuary follows every
-    // SANCTUARY_INTERVAL cleared rooms and doesn't advance the level number.
+    // SANCTUARY_INTERVAL cleared rooms and doesn't advance the level number,
+    // except after the boss: the rooms loop straight back to the first one
+    // (the Sanctuary comes before the boss).
     if (this.level) {
-      if (!leavingSanctuary && this.currentLevelNumber % SANCTUARY_INTERVAL === 0) {
+      if (!leavingSanctuary && !leavingBoss && this.currentLevelNumber % SANCTUARY_INTERVAL === 0) {
         this.level.nextShape = 'sanctuary';
       } else {
         this.currentLevelNumber++;
@@ -1485,6 +1515,7 @@ clamp(value, min, max) {
     this.lavaManager.generate();
     this.initDiscs(playerStats);
     this._startSanctuaryIfNeeded();
+    this._startBossIfNeeded();
 
     // 4. Reset turn-specific state
     this.wizardController?.onTurnEnd();
@@ -1604,6 +1635,7 @@ clamp(value, min, max) {
     this.roundWon = false;
     this.panningKeys = { up: false, down: false, left: false, right: false };
     this._startSanctuaryIfNeeded();
+    this._startBossIfNeeded();
 
     if (this.discs.length > 0) {
       let startingDisc = this.discs.find(disc => disc.type === 'player');
@@ -1709,6 +1741,7 @@ clamp(value, min, max) {
     // 4. Re-initialize world (lava first so disc spawning can avoid pools)
     this.lavaManager.generate();
     this.initDiscs(); // This will populate this.discs with new instances
+    this._startBossIfNeeded();
 
     // 5. Reset core game state variables
     this.currentTurnIndex = 0;
@@ -1857,6 +1890,7 @@ clamp(value, min, max) {
     this.rogueController?.update(deltaTime);
     this.itemManager?.update(deltaTime);
     this.barbarianController?.update(deltaTime);
+    this.blastRings?.update(deltaTime);
     this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
@@ -2400,6 +2434,8 @@ disc.isCurrentlyInLavaState = true;
       return; // Important to stop further processing for the dead disc's turn
     }
 
+    this.barbarianController?.onTurnStart(this.currentDisc);
+
     this.updateDiscNames();
     if (this.uiManager) this.uiManager.updateCurrentTurnDiscName(this.currentDisc);
     this.logCurrentTurn();
@@ -2672,6 +2708,12 @@ disc.isCurrentlyInLavaState = true;
 
   async aiThrow(disc) {
     if (!disc || disc.dead) return;
+
+    // Discs with their own turn logic (Paracelsus, his alembics) run it.
+    if (typeof disc.takeTurn === 'function') {
+      await disc.takeTurn();
+      return;
+    }
 
     // Every living player disc is hidden: wander instead of attacking. (A Blob
     // with a corpse to eat still goes for it.)
