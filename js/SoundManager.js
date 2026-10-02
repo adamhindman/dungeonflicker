@@ -1,29 +1,25 @@
 import { AudioListener, AudioLoader, Audio, PositionalAudio, Object3D } from 'three';
+import SOUND_FILES from 'virtual:sound-files';
 
-// Dynamically discover all drain sound MP3s — adding/removing files in
-// public/sounds/drain/ is enough; no code changes needed.
-const DRAIN_SOUND_URLS = Object.values(
-  import.meta.glob('../public/sounds/drain/*.mp3', { eager: true, query: '?url', import: 'default' })
-);
+// Dynamically discovered sound pools (see soundFiles() in vite.config.js) —
+// adding/removing files in e.g. public/sounds/drain/ is enough; no code changes needed.
+const soundsIn = (folder, prefix = '') =>
+  (SOUND_FILES[folder] ?? []).filter(url => url.split('/').pop().startsWith(prefix));
 
-const JELLY_IMPACT_URLS = Object.values(
-  import.meta.glob('../public/sounds/jelly/jelly-impact-*.mp3', { eager: true, query: '?url', import: 'default' })
-);
+const DRAIN_SOUND_URLS = soundsIn('drain');
 
-const JELLY_SQUEEZE_URLS = Object.values(
-  import.meta.glob('../public/sounds/jelly/jelly-squeeze-*.mp3', { eager: true, query: '?url', import: 'default' })
-);
+const JELLY_IMPACT_URLS = soundsIn('jelly', 'jelly-impact-');
 
-const DEATH_CRY_URLS = Object.values(
-  import.meta.glob('../public/sounds/cries/*.mp3', { eager: true, query: '?url', import: 'default' })
-);
+const JELLY_SQUEEZE_URLS = soundsIn('jelly', 'jelly-squeeze-');
+
+const DEATH_CRY_URLS = soundsIn('cries');
 
 // Homunculus voices: a pool per event, discovered from public/sounds/homunculi/<event>/.
 const HOMUNCULUS_SOUND_URLS = {
-  attack: Object.values(import.meta.glob('../public/sounds/homunculi/attack/*.mp3', { eager: true, query: '?url', import: 'default' })),
-  pain:   Object.values(import.meta.glob('../public/sounds/homunculi/pain/*.mp3',   { eager: true, query: '?url', import: 'default' })),
-  death:  Object.values(import.meta.glob('../public/sounds/homunculi/death/*.mp3',  { eager: true, query: '?url', import: 'default' })),
-  idle:   Object.values(import.meta.glob('../public/sounds/homunculi/idle/*.mp3',   { eager: true, query: '?url', import: 'default' })),
+  attack: soundsIn('homunculi/attack'),
+  pain:   soundsIn('homunculi/pain'),
+  death:  soundsIn('homunculi/death'),
+  idle:   soundsIn('homunculi/idle'),
 };
 
 const BREATH_FILES = [
