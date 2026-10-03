@@ -4,6 +4,9 @@
 // fade-in to finish, and blocks the board while it's up so a click meant
 // for the dialog can't start a throw.
 
+// The boss's minions keep quiet until the popup has been up this long.
+const CHATTER_DELAY_MS = 1500;
+
 const BOSS_INTROS = {
   paracelsus: {
     title: "Oh no, it's a boss fight!",
@@ -22,6 +25,7 @@ export class BossIntroDialog {
   constructor() {
     this._el = null;
     this._waitTimer = null;
+    this._shownAt = null; // performance.now() when the popup last appeared
     this._onKeyDown = event => {
       if (event.key === 'Escape' || event.key === 'Enter') {
         event.preventDefault();
@@ -33,6 +37,12 @@ export class BossIntroDialog {
 
   get isOpen() {
     return !!this._el;
+  }
+
+  /** True while the popup is waiting to appear or has only just appeared: minions stay quiet. */
+  get holdsChatter() {
+    if (this._waitTimer) return true;
+    return this._shownAt !== null && performance.now() - this._shownAt < CHATTER_DELAY_MS;
   }
 
   /** Shows the intro for `bossId` once the screen has faded in from black. */
@@ -69,6 +79,7 @@ export class BossIntroDialog {
     el.querySelector('.boss-intro-ok').addEventListener('click', () => this.close());
     document.body.appendChild(el);
     this._el = el;
+    this._shownAt = performance.now();
     document.addEventListener('keydown', this._onKeyDown, true);
     el.querySelector('.boss-intro-ok').focus({ preventScroll: true });
   }

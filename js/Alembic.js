@@ -18,7 +18,7 @@ export default class Alembic extends Disc {
         super(
             /* radius: */ 1.1,
             /* height: */ 0.9,
-            /* color: */ 0x2e9e6b, // glassy green, until it gets its art
+            /* color: */ 0x2e9e6b, // glassy green
             /* startX: */ startX,
             /* startZ: */ startZ,
             /* scene: */ scene,
@@ -27,7 +27,7 @@ export default class Alembic extends Disc {
             /* kind: */ "Alembic",
             /* hitPoints: */ 3,
             /* skillLevel: */ 0,
-            /* imagePath: */ null,
+            /* imagePath: */ "images/alembic.png",
             /* canDoReboundDamage: */ false,
             /* throwPowerMultiplier: */ 0,
             /* mass: */ 50, // collisions barely budge it

@@ -43,7 +43,7 @@ export default class Paracelsus extends Disc {
     super(
       /* radius: */ 1.4,
       /* height: */ 0.5,
-      /* color: */ 0xc9a227, // alchemist's gold, until he gets his art
+      /* color: */ 0xc9a227, // alchemist's gold
       /* startX: */ startX,
       /* startZ: */ startZ,
       /* scene: */ scene,
@@ -52,7 +52,7 @@ export default class Paracelsus extends Disc {
       /* kind: */ "Paracelsus",
       /* hitPoints: */ 6,
       /* skillLevel: */ 100,
-      /* imagePath: */ null,
+      /* imagePath: */ "images/paracelsus-sm.png",
       /* canDoReboundDamage: */ false,
       /* throwPowerMultiplier: */ 1,
       /* mass: */ 1.2,

@@ -1902,7 +1902,9 @@ clamp(value, min, max) {
     this.blastRings?.update(deltaTime);
     this.explosionParticles?.update(deltaTime);
     this.pitEruption?.update(deltaTime);
-    for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
+    if (!this.bossIntro?.holdsChatter) {
+      for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
+    }
     this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
