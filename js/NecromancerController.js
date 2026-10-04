@@ -1,6 +1,7 @@
 import { Vector2, CylinderGeometry, MeshBasicMaterial, Mesh, BackSide } from 'three';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
+import { resurrectAlly } from './PartyResources.js';
 
 const DRAIN_LIFE_RADIUS = 8;
 const DRAIN_LIFE_MANA_COST = 2;
@@ -744,24 +745,7 @@ export class NecromancerController {
     if (this.mana < 2) return false;
 
     this.mana -= 2;
-
-    const reviveHP = Math.max(1, Math.floor(targetDisc.maxHitPoints / 2));
-    targetDisc.revive(reviveHP);
-    targetDisc.hitPoints = reviveHP;
-    targetDisc.lastHitPoints = reviveHP;
-    targetDisc.hasThrown = false;
-
-    // Move resurrected disc to immediately after the Necromancer in turn order
-    const discIndex = this.gc.discs.indexOf(targetDisc);
-    if (discIndex !== -1) this.gc.discs.splice(discIndex, 1);
-    const necroIndex = this.gc.discs.indexOf(necromancerDisc);
-    if (necroIndex !== -1) {
-      this.gc.discs.splice(necroIndex + 1, 0, targetDisc);
-      this.gc.currentTurnIndex = necroIndex;
-      this.gc.currentDisc = necromancerDisc;
-    }
-
-    this.gc.updateDiscNames();
+    resurrectAlly(this.gc, necromancerDisc, targetDisc); // back at half HP, acting right after him
     return true;
   }
 
@@ -837,8 +821,8 @@ export class NecromancerController {
       const canCast = this.canCastSpells(disc);
 
       if (activeAnimatedCount === 0 && !canCast) {
-        // A readied Throwing Knife keeps the turn open (turn-end effects wait for End Turn)
-        if (this.gc.itemManager?.holdTurnForKnife()) return;
+        // A readied Throwing Knife or Resurrection flask keeps the turn open (turn-end effects wait for End Turn)
+        if (this.gc.itemManager?.holdTurnForReadiedItem()) return;
         this._applyDrainLifeOnTurnEnd();
         this._applyCarrionFeastOnTurnEnd();
         await this.gc._proceedToNextPlayerTurn();
@@ -870,7 +854,7 @@ export class NecromancerController {
         const unmovedAnimated = this.animatedDeadDiscs.filter(d => d && d.hitPoints > 0 && !d.dead && !this.movedThisTurn.has(d)).length;
         const canStillCast = this.canCastSpells(necromancerDisc);
         if (unmovedAnimated === 0 && this.hasMovedThisTurn && !canStillCast) {
-          if (this.gc.itemManager?.holdTurnForKnife()) return;
+          if (this.gc.itemManager?.holdTurnForReadiedItem()) return;
           this._applyDrainLifeOnTurnEnd();
           this._applyCarrionFeastOnTurnEnd();
           await this.gc._proceedToNextPlayerTurn();

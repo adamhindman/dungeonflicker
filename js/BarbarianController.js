@@ -69,14 +69,14 @@ export class BarbarianController {
     tooltipManager.register(
       rageButton,
       'barbarian_rage_used',
-      'Spend 3 charges to Rage, before your throw or after it: a mighty throw that strikes enemies again and again, 1 damage per hit. Each kill heals 1 HP, and as long as every throw kills something you throw again; the first throw that kills nothing ends the Rage. Afterwards you are Exhausted for a turn. Earn charges by killing enemies and by taking hits.'
+      'Spend 3 mana to Rage, before your throw or after it: a mighty throw that strikes enemies again and again, 1 damage per hit. Each kill heals 1 HP, and as long as every throw kills something you throw again; the first throw that kills nothing ends the Rage. Afterwards you are Exhausted for a turn. Earn mana by killing enemies and by taking hits.'
     );
     tooltipManager.register(
       this.tauntButton,
       'barbarian_taunt_used',
       () => this.taunting
         ? 'Stop taunting. Turning it off is free.'
-        : 'Spend 1 charge to Taunt: enemies inside the red ring must attack you. It stays on until you turn it off.'
+        : 'Spend 1 mana to Taunt: enemies inside the red ring must attack you. It stays on until you turn it off.'
     );
   }
 
@@ -335,6 +335,7 @@ export class BarbarianController {
     } else if (!this.rampaging && !disc.exhausted && this.rageCharges >= RAGE_CHARGE_COST &&
                !this.gc.roundWon && !this.gc.gameOverState.active) {
       // He could still Rage: wait for him to Rage or end the turn himself.
+      // (Taunt alone doesn't hold the turn.)
       this.rageOfferedAfterMove = true;
       this.updateRageButtonVisibility();
       this.updateEndTurnButtonVisibility();

@@ -14,16 +14,17 @@ import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
 import {
-  KNIFE_BLADE_THICKNESS, KNIFE_STEEL, SHIELD_THICKNESS, makeKnifeBlade, makeShieldMesh,
+  KNIFE_BLADE_THICKNESS, KNIFE_STEEL, SHIELD_THICKNESS, makeKnifeBlade, makeKnifeHandle, makeShieldMesh,
 } from './ItemModels.js';
-import { getResource, formatAmount, isMainPC } from './PartyResources.js';
+import { getResource, formatAmount, isMainPC, resurrectAlly } from './PartyResources.js';
 
 export const GHOST_OPACITY = 0.55;
 
 /**
  * Every item the shop can offer. `cost` is the purchase price, `color` is the
  * item's unique colour (a ring's gem), and `model` picks its shop display.
- * A character can own each item once.
+ * A character can own each item once, except `stackable` items (potions),
+ * which they can buy any number of; the inventory then holds a count.
  */
 export const ITEMS = {
   warpRing: {
@@ -32,7 +33,7 @@ export const ITEMS = {
     useCost: 1,
     color: 0xff1fd2, // hot magenta
     model: 'ring',
-    description: 'Instantly jump to any open spot in the room. Each use costs 1 mana or charge. ' +
+    description: 'Instantly jump to any open spot in the room. Each use costs 1 mana. ' +
       'Can be used before or after moving.',
     // Shown once when bought (see ItemHelpDialog): how to use it, step by step.
     helpIntro: 'An amethyst gem that throbs with unearthly power.',
@@ -48,13 +49,13 @@ export const ITEMS = {
     color: 0x00e5ff, // electric cyan
     model: 'ring',
     description: 'Toggle on to pass through discs and obstacles, taking and dealing no damage. ' +
-      'Turning it on costs 1 HP and 1 mana or charge, and it costs the same again at the ' +
+      'Turning it on costs 1 HP and 1 mana, and it costs the same again at the ' +
       'start of each of your turns while it stays on. Turning it off is free; it switches ' +
-      'off by itself when you run out of mana or charges.',
+      'off by itself when you run out of mana.',
     helpIntro: 'In your ghost form, you pass safely through enemies, friends, and obstacles ' +
       'without taking or dealing damage.',
     help: [
-      'Turning it on costs 1 hit point and 1 charge every round.',
+      'Turning it on costs 1 hit point and 1 mana every round.',
       'Turning it off is free.',
       'Be careful not to remain a ghost too long.',
     ],
@@ -90,6 +91,38 @@ export const ITEMS = {
       'Click the shield (or press <kbd>9</kbd>) to reposition it around yourself on your turn.',
     ],
   },
+  healingPotion: {
+    name: 'Healing',
+    cost: 2,
+    heal: 3,
+    stackable: true,
+    color: 0xff2e4d, // the Healing Orb's red
+    model: 'healingFlask',
+    description: 'A potion. Drink on your turn to restore 3 HP (up to your maximum). Drinking it doesn\'t use ' +
+      'your move. Buy as many as you like; they stack.',
+    helpIntro: 'A round flask of something red and faintly warm.',
+    help: [
+      'Press <kbd>0</kbd> (or click the Healing button) on your turn to drink one and restore 3 HP.',
+      'It doesn\'t use your move, and the button shows how many you have left.',
+    ],
+  },
+  resurrectionPotion: {
+    name: 'Resurrection',
+    cost: 3,
+    stackable: true,
+    color: 0xffc83d, // the Big Golden Orb's gold
+    model: 'resurrectionFlask',
+    description: 'A potion. On your turn, ready the flask beside you and flick it at a fallen ally: ' +
+      'the first one it touches comes back with half their HP, just like the Necromancer\'s ' +
+      'Resurrect Ally, and takes their turn right after yours. A flask that misses shatters. ' +
+      'Throwing it doesn\'t use your move. Buy as many as you like; they stack.',
+    helpIntro: 'A tall flask of liquid gold that hums when the dead are near.',
+    help: [
+      'Press <kbd>5</kbd> (or click the Resurrection button) on your turn to ready a flask beside you.',
+      'Drag the flask to flick it at a fallen ally. It passes over everything else.',
+      'The ally returns with half their HP and acts right after you. A miss shatters the flask.',
+    ],
+  },
 };
 
 /** True if segment P1–P2 crosses segment Q1–Q2 (all in the XZ plane). */
@@ -109,6 +142,8 @@ const WARP_RING_KEY = '6';
 const GHOST_RING_KEY = '7';
 const KNIFE_KEY = '8';
 const SHIELD_KEY = '9';
+const HEALING_POTION_KEY = '0';
+const RESURRECTION_POTION_KEY = '5';
 
 // Hardy Shield spots: world directions around its owner, 120° apart. 0° is
 // north (−Z, away from the default camera), then south-east and south-west.
@@ -127,6 +162,8 @@ const OWN_SUB_DISC_KINDS = {
 
 const KNIFE_RADIUS = 0.45;        // collision size (the blade's point reaches a little further)
 const KNIFE_READY_DISTANCE = 2;   // how far from its owner a readied knife waits
+const FLASK_RADIUS = 0.4;          // a readied/thrown Resurrection flask's collision size
+const FLASK_READY_DISTANCE = 2;    // how far from its owner a readied flask waits
 
 // Teleport beams: same shape as the turn-start beam (tall, open, drawn from the
 // inside) plus a bright additive core. Timings in seconds.
@@ -158,6 +195,9 @@ export class ItemManager {
     this._knifeThrownBy = new Set(); // kinds that have thrown their knife this turn
     this._turnHeldForKnife = false;  // an automatic turn end is waiting on a readied knife
     this.shieldButton = null;
+    this.healingPotionButton = null;
+    this.resurrectionPotionButton = null;
+    this._flasks = {};               // kind → { disc, thrown } while a Resurrection flask is out
     this._shieldSlots = {};          // kind → chosen spot (index into SHIELD_SLOT_ANGLES); kept between rooms
     this._shields = {};              // kind → { mesh, owner } while the owner is alive in this room
     this.shieldMoveActive = false;   // choosing a new spot for the current character's shield
@@ -173,6 +213,10 @@ export class ItemManager {
       'throwingKnife', () => this.toggleKnife());
     this.shieldButton = this._createButton(actionButtonsContainer, 'shield-button', SHIELD_KEY,
       'hardyShield', () => this.startShieldMove());
+    this.healingPotionButton = this._createButton(actionButtonsContainer, 'healing-potion-button',
+      HEALING_POTION_KEY, 'healingPotion', () => this.drinkHealingPotion());
+    this.resurrectionPotionButton = this._createButton(actionButtonsContainer, 'resurrection-potion-button',
+      RESURRECTION_POTION_KEY, 'resurrectionPotion', () => this.toggleResurrectionFlask());
   }
 
   /**
@@ -182,7 +226,8 @@ export class ItemManager {
    */
   placeButtons(container) {
     if (!container) return;
-    container.append(this.warpRingButton, this.ghostRingButton, this.knifeButton, this.shieldButton);
+    container.append(this.warpRingButton, this.ghostRingButton, this.knifeButton, this.shieldButton,
+      this.healingPotionButton, this.resurrectionPotionButton);
     const endTurnButtons = [...container.querySelectorAll('button')].filter(b => b.id.includes('end-turn'));
     container.append(...endTurnButtons);
   }
@@ -217,6 +262,7 @@ export class ItemManager {
    * Call before the level unloads.
    */
   onLevelUnload() {
+    this._flasks = {}; // the level disposes the flask discs with the rest
     this.cancelTeleportTargeting();
     if (this._teleport) {
       this._teleport.pillars.forEach(p => this._disposeMesh(p));
@@ -241,21 +287,192 @@ export class ItemManager {
     if (!isMainPC(buyer) || buyer.dead) return 'Only a living character can buy items.';
     const res = getResource(this.gc, buyer.kind);
     if (!res) return 'Only a living character can buy items.';
-    if (this.getInventory(buyer.kind)[itemId]) {
+    if (!ITEMS[itemId].stackable && this.getInventory(buyer.kind)[itemId]) {
       return `${buyer.discName} already has a ${ITEMS[itemId].name}.`;
     }
     if (res.controller[res.field] < ITEMS[itemId].cost) return `Not enough ${res.units} yet.`;
     return null;
   }
 
-  /** Spends the buyer's own mana/charges and adds the item to their inventory. */
+  /**
+   * Spends the buyer's own mana/charges and adds the item to their inventory
+   * (a stackable item adds 1 to their count).
+   */
   purchase(itemId, buyer) {
     if (this.purchaseBlocker(itemId, buyer)) return false;
     const res = getResource(this.gc, buyer.kind);
     res.controller[res.field] -= ITEMS[itemId].cost;
-    this.getInventory(buyer.kind)[itemId] = true;
+    const inv = this.getInventory(buyer.kind);
+    inv[itemId] = ITEMS[itemId].stackable ? (inv[itemId] || 0) + 1 : true;
     this._buttonStateKey = ''; // force a button refresh
     return true;
+  }
+
+  /** How many of a stackable item `kind` holds. */
+  countOf(kind, itemId) {
+    return this.getInventory(kind)[itemId] || 0;
+  }
+
+  // ─── Healing Potion ───────────────────────────────────────────────────────
+
+  _potionBlocker(disc) {
+    if (disc.hitPoints >= disc.maxHitPoints) return `${disc.discName} is already at full health.`;
+    return null;
+  }
+
+  /** The current character drinks a Healing Potion: +3 HP (up to max). Doesn't use their move. */
+  drinkHealingPotion() {
+    const disc = this.activeCharacter();
+    if (!disc || this._busy() || this._potionBlocker(disc)) return;
+    const inv = this.getInventory(disc.kind);
+    if (!inv.healingPotion) return;
+    inv.healingPotion -= 1;
+    if (inv.healingPotion <= 0) delete inv.healingPotion;
+    disc.restoreHealth(ITEMS.healingPotion.heal); // shows its own "+N HP"
+    firstTimeEvents.track(itemUsedEvent('healingPotion'));
+    this.gc.soundManager?.playPurchase();
+    this.gc.updateDiscNames();
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(disc);
+    this._buttonStateKey = '';
+  }
+
+  // ─── Resurrection potion ──────────────────────────────────────────────────
+  // Used like the Throwing Knife: readied as a flask beside its owner, then
+  // flicked (on top of their normal move). The first fallen ally it touches
+  // comes back exactly as with Resurrect Ally; a flask that stops without
+  // finding one shatters. Either way the potion is used up once it's thrown.
+
+  /** Fallen party members `disc` could bring back. */
+  _fallenAllies(disc) {
+    return this.gc.discs.filter(d => isMainPC(d) && d.dead && d !== disc && d.mesh);
+  }
+
+  _resurrectionBlocker(disc) {
+    return this._fallenAllies(disc).length === 0 ? 'No fallen allies to bring back.' : null;
+  }
+
+  /** True if `flaskDisc` is `turnDisc`'s readied Resurrection flask, ready to be flicked. */
+  canThrowFlask(flaskDisc, turnDisc) {
+    if (!flaskDisc || flaskDisc.kind !== 'ResurrectionFlask' || flaskDisc.owner !== turnDisc) return false;
+    const flask = this._flasks[turnDisc.kind];
+    return !!(flask && flask.disc === flaskDisc && !flask.thrown);
+  }
+
+  /** Readies a Resurrection flask beside the current character, or puts a readied one away (free). */
+  toggleResurrectionFlask() {
+    const disc = this.activeCharacter();
+    if (!disc || this._busy() || !this.countOf(disc.kind, 'resurrectionPotion')) return;
+    const flask = this._flasks[disc.kind];
+    if (flask && !flask.thrown) {
+      this._removeFlask(disc.kind);
+    } else if (!flask && !this._resurrectionBlocker(disc)) {
+      this._readyFlask(disc);
+    }
+    this._buttonStateKey = '';
+  }
+
+  /** Places a flask disc at the first open spot around its owner. */
+  _readyFlask(owner) {
+    const { x, z } = owner.mesh.position;
+    for (let deg = 0; deg < 360; deg += 5) {
+      const a = deg * Math.PI / 180;
+      const fx = x + FLASK_READY_DISTANCE * Math.cos(a);
+      const fz = z + FLASK_READY_DISTANCE * Math.sin(a);
+      if (!this.gc.isPositionValid(fx, fz, FLASK_RADIUS, true, [owner])) continue;
+
+      const disc = new Disc(
+        FLASK_RADIUS, 0.2, ITEMS.resurrectionPotion.color, fx, fz,
+        this.gc.scene, `${owner.discName}'s Resurrection`, 'item', 'ResurrectionFlask',
+        1, 0, null, false, 0.5, 0.5, false, false, 0,
+        this.gc, ITEMS.resurrectionPotion.description,
+      );
+      disc.owner = owner;
+      disc.relativeOffset.set(fx - x, 0, fz - z);
+      this.gc.discs.push(disc);
+      disc.setSpotlightIntensity(false);
+      this._flasks[owner.kind] = { disc, thrown: false };
+      return true;
+    }
+    return false;
+  }
+
+  /** Takes a flask disc off the field (put away, used, or shattered). */
+  _removeFlask(kind) {
+    const flask = this._flasks[kind];
+    if (!flask) return;
+    delete this._flasks[kind];
+    const gc = this.gc;
+    const index = gc.discs.indexOf(flask.disc);
+    if (index > -1) {
+      gc.discs.splice(index, 1);
+      if (index < gc.currentTurnIndex) gc.currentTurnIndex--;
+    }
+    if (gc.currentDisc === flask.disc) gc.currentDisc = flask.disc.owner;
+    flask.disc.dispose();
+    this._buttonStateKey = '';
+  }
+
+  /** A readied flask waits beside its owner (and goes away if they die). */
+  _updateFlasks() {
+    for (const [kind, flask] of Object.entries(this._flasks)) {
+      const disc = flask.disc;
+      if (flask.thrown || disc.moving) continue;
+      if (disc.owner.dead) { this._removeFlask(kind); continue; }
+      disc.mesh.position.x = disc.owner.mesh.position.x + disc.relativeOffset.x;
+      disc.mesh.position.z = disc.owner.mesh.position.z + disc.relativeOffset.z;
+      disc.spotlight.position.set(disc.mesh.position.x, 8, disc.mesh.position.z);
+    }
+  }
+
+  /** Called by GameController when a flask is flicked: the potion is spent. */
+  onFlaskThrown(disc) {
+    const flask = this._flasks[disc.owner.kind];
+    if (flask) flask.thrown = true;
+    const inv = this.getInventory(disc.owner.kind);
+    inv.resurrectionPotion = (inv.resurrectionPotion || 1) - 1;
+    if (inv.resurrectionPotion <= 0) delete inv.resurrectionPotion;
+    firstTimeEvents.track(itemUsedEvent('resurrectionPotion'));
+    this._buttonStateKey = '';
+  }
+
+  /**
+   * Called by PhysicsEngine when a flask in flight touches a disc: a fallen
+   * ally comes back (exactly as with Resurrect Ally) and the flask is used up.
+   */
+  onFlaskHit(disc, target) {
+    const gc = this.gc;
+    if (disc !== gc.thrownDisc || disc.used) return;
+    if (!isMainPC(target) || !target.dead || target === disc.owner) return;
+    disc.used = true;
+    disc.velocity.set(0, 0, 0);
+    disc.moving = false;
+    disc.mesh.visible = false; // poured out; removed when GameController sees it stop
+    resurrectAlly(gc, disc.owner, target); // half HP, acting right after the owner; items come back
+    gc.soundManager?.playTeleport();
+    if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(disc.owner);
+  }
+
+  /** Called by GameController when a thrown flask comes to rest (used, or a miss that shatters). */
+  async onFlaskStopped(disc) {
+    if (!disc.used) {
+      // Missed: the flask shatters where it stopped.
+      this.gc.explosionParticles?.spawn(disc.mesh.position.clone(), { count: 12, scale: 0.35 });
+      this.gc.soundManager?.playDiscHit(disc.mesh.position.clone());
+    }
+    this._removeFlask(disc.owner.kind);
+    if (this._turnHeldForKnife) {
+      // The owner had already finished their move; the flask was the last thing left.
+      this._turnHeldForKnife = false;
+      await this._endTurnOf(disc.owner);
+      return;
+    }
+    this._returnControlTo(disc.owner);
+  }
+
+  /** The count badge on a stackable item's button, in the item's colour. */
+  _countBadge(itemId, count) {
+    const color = `#${ITEMS[itemId].color.toString(16).padStart(6, '0')}`;
+    return `<span class="item-count" style="background:${color}">${count}</span>`;
   }
 
   // ─── Per-frame update ─────────────────────────────────────────────────────
@@ -265,6 +482,7 @@ export class ItemManager {
     this._updateTeleportEffect(deltaTime);
     this._dropItemsOfDead();
     this._updateKnives();
+    this._updateFlasks();
     this._syncShields();
     this._updateShieldMove();
     this._updateButtons();
@@ -339,9 +557,18 @@ export class ItemManager {
 
     const hasShield = !!(inv && inv.hardyShield && this._shields[disc.kind]);
 
+    const potions = inv ? inv.healingPotion || 0 : 0;
+    const potionBlocker = potions > 0 ? this._potionBlocker(disc) : null;
+
+    const revives = inv ? inv.resurrectionPotion || 0 : 0;
+    const flaskOut = disc ? this._flasks[disc.kind] : null;
+    const flaskReady = !!(flaskOut && !flaskOut.thrown);
+    const reviveBlocker = revives > 0 && !flaskReady ? this._resurrectionBlocker(disc) : null;
+
     // Only touch the DOM when something changed.
     const key = [hasWarp, warpCost, warpBlocker, hasRing, ghost, busy, ringBlocker,
-      hasKnife, knifeReady, knifeBlocker, hasShield].join('|');
+      hasKnife, knifeReady, knifeBlocker, hasShield, potions, potionBlocker,
+      revives, flaskReady, reviveBlocker].join('|');
     if (key === this._buttonStateKey) return;
     this._buttonStateKey = key;
 
@@ -361,6 +588,16 @@ export class ItemManager {
     this._setButton(this.shieldButton, hasShield, busy,
       `<kbd>${SHIELD_KEY}</kbd> Move Shield`,
       'Move the Hardy Shield to one of its other two spots (free). You can also click the shield itself.');
+    this._setButton(this.healingPotionButton, potions > 0, busy || !!potionBlocker,
+      `<kbd>${HEALING_POTION_KEY}</kbd> Healing ${this._countBadge('healingPotion', potions)}`,
+      potionBlocker || `Drink a Healing potion to restore ${ITEMS.healingPotion.heal} HP (doesn't use your move). ` +
+        `${potions} left.`);
+    this._setButton(this.resurrectionPotionButton, revives > 0, busy || !!reviveBlocker,
+      `<kbd>${RESURRECTION_POTION_KEY}</kbd> Resurrection ${this._countBadge('resurrectionPotion', revives)}`,
+      reviveBlocker || (flaskReady
+        ? 'Put the flask away (free).'
+        : 'Ready a Resurrection flask beside you, then flick it at a fallen ally to bring them back ' +
+          `with half their HP (doesn't use your move). A miss shatters it. ${revives} left.`));
   }
 
   _setButton(button, visible, disabled, html, title) {
@@ -548,12 +785,14 @@ export class ItemManager {
         1, 0, null, false, 0.5, 0.5, false, false, ITEMS.throwingKnife.damage,
         this.gc, ITEMS.throwingKnife.description,
       );
-      // Swap the round disc body for the triangular blade.
+      // Swap the round disc body for the triangular blade, and give it its handle.
       const blade = makeKnifeBlade();
       disc.mesh.geometry.dispose();
       disc.mesh.material.dispose();
       disc.mesh.geometry = blade.geometry;
       disc.mesh.material = blade.material;
+      disc.knifeHandle = makeKnifeHandle();
+      disc.mesh.add(disc.knifeHandle);
       disc.mesh.rotation.y = Math.atan2(kx - x, kz - z); // point away from the owner
 
       disc.owner = owner;
@@ -578,6 +817,7 @@ export class ItemManager {
       if (index < gc.currentTurnIndex) gc.currentTurnIndex--;
     }
     if (gc.currentDisc === knife.disc) gc.currentDisc = knife.disc.owner;
+    this._disposeMesh(knife.disc.knifeHandle); // Disc.dispose() only frees the blade itself
     knife.disc.dispose();
     this._buttonStateKey = '';
   }
@@ -670,13 +910,17 @@ export class ItemManager {
 
   /**
    * Called when a turn is about to end on its own after the character's move.
-   * If they still have a readied, unthrown knife, the turn stays open for it
-   * (End Turn still ends it). Returns true if the turn was held.
+   * If they still have a readied, unthrown knife or Resurrection flask, the
+   * turn stays open for it (End Turn still ends it). Returns true if the turn
+   * was held.
    */
-  holdTurnForKnife() {
+  holdTurnForReadiedItem() {
     const disc = this.activeCharacter();
     const knife = disc ? this._knives[disc.kind] : null;
-    if (!knife || knife.landed) return false;
+    const flask = disc ? this._flasks[disc.kind] : null;
+    const knifeReady = !!(knife && !knife.landed);
+    const flaskReady = !!(flask && !flask.thrown);
+    if (!knifeReady && !flaskReady) return false;
     this._turnHeldForKnife = true;
     this._returnControlTo(disc);
     return true;
@@ -703,6 +947,9 @@ export class ItemManager {
     this._knifeThrownBy.clear();
     for (const [kind, knife] of Object.entries(this._knives)) {
       if (!knife.landed) this._removeKnife(kind);
+    }
+    for (const [kind, flask] of Object.entries(this._flasks)) {
+      if (!flask.thrown) this._removeFlask(kind); // unthrown: back in the bag, not spent
     }
   }
 

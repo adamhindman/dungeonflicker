@@ -51,7 +51,7 @@ export class RogueController {
     tooltipManager.register(
       this.bombButton,
       'rogue_bomb_used',
-      'Spend 2 charges to place a timed bomb that explodes at the end of your turn.'
+      'Spend 2 mana to place a timed bomb that explodes at the end of your turn.'
     );
     tooltipManager.register(
       this.sneakAttackButton,
@@ -61,7 +61,7 @@ export class RogueController {
     tooltipManager.register(
       this.potionButton,
       'rogue_potion_used',
-      'Spend 1 charge to throw a healing potion that restores 2 HP to the first injured ally it touches.'
+      'Spend 1 mana to throw a healing potion that restores 2 HP to the first injured ally it touches.'
     );
   }
 
@@ -488,7 +488,7 @@ export class RogueController {
   }
 
   _sneakTooltip() {
-    const cost = `${SNEAK_ATTACK_CHARGE_COST} charges`;
+    const cost = `${SNEAK_ATTACK_CHARGE_COST} mana`;
     if (this.hideState === 'hiding') {
       return 'Hidden. Deal no damage for the rest of this turn to stay hidden until the end of your next turn.';
     }

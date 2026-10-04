@@ -112,6 +112,12 @@ export default class InputHandler {
             this.gameController.cheatRestore?.();
             return;
         }
+        // Debug: Shift+B shows the physics hitboxes.
+        if (event.shiftKey && key === 'b') {
+            event.preventDefault();
+            this.gameController.hitboxOverlay?.toggle();
+            return;
+        }
 
         // Hold Tab: show every disc's flick range (instead of moving browser focus).
         if (key === 'tab') {
@@ -230,8 +236,9 @@ export default class InputHandler {
             case '6':
             case '7':
             case '8':
-            case '9': {
-                // Numbered keys = action/spell buttons (6+ are Sanctuary items).
+            case '9':
+            case '0': {
+                // Numbered keys = action/spell buttons (6–9 and 0 are Sanctuary items).
                 // Prefer a button with a matching data-shortcut attribute (stable regardless of
                 // which other buttons are visible). Fall back to position-based selection for
                 // buttons that don't carry the attribute.

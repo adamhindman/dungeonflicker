@@ -501,7 +501,7 @@ export default class UIManager {
                     heartsDiv.textContent = redHearts;
                     this.currentTurnDiscNameElement.appendChild(heartsDiv);
 
-                    // Add Charges display for Barbarian
+                    // Add Mana display for Barbarian
                     if (currentDisc.kind === 'Barbarian' && currentDisc.gameController) {
                         const chargesDiv = document.createElement('div');
                         chargesDiv.classList.add('mana-container');
@@ -509,7 +509,7 @@ export default class UIManager {
                         chargesDiv.style.fontSize = '0.8em';
                         chargesDiv.style.marginTop = '4px';
                         const charges = currentDisc.gameController.barbarianController?.rageCharges ?? 0;
-                        chargesDiv.textContent = `Charges: ${'⚡'.repeat(charges)}`;
+                        chargesDiv.textContent = `Mana: ${'⚡'.repeat(charges)}`;
                         this.currentTurnDiscNameElement.appendChild(chargesDiv);
                     }
 
@@ -535,7 +535,7 @@ export default class UIManager {
                         this.currentTurnDiscNameElement.appendChild(manaDiv);
                     }
 
-                    // Add Charges display for Rogue
+                    // Add Mana display for Rogue
                     if (currentDisc.kind === 'Rogue' && currentDisc.gameController) {
                         const chargesDiv = document.createElement('div');
                         chargesDiv.classList.add('mana-container');
@@ -543,7 +543,7 @@ export default class UIManager {
                         chargesDiv.style.fontSize = '0.8em';
                         chargesDiv.style.marginTop = '4px';
                         const charges = currentDisc.gameController.rogueController?.charges ?? 0;
-                        chargesDiv.textContent = `Charges: ${'⚡'.repeat(charges)}`;
+                        chargesDiv.textContent = `Mana: ${'⚡'.repeat(charges)}`;
                         this.currentTurnDiscNameElement.appendChild(chargesDiv);
                     }
 

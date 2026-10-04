@@ -1,7 +1,8 @@
 // js/SanctuaryShop.js
-// Four random items displayed in a line across the Sanctuary. The character whose
-// turn it is can buy one with their own mana/charges; a bought item disappears
-// for the rest of this visit.
+// The shop's items, in random order, on the Sanctuary's pedestals. The
+// character whose turn it is can buy one with their own mana/charges; a bought
+// item disappears for the rest of this visit, except potions, which stay on
+// sale (buy as many as you like).
 //
 // Each display is a clickable "prop" (see SanctuaryShrine): GameController
 // finds it with pickAt(), shows getInfo() in the disc-info popup, and calls
@@ -10,10 +11,11 @@
 import { CylinderGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from 'three';
 import { ITEMS } from './ItemManager.js';
 import { ItemHelpDialog } from './ItemHelpDialog.js';
-import { makeKnifeModel, makeRingModel, makeShieldModel } from './ItemModels.js';
+import {
+  makeHealingFlaskModel, makeKnifeModel, makeResurrectionFlaskModel, makeRingModel, makeShieldModel,
+} from './ItemModels.js';
 import { getResource, formatAmount } from './PartyResources.js';
 
-const OFFER_COUNT = 4;
 const PEDESTAL_RADIUS = 0.4;   // plain coloured disc for items without a model
 const PEDESTAL_HEIGHT = 0.2;
 const SPIN_SPEED = 1.5;        // radians per second
@@ -33,22 +35,25 @@ export class SanctuaryShop {
     const level = this.gc.level;
     if (!level || !level.isSanctuary || !level.shopPositions) return;
 
-    // Fisher–Yates shuffle, then take the first OFFER_COUNT.
+    // Fisher–Yates shuffle, then take as many as there are display spots.
     const itemIds = Object.keys(ITEMS);
     for (let i = itemIds.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [itemIds[i], itemIds[j]] = [itemIds[j], itemIds[i]];
     }
-    itemIds.length = Math.min(itemIds.length, OFFER_COUNT);
+    itemIds.length = Math.min(itemIds.length, level.shopPositions.length);
     itemIds.forEach((itemId, i) => {
       const pos = level.shopPositions[i];
       if (!pos) return;
       const item = ITEMS[itemId];
       const mesh = new Group();
-      mesh.position.set(pos.x, 0, pos.z);
+      mesh.position.set(pos.x, pos.y ?? 0, pos.z); // on top of its pedestal
 
       let spinner = null;
-      const makeModel = { ring: makeRingModel, knife: makeKnifeModel, shield: makeShieldModel }[item.model];
+      const makeModel = {
+        ring: makeRingModel, knife: makeKnifeModel, shield: makeShieldModel,
+        healingFlask: makeHealingFlaskModel, resurrectionFlask: makeResurrectionFlaskModel,
+      }[item.model];
       if (makeModel) {
         spinner = makeModel(item.color);
         mesh.add(spinner);
@@ -115,7 +120,8 @@ export class SanctuaryShop {
 
     let description = item.description;
     if (buyer && res) {
-      description += `\n\n${buyer.discName} has ${formatAmount(res, res.controller[res.field])}.`;
+      description += `\n\n${buyer.discName} has ${formatAmount(res, res.controller[res.field])}`;
+      description += item.stackable ? ` and ${this.gc.itemManager.countOf(buyer.kind, itemId)} of these.` : '.';
       const blocker = this.gc.itemManager.purchaseBlocker(itemId, buyer);
       description += blocker ? ` ${blocker}` : ` Click to buy for ${buyer.discName}.`;
     }
@@ -124,11 +130,17 @@ export class SanctuaryShop {
 
   _buy(pedestal) {
     const buyer = this._buyer();
-    if (!this.gc.itemManager.purchase(pedestal.itemId, buyer)) return;
+    const itemId = pedestal.itemId;
+    if (!this.gc.itemManager.purchase(itemId, buyer)) return;
+    if (this.gc.soundManager) this.gc.soundManager.playPurchase();
+    if (ITEMS[itemId].stackable) {
+      // Potions stay on sale; the how-to only shows with a character's first one.
+      if (this.gc.itemManager.countOf(buyer.kind, itemId) === 1) this._helpDialog.show(itemId, buyer.discName);
+      return;
+    }
     this._removeMesh(pedestal.mesh);
     this.pedestals = this.pedestals.filter(p => p !== pedestal);
-    if (this.gc.soundManager) this.gc.soundManager.playPurchase();
-    this._helpDialog.show(pedestal.itemId, buyer.discName);
+    this._helpDialog.show(itemId, buyer.discName);
   }
 
   _removeMesh(group) {

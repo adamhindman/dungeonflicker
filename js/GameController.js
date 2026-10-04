@@ -25,6 +25,7 @@ import { SanctuaryHealing } from './SanctuaryHealing.js';
 import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
 import { getResource, isMainPC } from './PartyResources.js';
 import { RangeOverlay } from './RangeOverlay.js';
+import { HitboxOverlay } from './HitboxOverlay.js';
 import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
 import ExplosionParticles from './ExplosionParticles.js';
@@ -48,6 +49,8 @@ const AIM_LINE_PRECISION_COLOR = 0xffc53d;
 
 // A Rogue hiding for a Sneak Attack fades into the shadows.
 const HIDDEN_OPACITY = 0.3;
+// A throw still moving after this long is stopped by force (see the stuck-throw check in animate()).
+const THROW_SETTLE_TIMEOUT_MS = 10000;
 
 // A Sanctuary room follows every this-many cleared combat rooms.
 const SANCTUARY_INTERVAL = 3;
@@ -312,6 +315,7 @@ export default class GameController {
       // Depending on how critical this is, you might want to return or throw an error
     }
     this.rangeOverlay = new RangeOverlay(this);
+    this.hitboxOverlay = new HitboxOverlay(this);
     this.itemManager = new ItemManager(this);
     this.itemManager.init(this.actionButtonsContainer);
     // Initialize throw direction line helper for drag aim visualization
@@ -646,8 +650,9 @@ export default class GameController {
 
     if (discForTurn && discForTurn.type === 'player' && !discForTurn.dead) {
         // It's a player's turn and the player character is alive
-        if (this.pointerDisc && this.itemManager?.canThrowKnife(this.pointerDisc, discForTurn)) {
-            // Clicked on this character's readied Throwing Knife (an extra throw, any class)
+        if (this.pointerDisc && (this.itemManager?.canThrowKnife(this.pointerDisc, discForTurn) ||
+                                 this.itemManager?.canThrowFlask(this.pointerDisc, discForTurn))) {
+            // Clicked on this character's readied Throwing Knife or Resurrection flask (an extra throw, any class)
             discToControl = this.pointerDisc;
             allowAiming = true;
         } else if (discForTurn.kind === 'Wizard') {
@@ -990,8 +995,9 @@ export default class GameController {
         return;
       }
 
-      // Only allow throwing player-type discs (Wizard, Barbarian, Orb) and the Throwing Knife
-      if (this.currentDisc.type !== "player" && this.currentDisc.kind !== 'Knife') {
+      // Only allow throwing player-type discs (Wizard, Barbarian, Orb), the Throwing Knife and the Resurrection flask
+      if (this.currentDisc.type !== "player" && this.currentDisc.kind !== 'Knife' &&
+          this.currentDisc.kind !== 'ResurrectionFlask') {
         return;
       }
 
@@ -1053,6 +1059,9 @@ export default class GameController {
         }
         if (discBeingThrown.kind === 'Knife') {
           this.itemManager?.onKnifeThrown(discBeingThrown);
+        }
+        if (discBeingThrown.kind === 'ResurrectionFlask') {
+          this.itemManager?.onFlaskThrown(discBeingThrown);
         }
 
         discBeingThrown.velocity.set(
@@ -1932,6 +1941,7 @@ clamp(value, min, max) {
       for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
     }
     this.rangeOverlay?.update();
+    this.hitboxOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
     this.sanctuaryHealing?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
@@ -2135,6 +2145,7 @@ disc.isCurrentlyInLavaState = true;
       this.renderer.render(this.scene, this.camera);
     }
 
+    if (!this.waitingForDiscToStop) this._throwWaitStart = null; // the stuck-throw timer runs per throw
     if (this.waitingForDiscToStop && this.thrownDisc) {
       const velocityLength = this.thrownDisc.velocity.length();
       // If the thrown disc was an orb and it's been consumed/destroyed, it might be removed from the discs array
@@ -2147,7 +2158,27 @@ disc.isCurrentlyInLavaState = true;
       // Fireball is consumed when it hits a player or stops moving
       const isConsumedFireball = this.thrownDisc.kind === 'Fireball' && (this.thrownDisc.hitPoints <= 0 || this.thrownDisc.dead);
 
-      if ((velocityLength < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead || isConsumedPotion || isConsumedFireball) {
+      // Safety net against a stuck turn: a throw that never settles (a disc wedged
+      // and jittering between two obstacles, a broken velocity, or a thrown disc
+      // taken out of the room mid-flight) is stopped after THROW_SETTLE_TIMEOUT_MS.
+      this._throwWaitStart ??= performance.now();
+      const removed = !this.discs.includes(this.thrownDisc);
+      const timedOut = performance.now() - this._throwWaitStart > THROW_SETTLE_TIMEOUT_MS ||
+        !Number.isFinite(velocityLength);
+      if ((removed || timedOut) && !(velocityLength < 0.01 && !this.thrownDisc.moving)) {
+        const p = this.thrownDisc.mesh?.position;
+        console.warn(`[stuck throw] forcing ${this.thrownDisc.discName} (${this.thrownDisc.kind}) to stop: ` +
+          `${removed ? 'removed from the room' : 'did not settle'}; velocity ${velocityLength}, ` +
+          `position ${p ? `${p.x.toFixed(2)}, ${p.z.toFixed(2)}` : 'none'}`);
+        for (const d of [this.thrownDisc, ...this.discs]) {
+          if (!d.moving && d !== this.thrownDisc) continue;
+          d.velocity.set(0, 0, 0);
+          d.moving = false;
+        }
+      }
+
+      if ((this.thrownDisc.velocity.length() < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead || isConsumedPotion || isConsumedFireball) {
+        this._throwWaitStart = null;
         this.waitingForDiscToStop = false;
         const justMovedDisc = this.thrownDisc;
         this.thrownDisc = null; // Clear tracking
@@ -2163,6 +2194,8 @@ disc.isCurrentlyInLavaState = true;
         try {
         if (justMovedDisc.kind === 'Knife') {
             await this.itemManager?.onKnifeStopped(justMovedDisc);
+        } else if (justMovedDisc.kind === 'ResurrectionFlask') {
+            await this.itemManager?.onFlaskStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Wizard' || justMovedDisc.kind === 'Orb' || justMovedDisc.kind === 'HealingOrb') {
             await this.wizardController?.onDiscStopped(justMovedDisc);
         } else if (justMovedDisc.kind === 'Necromancer' || justMovedDisc.kind === 'AnimatedDead') {
@@ -2275,10 +2308,10 @@ disc.isCurrentlyInLavaState = true;
       return;
     }
     // A turn ending on its own after the character's move stays open while
-    // they still have a readied Throwing Knife to throw.
+    // they still have a readied Throwing Knife or Resurrection flask to throw.
     const autoTurnEnd = this._autoTurnEnd;
     this._autoTurnEnd = false;
-    if (autoTurnEnd && this.itemManager?.holdTurnForKnife()) return;
+    if (autoTurnEnd && this.itemManager?.holdTurnForReadiedItem()) return;
     this.itemManager?.onTurnEnd();
 
     const previousTurnIndex = this.currentTurnIndex;
@@ -2648,7 +2681,7 @@ disc.isCurrentlyInLavaState = true;
     }
 
     this.discInfoNameElement.innerText = disc.discName;
-    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead', 'Knife', 'Pursuer'];
+    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead', 'Knife', 'ResurrectionFlask', 'Pursuer'];
     const showHp = !noHpKinds.includes(disc.kind);
     const currentHp = showHp ? (Number(disc.hitPoints) || 0) : 0;
     const rawMaxHp = disc.maxHitPoints;

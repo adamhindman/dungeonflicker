@@ -165,8 +165,8 @@ export class SanctuaryShrine {
     const allyName = ally ? ally.discName : 'your fallen ally';
 
     let description =
-      `The Big Golden Orb can bring back the fallen. Spend ${RESURRECT_COST} mana or charges ` +
-      `to resurrect ${allyName} with full health and their starting mana or charges. ` +
+      `The Big Golden Orb can bring back the fallen. Spend ${RESURRECT_COST} mana ` +
+      `to resurrect ${allyName} with full health and their starting mana. ` +
       `Any items they had are lost.`;
     if (payer && res) {
       description += `\n\n${payer.discName} has ${formatAmount(res, res.controller[res.field])}.`;

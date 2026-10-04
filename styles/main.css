@@ -247,9 +247,25 @@ textarea {
     }
     /* Sanctuary item buttons stay visible but greyed out while unusable */
     #warp-ring-button:disabled,
-    #ghost-ring-button:disabled {
+    #ghost-ring-button:disabled,
+    #healing-potion-button:disabled,
+    #resurrection-potion-button:disabled {
         opacity: 0.45;
         cursor: not-allowed;
+    }
+    /* How many of a stackable item (potions) the character holds; background is the item's colour */
+    .item-count {
+        display: inline-block;
+        min-width: 1.8rem;
+        margin-left: .5rem;
+        padding: .1rem .5rem;
+        border-radius: 1rem;
+        color: #fff;
+        text-shadow: 0 0 .2rem rgba(0, 0, 0, 0.6);
+        font-size: 1.1rem;
+        font-weight: bold;
+        line-height: 1.6rem;
+        text-align: center;
     }
     .hearts-container{
         margin-left: 1rem;

@@ -11,8 +11,8 @@ const POINTS_PER_ROUND = 2;
 // TESTING: arrive at this round in every room; null for the normal timing.
 const ARRIVAL_ROUND_OVERRIDE = null;
 const WARNING_ROUNDS = 3;            // the on-screen countdown starts this many rounds ahead
-// How far it glides on its first turn: 80% of a Wizard's full-power flick on open floor.
-const FIRST_TURN_DISTANCE = 0.8 * slideDistanceForSpeed({ kind: 'Wizard' }, 1);
+// How far it glides on its first turn: 64% of a Wizard's full-power flick on open floor.
+const FIRST_TURN_DISTANCE = 0.64 * slideDistanceForSpeed({ kind: 'Wizard' }, 1);
 const ACCELERATION = 1.07;           // each turn it glides this much farther than the last
 const CATCH_DAMAGE = 3;              // to every party member it touches
 const SHOVE_SPEED = 0.6;             // launch speed of a party member it touches

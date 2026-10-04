@@ -25,7 +25,7 @@ The game unfolds in a turn-based fashion. Players take control of their active d
 - **Throw Info:** Appears while dragging, showing the throw's power (as a percentage of full power) and angle. "• Precision" is added while Shift is held.
 - **Aim Line:** Shows the throw direction; its length is the true throw power (full length = full power). It turns gold in precision mode.
 - **Throw Radius:** While Tab is held, every living disc shows a faint ring in its own colour marking how far it can slide with a full-power flick on open floor. Hovering a disc makes its ring bright and thick.
-- **Character Popup:** Hovering a disc shows its health, attack and description at the top left; your characters also show their mana or charges.
+- **Character Popup:** Hovering a disc shows its health, attack and description at the top left; your characters also show their mana.
 - **Outline Highlight:** The currently selected disc is highlighted with a glowing outline.
 
 ## Controls

@@ -344,6 +344,19 @@ export class PhysicsEngine {
           continue;
         }
 
+        // Resurrection flask: passes over everything; a flask in flight that
+        // touches a fallen ally brings them back (ItemManager checks who counts).
+        if (d1.kind === 'ResurrectionFlask' || d2.kind === 'ResurrectionFlask') {
+          const flask = d1.kind === 'ResurrectionFlask' ? d1 : d2;
+          const other = flask === d1 ? d2 : d1;
+          const dx = flask.mesh.position.x - other.mesh.position.x;
+          const dz = flask.mesh.position.z - other.mesh.position.z;
+          if (flask.moving && other.dead && Math.hypot(dx, dz) < flask.radius + other.radius) {
+            gc.itemManager?.onFlaskHit(flask, other);
+          }
+          continue;
+        }
+
         // Skip collision between Wizard and his own regular Orbs while they are orbiting
         if ((d1.kind === 'Wizard' && d2.kind === 'Orb' && gc.wizardController?.orbs?.includes(d2) && !d2.moving) ||
             (d2.kind === 'Wizard' && d1.kind === 'Orb' && gc.wizardController?.orbs?.includes(d1) && !d1.moving)) {
@@ -768,6 +781,9 @@ export class PhysicsEngine {
     if (!disc || !disc.mesh || disc.dead || disc.hitPoints <= 0) return;
     if (disc.type !== 'player' && disc.type !== 'NPC') return;
     if (disc.kind === 'Orb' || disc.kind === 'HealingOrb' || disc.kind === 'Bomb' || disc.kind === 'RoguePotion') return;
+    // A retracted crusher is flush with its wall: the wall's boundary clamp
+    // handles it, so it mustn't bump, hurt or fling discs that touch the wall.
+    if (crusher.currentLength <= crusher.retractedLength + 0.01) return;
 
     const dir = new Vector3(Math.cos(crusher.angle), 0, Math.sin(crusher.angle)).normalize();
     const sideDir = new Vector3(-dir.z, 0, dir.x);

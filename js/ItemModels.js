@@ -2,7 +2,8 @@
 // 3D display models for Sanctuary shop items.
 
 import {
-  BoxGeometry, CylinderGeometry, ExtrudeGeometry, Shape, Group, Mesh, MeshStandardMaterial, OctahedronGeometry, TorusGeometry,
+  BoxGeometry, CylinderGeometry, DoubleSide, ExtrudeGeometry, LatheGeometry, Shape, Group, Mesh, MeshStandardMaterial,
+  OctahedronGeometry, SphereGeometry, TorusGeometry, Vector2,
 } from 'three';
 
 const RING_RADIUS = 0.6;
@@ -138,11 +139,20 @@ export function makeShieldModel() {
 
 // Throwing knife: the blade is a flat triangular prism (a 3-sided cylinder has
 // a vertex pointing along +Z), squeezed sideways into a long, pointy isosceles
-// triangle about 4× as long as it is wide.
+// triangle about 5× as long as it is wide, with a small handle behind its base.
 export const KNIFE_BLADE_RADIUS = 0.8;
 export const KNIFE_BLADE_THICKNESS = 0.14;
-const KNIFE_BLADE_NARROWING = 0.38; // sideways squeeze, baked into the geometry
+const KNIFE_BLADE_NARROWING = 0.3; // sideways squeeze, baked into the geometry
 export const KNIFE_STEEL = 0xdfe6ee;
+// The blade's back edge (its base) sits half a radius behind its centre.
+const KNIFE_BASE_Z = -KNIFE_BLADE_RADIUS / 2;
+const KNIFE_GUARD_WIDTH = 0.34;
+const KNIFE_GUARD_DEPTH = 0.07;
+const KNIFE_GRIP_LENGTH = 0.38;
+const KNIFE_GRIP_RADIUS = 0.06;
+const KNIFE_POMMEL_RADIUS = 0.08;
+const KNIFE_HANDLE_LENGTH = KNIFE_GUARD_DEPTH + KNIFE_GRIP_LENGTH + KNIFE_POMMEL_RADIUS;
+const KNIFE_GRIP_COLOR = 0x5a3a22; // dark leather
 
 /** The knife's triangular blade, lying flat with its tip along +Z. */
 export function makeKnifeBlade() {
@@ -165,14 +175,42 @@ export function makeKnifeBlade() {
 }
 
 /**
- * The shop display: the knife's blade standing point-up, hovering just above
- * the floor. Origin is on the floor, so rotation.y spins it.
+ * The knife's handle, in the blade's own frame (so add it to the blade): a
+ * steel crossguard against the blade's base, a leather grip behind it along
+ * −Z, and a round pommel at the end.
+ */
+export function makeKnifeHandle() {
+  const steel = new MeshStandardMaterial({
+    color: KNIFE_STEEL, metalness: 0.9, roughness: 0.25, emissive: 0x8a96a4, emissiveIntensity: 1,
+  });
+  const guard = new Mesh(new BoxGeometry(KNIFE_GUARD_WIDTH, KNIFE_BLADE_THICKNESS * 1.3, KNIFE_GUARD_DEPTH), steel);
+  guard.position.z = KNIFE_BASE_Z - KNIFE_GUARD_DEPTH / 2;
+
+  const grip = new Mesh(
+    new CylinderGeometry(KNIFE_GRIP_RADIUS, KNIFE_GRIP_RADIUS, KNIFE_GRIP_LENGTH, 12),
+    new MeshStandardMaterial({ color: KNIFE_GRIP_COLOR, roughness: 0.85, emissive: 0x24170d, emissiveIntensity: 1 }),
+  );
+  grip.rotation.x = Math.PI / 2; // lie along Z
+  grip.position.z = KNIFE_BASE_Z - KNIFE_GUARD_DEPTH - KNIFE_GRIP_LENGTH / 2;
+
+  const pommel = new Mesh(new SphereGeometry(KNIFE_POMMEL_RADIUS, 12, 8), steel);
+  pommel.position.z = KNIFE_BASE_Z - KNIFE_GUARD_DEPTH - KNIFE_GRIP_LENGTH;
+
+  const handle = new Group();
+  handle.add(guard, grip, pommel);
+  return handle;
+}
+
+/**
+ * The shop display: the knife standing point-up, hovering just above the
+ * floor. Origin is on the floor, so rotation.y spins it.
  */
 export function makeKnifeModel() {
   const blade = makeKnifeBlade();
+  blade.add(makeKnifeHandle());
   blade.rotation.x = -Math.PI / 2; // stand the flat blade upright, tip pointing up
-  // Its back edge sits 0.5 × radius below its centre.
-  blade.position.y = HOVER_HEIGHT + KNIFE_BLADE_RADIUS * 0.5;
+  // Its back edge sits 0.5 × radius below its centre, and the handle below that.
+  blade.position.y = HOVER_HEIGHT + KNIFE_BLADE_RADIUS * 0.5 + KNIFE_HANDLE_LENGTH;
 
   const knife = new Group();
   knife.add(blade);
@@ -181,4 +219,100 @@ export function makeKnifeModel() {
   const model = new Group();
   model.add(knife);
   return model;
+}
+
+// ── Potion flasks ──────────────────────────────────────────────────────────
+// Each flask is a glass shell spun from a profile (radius, height) around the
+// vertical axis, glowing liquid inside it up to a fill line, and a cork.
+// Profiles run from the bottom centre to the lip; heights are from the
+// flask's base.
+const HEALING_FLASK = {
+  // Round-bellied: a ball with a narrow neck.
+  profile: [[0, 0.04], [0.2, 0.07], [0.33, 0.17], [0.4, 0.31], [0.41, 0.45], [0.37, 0.6],
+            [0.26, 0.74], [0.14, 0.84], [0.12, 0.9], [0.12, 1.1], [0.15, 1.13], [0.15, 1.18]],
+  fillHeight: 0.62,
+  liquidColor: 0xff2e4d, // the Healing Orb's red
+};
+const RESURRECTION_FLASK = {
+  // Tall and conical: a wide flat base tapering to a long neck.
+  profile: [[0, 0.03], [0.36, 0.03], [0.39, 0.07], [0.3, 0.38], [0.19, 0.7], [0.11, 0.82],
+            [0.11, 1.14], [0.14, 1.17], [0.14, 1.22]],
+  fillHeight: 0.46,
+  liquidColor: 0xffc83d, // the Big Golden Orb's gold
+};
+const LIQUID_INSET = 0.85;     // liquid radius as a share of the glass's
+const CORK_COLOR = 0x8a5a2b;
+
+/** Radius of `profile` at height `y`, interpolated between its points. */
+function profileRadiusAt(profile, y) {
+  for (let i = 1; i < profile.length; i++) {
+    const [r0, y0] = profile[i - 1];
+    const [r1, y1] = profile[i];
+    if (y >= y0 && y <= y1) return y1 === y0 ? r1 : r0 + (r1 - r0) * (y - y0) / (y1 - y0);
+  }
+  return profile[profile.length - 1][0];
+}
+
+/**
+ * A potion flask built from one of the specs above, hovering and tilted like
+ * the other shop items. Origin is on the floor, so rotation.y spins it.
+ */
+function makeFlaskModel({ profile, fillHeight, liquidColor }) {
+  const glass = new Mesh(
+    new LatheGeometry(profile.map(([r, y]) => new Vector2(r, y)), 32),
+    new MeshStandardMaterial({
+      color: 0xd8eef5,
+      metalness: 0,
+      roughness: 0.05,
+      transparent: true,
+      opacity: 0.3,
+      side: DoubleSide,
+      depthWrite: false, // so the liquid shows through
+      emissive: 0x6f8a94, // keeps the glass's outline readable in the dim Sanctuary
+      emissiveIntensity: 0.4,
+    }),
+  );
+
+  // The liquid: the glass's profile up to the fill line, a little narrower,
+  // closed off flat at the top.
+  const below = profile.filter(([, y]) => y < fillHeight);
+  const liquidProfile = [...below, [profileRadiusAt(profile, fillHeight), fillHeight], [0, fillHeight]]
+    .map(([r, y]) => new Vector2(r * LIQUID_INSET, y + 0.01));
+  const liquid = new Mesh(
+    new LatheGeometry(liquidProfile, 32),
+    new MeshStandardMaterial({
+      color: liquidColor,
+      emissive: liquidColor,
+      emissiveIntensity: 0.8,
+      metalness: 0.1,
+      roughness: 0.2,
+    }),
+  );
+
+  // A cork filling the top of the neck and standing a little proud of it.
+  const [lipRadius, lipHeight] = profile[profile.length - 1];
+  const cork = new Mesh(
+    new CylinderGeometry(lipRadius * 0.95, lipRadius * 0.8, 0.18, 16),
+    new MeshStandardMaterial({ color: CORK_COLOR, roughness: 0.9, emissive: 0x2e1d0e, emissiveIntensity: 1 }),
+  );
+  cork.position.y = lipHeight;
+
+  const flask = new Group();
+  flask.add(liquid, glass, cork); // liquid first: drawn before the see-through glass
+  flask.position.y = HOVER_HEIGHT;
+  flask.rotation.z = TILT;
+
+  const model = new Group();
+  model.add(flask);
+  return model;
+}
+
+/** A round-bellied flask of red healing potion. */
+export function makeHealingFlaskModel() {
+  return makeFlaskModel(HEALING_FLASK);
+}
+
+/** A tall conical flask of golden resurrection potion. */
+export function makeResurrectionFlaskModel() {
+  return makeFlaskModel(RESURRECTION_FLASK);
 }
