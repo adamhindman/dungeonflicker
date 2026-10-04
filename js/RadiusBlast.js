@@ -30,6 +30,42 @@ export function applyRadiusBlast(gc, caster, radius, force) {
   return hit;
 }
 
+/**
+ * A blast centred on a point (x, z), e.g. a mortar shell: every living disc
+ * within `radius` is shoved away from the centre (harder the closer it
+ * stood) and, if `shouldDamage(disc)` says so, takes `damage`. A Hardy Shield
+ * between the centre and its owner takes 1 off the damage but not the shove.
+ * Ghost Ring discs, items and anything `skip(disc)` names aren't touched.
+ * Returns the discs it reached.
+ */
+export function applyBlastAt(gc, x, z, radius, force, { damage = 1, shouldDamage = () => true, skip = () => false } = {}) {
+  const reached = [];
+  gc.discs.forEach(disc => {
+    if (disc.dead || disc.isGhost || disc.type === 'item' || skip(disc)) return;
+    const dx = disc.mesh.position.x - x;
+    const dz = disc.mesh.position.z - z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist > radius) return;
+    if (!disc.immovable) {
+      // Dead centre has no direction: shove it any way at all
+      const angle = Math.random() * Math.PI * 2;
+      const nx = dist > 0.001 ? dx / dist : Math.cos(angle);
+      const nz = dist > 0.001 ? dz / dist : Math.sin(angle);
+      const push = force * (1 - dist / radius);
+      disc.velocity.x += nx * push;
+      disc.velocity.z += nz * push;
+      disc.moving = true;
+    }
+    if (shouldDamage(disc)) {
+      const shielded = gc.itemManager?.shieldBlocks(disc, x, z);
+      const amount = shielded ? damage - 1 : damage;
+      if (amount > 0) disc.takeHit(amount, null);
+    }
+    reached.push(disc);
+  });
+  return reached;
+}
+
 const RING_DURATION = 0.45;
 
 /** Expanding shockwave rings on the floor. Call update() every frame. */

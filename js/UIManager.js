@@ -397,7 +397,7 @@ export default class UIManager {
                 }
             });
             const hpDisplay = (typeof disc.hitPoints === 'number') ? disc.hitPoints : 'N/A';
-            let displayName = `${disc.discName} (${hpDisplay} HP)`;
+            let displayName = disc.kind === 'Pursuer' ? disc.discName : `${disc.discName} (${hpDisplay} HP)`;
 
             // Create and style the color circle
             const colorCircle = document.createElement("span");
@@ -475,7 +475,8 @@ export default class UIManager {
         if (this.currentTurnDiscNameElement) {
             if (currentDisc && currentDisc.discName) {
                 const isRogueSubDisc = currentDisc.kind === 'Bomb' || currentDisc.kind === 'RoguePotion';
-                if (isRogueSubDisc) {
+                // Name only: no HP to show (the Pursuer can't be hurt)
+                if (isRogueSubDisc || currentDisc.kind === 'Pursuer') {
                     this.currentTurnDiscNameElement.textContent = currentDisc.discName;
                     this.currentTurnDiscNameElement.classList.remove('element-hidden');
                     this.updateMoveStatusChip(currentDisc);

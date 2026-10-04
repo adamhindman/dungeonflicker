@@ -5,6 +5,7 @@ import Blob from './Blob.js';
 import FireElemental from './FireElemental.js';
 import Paracelsus from './Paracelsus.js';
 import Alembic from './Alembic.js';
+import Mortar from './Mortar.js';
 
 const NECROMANCER_MAX_HEALTH = 6;
 
@@ -39,12 +40,16 @@ const NPC_HEX_COLORS = [
  */
 // Per-room enemy tweaks, keyed by room id (Level.shape). `kinds` are the only
 // kinds the room's budget may buy (null = any); `bonus` are free extras on top
-// of it. Rooms not listed use DEFAULT_ROSTER.
+// of it; `mortars` (settings over MORTAR_DEFAULTS) puts a mortar on each of the
+// room's level.mortarSpots. Rooms not listed use DEFAULT_ROSTER.
 const DEFAULT_ROSTER = { kinds: null, bonus: { kind: 'Skeleton', min: 3, max: 5 } };
 const ROOM_ROSTERS = {
   // The lava pit room is all lava-proof Fire Elementals.
   donut: { kinds: ['FireElemental'], bonus: { kind: 'FireElemental', min: 1, max: 2 } },
+  // Mortar test room: mortars aimed at the party, destroyed when beaten.
+  siege: { ...DEFAULT_ROSTER, mortars: { targeting: 'party', onDefeat: 'destroy' } },
 };
+const MORTAR_POINTS = 3; // what a mortar adds to the room's enemy points (for the Pursuer's timing)
 
 // Free bonus NPC templates by kind.
 const BONUS_TEMPLATES = {
@@ -148,6 +153,18 @@ export class DiscSpawner {
           if (validDistance) return { x, z };
         }
         attempts++;
+      }
+      return null;
+    };
+
+    // A room that sets level.npcSpawnArea ({ minX, maxX, minZ, maxZ }) starts its NPCs inside it.
+    const generateAreaPosition = (area, discRadius, existingPositions, minDistance = 4) => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const x = area.minX + Math.random() * (area.maxX - area.minX);
+        const z = area.minZ + Math.random() * (area.maxZ - area.minZ);
+        if (!gc.isPositionValid(x, z, discRadius)) continue;
+        if (existingPositions.some(pos => Math.hypot(x - pos.x, z - pos.z) < minDistance)) continue;
+        return { x, z };
       }
       return null;
     };
@@ -285,7 +302,7 @@ export class DiscSpawner {
       /* kind: */ "Barbarian",
       /* hitPoints: */ 5,
       /* skillLevel: */ 100,
-      /* imagePath: */ "images/barbarian-nobg.png",
+      /* imagePath: */ "images/barbarian-nobg.webp",
       /* canDoReboundDamage: */ false,
       /* throwPowerMultiplier: */ 1.3,
       /* mass: */ 1.5,
@@ -316,7 +333,7 @@ export class DiscSpawner {
       /* kind: */ "Wizard",
       /* hitPoints: */ 3,
       /* skillLevel: */ 100,
-      /* imagePath: */ "images/wizard-nobg.png",
+      /* imagePath: */ "images/wizard-nobg.webp",
       /* canDoReboundDamage: */ false,
       /* throwPowerMultiplier: */ 0.7,
       /* mass: */ .8,
@@ -347,7 +364,7 @@ export class DiscSpawner {
       /* kind: */ "Necromancer",
       /* hitPoints: */ 3,
       /* skillLevel: */ 100,
-      /* imagePath: */ "images/necromancer-nobg.png",
+      /* imagePath: */ "images/necromancer-nobg.webp",
       /* canDoReboundDamage: */ false,
       /* throwPowerMultiplier: */ 0.7,
       /* mass: */ .8,
@@ -378,7 +395,7 @@ export class DiscSpawner {
       /* kind: */ "Rogue",
       /* hitPoints: */ 3,
       /* skillLevel: */ 100,
-      /* imagePath: */ "images/rogue-nobg.png",
+      /* imagePath: */ "images/rogue-nobg.webp",
       /* canDoReboundDamage: */ false,
       /* throwPowerMultiplier: */ 1.0,
       /* mass: */ 0.8,
@@ -433,6 +450,17 @@ export class DiscSpawner {
       baseNpcDefinitions.push({ ...BONUS_TEMPLATES[bonusKind], name: `${bonusLabel} ${existingBonusKindCount + i + 1}` });
     }
 
+    // Mortars on the room's fixed spots, placed first so nothing spawns on them.
+    const mortars = roster.mortars
+      ? (gc.level.mortarSpots ?? []).map((spot, i) =>
+          new Mortar(gc.scene, spot.x, spot.z, `Mortar ${i + 1}`, gc, gc.discDescriptions.Mortar, roster.mortars))
+      : [];
+    for (const mortar of mortars) existingPositions.push({ x: mortar.mesh.position.x, z: mortar.mesh.position.z });
+
+    // The Pursuer's arrival is timed by how much the room has to fight.
+    gc.pursuerController?.onRoomStart(
+      baseNpcDefinitions.reduce((sum, def) => sum + def.cost, 0) + mortars.length * MORTAR_POINTS);
+
     const npcData = baseNpcDefinitions.map((def, index) => ({
       ...def,
       color: NPC_HEX_COLORS[index % NPC_HEX_COLORS.length],
@@ -463,6 +491,8 @@ export class DiscSpawner {
         position = generateOuterRingPosition(npcRadius, existingPositions, minDistance);
       } else if (isDonutLevel) {
         position = generateDonutRingPosition(npcRadius, existingPositions, minDistance);
+      } else if (gc.level.npcSpawnArea) {
+        position = generateAreaPosition(gc.level.npcSpawnArea, npcRadius, existingPositions, minDistance);
       } else {
         position = generateRandomPosition(npcRadius, existingPositions, minDistance);
       }
@@ -494,6 +524,6 @@ export class DiscSpawner {
       existingPositions.push({ x: finalX, z: finalZ });
     }
 
-    return [barbarian, wizard, necromancer, rogue].filter(Boolean).concat(npcDiscs);
+    return [barbarian, wizard, necromancer, rogue].filter(Boolean).concat(npcDiscs, mortars);
   }
 }

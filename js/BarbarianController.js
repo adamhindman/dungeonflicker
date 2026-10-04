@@ -32,6 +32,9 @@ export class BarbarianController {
 
     this.rageCharges = 0;
     this.hasMoved = false;
+    // After an ordinary throw, if he can afford a Rage his turn waits: he may
+    // Rage (for a raged throw) or end the turn himself.
+    this.rageOfferedAfterMove = false;
     // Rampage: once a raged throw is made, he throws again (still raging) for
     // as long as each throw kills something; the first throw that doesn't
     // ends the Rage.
@@ -66,7 +69,7 @@ export class BarbarianController {
     tooltipManager.register(
       rageButton,
       'barbarian_rage_used',
-      'Spend 3 charges to Rage before you throw: a mighty throw that strikes enemies again and again, 1 damage per hit. Each kill heals 1 HP, and as long as every throw kills something you throw again; the first throw that kills nothing ends the Rage. Afterwards you are Exhausted for a turn. Earn charges by killing enemies and by taking hits.'
+      'Spend 3 charges to Rage, before your throw or after it: a mighty throw that strikes enemies again and again, 1 damage per hit. Each kill heals 1 HP, and as long as every throw kills something you throw again; the first throw that kills nothing ends the Rage. Afterwards you are Exhausted for a turn. Earn charges by killing enemies and by taking hits.'
     );
     tooltipManager.register(
       this.tauntButton,
@@ -136,7 +139,11 @@ export class BarbarianController {
 
   _handleRageButtonClick() {
     const playerDisc = this.getDisc();
-    if (playerDisc && !playerDisc.dead && !playerDisc.exhausted && !this.hasMoved && this.rageCharges >= RAGE_CHARGE_COST) {
+    if (playerDisc && !playerDisc.dead && !playerDisc.exhausted && (!this.hasMoved || this.rageOfferedAfterMove) && this.rageCharges >= RAGE_CHARGE_COST) {
+      if (this.rageOfferedAfterMove) {
+        this.rageOfferedAfterMove = false;
+        playerDisc.hasThrown = false; // the Rage brings a raged throw of its own
+      }
       playerDisc.rageIsActiveForNextThrow = true;
       this.rageCharges -= RAGE_CHARGE_COST;
       playerDisc.setSpotlightIntensity(true);
@@ -169,7 +176,7 @@ export class BarbarianController {
       !currentDisc.dead &&
       !currentDisc.rageIsActiveForNextThrow &&
       !currentDisc.exhausted &&
-      !this.hasMoved &&
+      (!this.hasMoved || this.rageOfferedAfterMove) &&
       this.rageCharges >= RAGE_CHARGE_COST);
     this.gc.uiManager.updateRageButtonVisibility(visible, visible);
     this._updateTauntButton(currentDisc);
@@ -325,6 +332,12 @@ export class BarbarianController {
       this.updateEndTurnButtonVisibility();
       this.gc.updateDiscNames();
       if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(disc);
+    } else if (!this.rampaging && !disc.exhausted && this.rageCharges >= RAGE_CHARGE_COST &&
+               !this.gc.roundWon && !this.gc.gameOverState.active) {
+      // He could still Rage: wait for him to Rage or end the turn himself.
+      this.rageOfferedAfterMove = true;
+      this.updateRageButtonVisibility();
+      this.updateEndTurnButtonVisibility();
     } else {
       await this.gc._proceedToNextPlayerTurn();
     }
@@ -407,6 +420,7 @@ export class BarbarianController {
 
   onTurnEnd() {
     this.hasMoved = false;
+    this.rageOfferedAfterMove = false;
     this._slamTargets.clear();
     const disc = this.getDisc();
     const endingOwnTurn = this.gc.discs[this.gc.currentTurnIndex]?.kind === 'Barbarian';
@@ -438,6 +452,7 @@ export class BarbarianController {
 
   onLevelStart() {
     this.hasMoved = false;
+    this.rageOfferedAfterMove = false;
     this._slamTargets.clear();
   }
 
@@ -450,6 +465,7 @@ export class BarbarianController {
     this.gc.soundManager?.stopExhaustedBreath();
     this.rageCharges = 0;
     this.hasMoved = false;
+    this.rageOfferedAfterMove = false;
     this._slamTargets.clear();
     this.rampaging = false;
     this._killedThisThrow = false;

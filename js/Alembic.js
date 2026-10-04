@@ -27,7 +27,7 @@ export default class Alembic extends Disc {
             /* kind: */ "Alembic",
             /* hitPoints: */ 3,
             /* skillLevel: */ 0,
-            /* imagePath: */ "images/alembic.png",
+            /* imagePath: */ "images/alembic.webp",
             /* canDoReboundDamage: */ false,
             /* throwPowerMultiplier: */ 0,
             /* mass: */ 50, // collisions barely budge it

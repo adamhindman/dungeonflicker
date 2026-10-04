@@ -2,7 +2,7 @@ const CHARACTERS = [
   {
     kind: 'Barbarian',
     name: 'Barbarian',
-    image: '/images/barbarian-nobg.png',
+    image: '/images/barbarian-nobg.webp',
     color: '#0088ff',
     hp: 5,
     summary: 'A hulking brawler who charges into the thick of the fight.',
@@ -15,7 +15,7 @@ const CHARACTERS = [
   {
     kind: 'Wizard',
     name: 'Wizard',
-    image: '/images/wizard-nobg.png',
+    image: '/images/wizard-nobg.webp',
     color: '#00C0C0',
     hp: 3,
     summary: 'A master of the arcane who blasts foes and mends friends.',
@@ -28,7 +28,7 @@ const CHARACTERS = [
   {
     kind: 'Necromancer',
     name: 'Necromancer',
-    image: '/images/necromancer-nobg.png',
+    image: '/images/necromancer-nobg.webp',
     color: '#9944EE',
     hp: 3,
     summary: 'A dark sorcerer who commands the dead.',
@@ -41,7 +41,7 @@ const CHARACTERS = [
   {
     kind: 'Rogue',
     name: 'Rogue',
-    image: '/images/rogue-nobg.png',
+    image: '/images/rogue-nobg.webp',
     color: '#CC3355',
     hp: 4,
     summary: 'A quick, sneaky trickster with a bag full of surprises.',

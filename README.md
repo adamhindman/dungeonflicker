@@ -70,4 +70,28 @@ Ideas for the Sanctuary shop, not yet built. Already in the game: Warp Ring, Gho
 * **Swap Class** — change a character's class between rooms.
 * **Add Party Member** — a third character (needs turn order, spawning and resurrection to handle more than two).
 
+### Proposed rooms
+
+Room ideas filed for later; each still needs designing in detail.
+
+* **Powder Store** — explosive barrels around the room. Hit one hard enough, or knock something into it, and it blows, damaging and scattering everything nearby; barrels can set each other off.
+* **Ice Cave** — patches of ice where friction nearly vanishes, so discs slide much farther; heavy Wardens become hard to stop.
+* **Crumbling Floor** — floor tiles crack and fall away over time, from the edges in, so the room keeps shrinking.
+* **Flooded Crypt** — a current of water that carries every disc in it a set distance at the end of each round.
+* **Mirror Gates** — several paired portals along each wall; a disc that enters one comes out of its partner at the same speed and heading, so they can be used to cross the room (or for trick shots).
+
+### Proposed room goals
+
+So far every room's goal is to kill everything in it (or to hold out until the Pursuer opens the door). Alternatives:
+
+* **Push the block** — move a heavy block across the room while defending against attacks.
+* **Touch the points** — reach several marked spots in the room.
+* **Reach the door** — get to an open door despite obstacles and enemies in the way.
+* **Heist** — steal an item and escape.
+* **Stealth** — cross the room without being spotted by a new enemy with vision cones.
+* **Herding** — knock wandering creatures into a pen while monsters interfere.
+* **Hold the line** — keep monsters away from something (an altar, a sleeping ally, a crystal) for a number of rounds while waves arrive.
+* **Rescue** — touch the prisoners' cages to free them, then get them out; a freed prisoner might fight alongside the party.
+* **Defuse** — a big bomb with a visible countdown; someone must reach it and stay on it until the end of a round, or knock it out through the door.
+
 Enjoy playing and strategizing in Dungeonflicker!

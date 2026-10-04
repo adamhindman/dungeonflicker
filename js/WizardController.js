@@ -479,7 +479,7 @@ export class WizardController {
     this.gc.scene.add(mesh);
 
     const imageFiles = [
-      'fireball-streak-1.png', 'fireball-streak-2.png', 'fireball-streak-3.png', 'fireball-streak-4.png',
+      'fireball-streak-1.webp', 'fireball-streak-2.webp', 'fireball-streak-3.webp', 'fireball-streak-4.webp',
     ];
     const loader = new TextureLoader();
     const sprites = [];

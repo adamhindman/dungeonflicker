@@ -25,7 +25,7 @@ export default class Warden extends Disc {
             /* kind: */ "Warden",  // Explicitly set kind
             /* hitPoints: */ 6,     // Default for Wardens
             /* skillLevel: */ skillLevel,
-            /* imagePath: */ "images/warden-nobg.png", // Default for Wardens
+            /* imagePath: */ "images/warden-nobg.webp", // Default for Wardens
             /* canDoReboundDamage: */ false,
             /* throwPowerMultiplier: */ 2, // Default for Wardens
             /* mass: */ 6,               // Default for Wardens

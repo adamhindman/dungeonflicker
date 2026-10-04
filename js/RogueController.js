@@ -14,6 +14,9 @@ const SNEAK_BASE_DAMAGE = 3;          // a hit from hiding: triple the Rogue's n
 const SNEAK_BOUNCE_DEBOUNCE_MS = 80;  // one wall contact can register on two colliders
 const SNEAK_COLOR = 0xb388ff;
 const SNEAK_LABEL_COLOR = '#c9a6ff';
+// After the bomb goes off and everything it threw has stopped, wait this long
+// before the next turn, so the next disc's move doesn't look like part of the blast.
+const BOMB_AFTERMATH_PAUSE_MS = 500;
 
 export class RogueController {
   constructor(gc) {
@@ -127,11 +130,24 @@ export class RogueController {
   // ─── Button handlers ─────────────────────────────────────────────────────────
 
   async _handleEndTurnClick() {
-    if (!this.gc.canEndTurnNow()) return;
+    if (!this.gc.canEndTurnNow() || this._endingTurn) return;
     const disc = this.getDisc();
     if (!disc || disc.dead) return;
-    if (this.bomb && !this.bomb.dead) this._explodeBomb();
-    await this.gc._proceedToNextPlayerTurn();
+    this._endingTurn = true; // a second click during the bomb's aftermath mustn't end another turn
+    try {
+      await this._detonatePendingBomb();
+      await this.gc._proceedToNextPlayerTurn();
+    } finally {
+      this._endingTurn = false;
+    }
+  }
+
+  /** Sets off the bomb, if one is out, and waits for its aftermath to finish. */
+  async _detonatePendingBomb() {
+    if (!this.bomb || this.bomb.dead) return;
+    this._explodeBomb();
+    await this.gc._waitForCrusherFlingToSettle();
+    await new Promise(resolve => setTimeout(resolve, BOMB_AFTERMATH_PAUSE_MS));
   }
 
   _handleBombClick() {
@@ -341,7 +357,7 @@ export class RogueController {
 
     // If the Rogue died, end turn immediately
     if (disc.dead && disc.kind === 'Rogue') {
-      if (this.bomb && !this.bomb.dead) this._explodeBomb();
+      await this._detonatePendingBomb();
       await this.gc._proceedToNextPlayerTurn();
       return;
     }
@@ -375,7 +391,7 @@ export class RogueController {
     }
 
     // No actions left — end turn (bomb explodes first)
-    if (this.bomb && !this.bomb.dead) this._explodeBomb();
+    await this._detonatePendingBomb();
     await this.gc._proceedToNextPlayerTurn();
   }
 

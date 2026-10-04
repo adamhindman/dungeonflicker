@@ -14,7 +14,7 @@ export default class Blob extends Disc {
             /* kind: */ "Blob",
             /* hitPoints: */ 4,
             /* skillLevel: */ skillLevel,
-            /* imagePath: */ "images/gelatinous-nobg.png",
+            /* imagePath: */ "images/gelatinous-nobg.webp",
             /* canDoReboundDamage: */ false,
             /* throwPowerMultiplier: */ 1,
             /* mass: */ 1.5,

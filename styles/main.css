@@ -52,6 +52,24 @@ textarea {
     border-radius: .3rem;
 }
 
+/* "The Pursuer arrives in N rounds" (Pursuer.js), top centre */
+#pursuer-warning {
+    position: fixed;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    padding: .6rem 1.4rem;
+    background: var(--ui-bg-75);
+    border: .1rem solid rgba(190, 120, 255, 0.35);
+    border-radius: .3rem;
+    color: #e6ccff;
+    font-size: 1.6rem;
+    letter-spacing: .05em;
+    pointer-events: none;
+    user-select: none;
+}
+
 #disc-names {
     position: fixed;
     top: 2rem;

@@ -28,6 +28,7 @@ import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
 import ExplosionParticles from './ExplosionParticles.js';
 import PitEruption from './PitEruption.js';
+import { PursuerController } from './Pursuer.js';
 
 // Flick tuning: drag length (screen px × camera distance) → throw speed.
 const THROW_DRAG_THRESHOLD = 2;    // drags shorter than this (in world-drag units) don't throw
@@ -164,6 +165,8 @@ export default class GameController {
         RoguePotion: "A healing flask thrown by the Rogue. Restores 2 HP to the first ally it touches.",
         Paracelsus: "An alchemist who grows homunculi in the image of his enemies, in alembics around the room. He avoids a fair fight: he flees anyone who comes close, and blasts away anyone who lingers near him. His pendant shields him once he has taken 2 damage in a round.",
         Homunculus: "A small, imperfect copy of one of the party, grown in Paracelsus's flasks. 2 HP, 1 damage.",
+        Mortar: "A siege engine dug in where it stands. It marks a circle on the floor, then shells it on its next turn: 2 damage and a hard shove to everything inside, friend or foe. 3 HP; in some rooms, beating it turns it on the monsters.",
+        Pursuer: "An inconceivable being from another dimension who arrives when you have stayed too long in this room. It is implacable and pitiless. It cannot be persuaded or destroyed, only fled. It wants you to leave or die.",
         Alembic: "One of Paracelsus's flasks. Grows 1–3 homunculi every round until it's broken. The flasks break when he falls, but the homunculi fight on."
     };
 
@@ -242,6 +245,7 @@ export default class GameController {
     this.blastRings = new BlastRings(this.scene); // Paracelsus's Radius Blast shockwaves
     this.explosionParticles = new ExplosionParticles(this.scene); // grenade and lava-pit blasts
     this.pitEruption = new PitEruption(this); // the Donut room's erupting lava pit
+    this.pursuerController = new PursuerController(this); // comes through the door if a room drags on
 
     // Camera, renderer, and OrbitControls are owned by CameraController.
     // After init(), gc.camera / gc.renderer / gc.controls point at those same objects
@@ -452,6 +456,9 @@ export default class GameController {
     // so they appear in the Resurrect Ally target list without waiting for the animation loop.
     this.updateAllDiscDeadStates(true);
 
+    // Discs with an opening move make it now that the room is set (mortars mark their first targets)
+    for (const disc of this.discs) disc.onRoomStart?.();
+
     // Initialize all spotlight intensities to inactive state
     this.discs.forEach(disc => {
       disc.setSpotlightIntensity(false);
@@ -526,8 +533,8 @@ export default class GameController {
 
     this.necromancerController?.handlePointerHover(event);
 
-    // Highlight the door frame when the round is won and the door is open
-    if (this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+    // Highlight the door frame when the round is won and the door is open (and clicking it works)
+    if (this.level && this.level.doorIsOpen && !this.pursuerController?.isPresent && this.level.doorFrameMeshes.length) {
       this.raycaster.setFromCamera(this.mouse, this.camera);
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       const isHovered = hits.length > 0;
@@ -586,7 +593,8 @@ export default class GameController {
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
     // If the round is won and the door is open, clicking anywhere on the doorway loads the next room
-    if (this.roundWon && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+    // (not while the Pursuer is here: then someone has to actually get through it)
+    if (this.roundWon && !this.pursuerController?.isPresent && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       if (hits.length > 0) {
         this.startNextLevel(this.currentDisc);
@@ -1260,7 +1268,8 @@ clamp(value, min, max) {
         if (!disc.dead) {
           alivePlayerDiscs++;
         }
-      } else if (disc.type === "NPC" && disc.kind !== 'Fireball') {
+      } else if (disc.type === "NPC" && disc.kind !== 'Fireball' && disc.kind !== 'Pursuer' && !disc.captured &&
+                 !(disc.kind === 'Mortar' && !disc.config.requiredToClear)) {
         npcDiscsExist = true;
         // Animated dead discs under Necromancer control don't count as alive NPCs
         if (!disc.dead && !disc.isAnimatedDead) {
@@ -1280,6 +1289,7 @@ clamp(value, min, max) {
     if (npcDiscsExist && aliveNpcDiscs === 0 && alivePlayerDiscs > 0) {
       if (!this.roundWon) {
         this.roundWon = true;
+        this.pursuerController?.onRoomCleared();
         if (this.necromancerController) {
           this.necromancerController?.cancelCarrionFeast();
         }
@@ -1324,6 +1334,8 @@ clamp(value, min, max) {
   /** Returns the room shape for a given 1-based level number. */
   _openLevelDoor() {
     if (!this.level) return;
+    // Already open (e.g. the Pursuer came through it): no second unlock sound
+    if (this.level.doorIsOpen || this.level._doorAnimating) return;
     if (this.soundManager) {
       const dc = this.level._doorOpeningCenter;
       const pos = dc ? new Vector3(dc.x, 0, dc.z) : new Vector3();
@@ -1363,6 +1375,7 @@ clamp(value, min, max) {
     this._sanctuaryDoorTimer = null;
     this.bossIntro?.close();
     this.pitEruption?.reset();
+    this.pursuerController?.reset();
     this.soundManager?.stopVolcanoLoop();
     this.explosionParticles?.clear();
     this.sanctuaryShrine?.teardown();
@@ -1433,7 +1446,7 @@ clamp(value, min, max) {
     // Testing: the first room can be forced to a given room type.
     if (n === 1 && FIRST_ROOM_OVERRIDE) return FIRST_ROOM_OVERRIDE;
     // Level sequence cycles through the authored room types, ending with the boss.
-    const sequence = ['rect', 'circle', 'crusher', 'donut', 'bullseye', 'boss'];
+    const sequence = ['rect', 'circle', 'crusher', 'donut', 'siege', 'bullseye', 'boss'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1876,7 +1889,7 @@ clamp(value, min, max) {
                   // Reset textured faces to white so tints (e.g. low-HP pulse) clear when no longer active.
                   child.material.color.set(child.material.map ? 0xffffff : child.material.color.getHex());
                 }
-                child.material.opacity = disc.isGhost ? GHOST_OPACITY : disc.isHidden ? HIDDEN_OPACITY : 0.9;
+                child.material.opacity = disc.isGhost ? GHOST_OPACITY : disc.isHidden ? HIDDEN_OPACITY : (disc.baseOpacity ?? 0.9);
                 child.material.transparent = true;
               }
             });
@@ -1887,7 +1900,7 @@ clamp(value, min, max) {
             } else {
               disc.mesh.material.color.set(disc.mesh.material.color.getHex());
             }
-            disc.mesh.material.opacity = disc.isGhost ? GHOST_OPACITY : disc.isHidden ? HIDDEN_OPACITY : 0.9;
+            disc.mesh.material.opacity = disc.isGhost ? GHOST_OPACITY : disc.isHidden ? HIDDEN_OPACITY : (disc.baseOpacity ?? 0.9);
             disc.mesh.material.transparent = true;
           }
         }
@@ -1902,6 +1915,7 @@ clamp(value, min, max) {
     this.blastRings?.update(deltaTime);
     this.explosionParticles?.update(deltaTime);
     this.pitEruption?.update(deltaTime);
+    this.pursuerController?.update(deltaTime);
     if (!this.bossIntro?.holdsChatter) {
       for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
     }
@@ -2333,7 +2347,8 @@ disc.isCurrentlyInLavaState = true;
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' &&
       d.kind !== 'Bomb' && d.kind !== 'RoguePotion' && d.kind !== 'Fireball'
     );
-    if (this.level && !this.roundWon && !this.level.doorIsOpen && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
+    // (The Pursuer opens the door when it arrives; the room carries on regardless.)
+    if (this.level && !this.roundWon && (!this.level.doorIsOpen || this.pursuerController?.isPresent) && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
       // End of round: grant bonus charge to Rogue
       this.rogueController?.onRoundEnd();
       const ringData = this.level.stepRings();
@@ -2398,6 +2413,9 @@ disc.isCurrentlyInLavaState = true;
 
       // The Donut room's lava pit may erupt, flinging its contents back onto the ring.
       await this.pitEruption.onRoundStart();
+
+      // Counts down to the Pursuer, and brings it in when it's due.
+      await this.pursuerController.onRoundStart();
     }
 
     if (this.checkGameOverConditions()) {
@@ -2614,7 +2632,7 @@ disc.isCurrentlyInLavaState = true;
     }
 
     this.discInfoNameElement.innerText = disc.discName;
-    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead', 'Knife'];
+    const noHpKinds = ['Bomb', 'RoguePotion', 'Orb', 'HealingOrb', 'AnimatedDead', 'Knife', 'Pursuer'];
     const showHp = !noHpKinds.includes(disc.kind);
     const currentHp = showHp ? (Number(disc.hitPoints) || 0) : 0;
     const rawMaxHp = disc.maxHitPoints;

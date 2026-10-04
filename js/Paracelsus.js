@@ -52,7 +52,7 @@ export default class Paracelsus extends Disc {
       /* kind: */ "Paracelsus",
       /* hitPoints: */ 6,
       /* skillLevel: */ 100,
-      /* imagePath: */ "images/paracelsus-sm.png",
+      /* imagePath: */ "images/paracelsus-sm.webp",
       /* canDoReboundDamage: */ false,
       /* throwPowerMultiplier: */ 1,
       /* mass: */ 1.2,

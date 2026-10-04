@@ -44,7 +44,8 @@ export class PhysicsEngine {
 
         // Check door entry BEFORE the boundary-bounce so a disc heading into
         // the open doorway isn't pushed back before the transition fires.
-        if (gc.roundWon && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion" && disc.kind !== "Fireball") {
+        // While the Pursuer is here its open door is an escape, cleared room or not.
+        if ((gc.roundWon || gc.pursuerController?.isPresent) && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion" && disc.kind !== "Fireball") {
           if (gc.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
             await gc.startNextLevel(disc);
             return true; // signal animate() to exit early
@@ -298,6 +299,8 @@ export class PhysicsEngine {
         if (d1.isGhost || d2.isGhost) continue;
         // Discs flung from the lava pit fly over everything
         if (gc.pitEruption?.isAirborne(d1) || gc.pitEruption?.isAirborne(d2)) continue;
+        // The Pursuer glides through everything on its own turn (it hurts whoever it touches itself)
+        if (gc.pursuerController?.isGliding(d1) || gc.pursuerController?.isGliding(d2)) continue;
 
         // Throwing Knife: everything passes over it, except that a knife in
         // flight strikes the first enemy it touches.
@@ -341,9 +344,10 @@ export class PhysicsEngine {
           continue;
         }
 
-        // Fireballs pass through their caster, AnimatedDead, and dead discs; they deflect off other NPCs
-        if ((d1.kind === 'Fireball' && (d2 === d1.casterDisc || d2.kind === 'AnimatedDead' || d2.dead)) ||
-            (d2.kind === 'Fireball' && (d1 === d2.casterDisc || d1.kind === 'AnimatedDead' || d1.dead))) {
+        // Fireballs pass through their caster and dead discs; they deflect off other NPCs
+        // (and burn Animated Dead like any other party-side disc)
+        if ((d1.kind === 'Fireball' && (d2 === d1.casterDisc || d2.dead)) ||
+            (d2.kind === 'Fireball' && (d1 === d2.casterDisc || d1.dead))) {
           continue;
         }
 
@@ -457,9 +461,10 @@ export class PhysicsEngine {
 
             // Apply damage rules — both discs must be alive (Bombs deal no disc-collision damage)
             if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead && d1.kind !== 'Bomb' && d2.kind !== 'Bomb') {
-              // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed)
-              if ((d1.kind === 'AnimatedDead' && !d1.dead && d2.type === 'NPC' && !d2.dead) ||
-                  (d2.kind === 'AnimatedDead' && !d2.dead && d1.type === 'NPC' && !d1.dead)) {
+              // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed).
+              // A fireball is left to the fireball case below, which burns it and is used up.
+              if ((d1.kind === 'AnimatedDead' && !d1.dead && d2.type === 'NPC' && !d2.dead && d2.kind !== 'Fireball') ||
+                  (d2.kind === 'AnimatedDead' && !d2.dead && d1.type === 'NPC' && !d1.dead && d1.kind !== 'Fireball')) {
                 const animated = d1.kind === 'AnimatedDead' ? d1 : d2;
                 const npc      = d1.kind === 'AnimatedDead' ? d2 : d1;
 

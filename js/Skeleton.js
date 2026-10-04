@@ -25,7 +25,7 @@ export default class Skeleton extends Disc {
             /* kind: */ "Skeleton", // Explicitly set kind
             /* hitPoints: */ 2,     // Default for Skeletons
             /* skillLevel: */ skillLevel,
-            /* imagePath: */ "images/skeleton-nobg.png", // Default for Skeletons
+            /* imagePath: */ "images/skeleton-nobg.webp", // Default for Skeletons
             /* canDoReboundDamage: */ false,
             /* throwPowerMultiplier: */ 0.5, // Default for Skeletons
             /* mass: */ 0.8,               // Default for Skeletons

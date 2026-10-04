@@ -11,6 +11,7 @@ import { loadDonut, getDonutTerrainHeight, getDonutTerrainSlopeForce, disposeDon
 import { loadCrusher, setCrusherLength, stepCrushers, updateCrusherAnimation, disposeCrusher } from "./levels/crusher.js";
 import { loadSanctuary } from "./levels/sanctuary.js";
 import { loadBoss } from "./levels/boss.js";
+import { loadSiege } from "./levels/siege.js";
 
 // Keys in Level.walls for meshes that sit inside the room rather than forming
 // its boundary (see getAllWalls(boundaryOnly)).
@@ -85,6 +86,8 @@ export default class Level {
     this.pcStartSlots = null;       // [{ x, z }] fixed party start positions, or null = random
     this.bossStart = null;          // { x, z } where the boss starts
     this.spawnerSpots = [];         // [{ x, z }] of the boss's homunculus spawners
+    this.mortarSpots = [];          // [{ x, z }] where a room's mortars stand (see ROOM_ROSTERS)
+    this.npcSpawnArea = null;       // { minX, maxX, minZ, maxZ } a room's monsters start inside; null = anywhere
     this.homunculiGrown = 0;        // homunculi grown so far in this room (names them)
     // Any room: its own default camera view { distance, targetZ }, or null = standard
     this.cameraView = null;
@@ -273,6 +276,8 @@ export default class Level {
       this._loadCrusher();
     } else if (shape === 'sanctuary') {
       this._loadSanctuary();
+    } else if (shape === 'siege') {
+      loadSiege.call(this);
     } else if (shape === 'boss') {
       loadBoss.call(this);
     } else {
@@ -338,8 +343,9 @@ export default class Level {
    * TODO: When supporting irregular walls, filter to walls large enough for
    *       the door before choosing randomly.
    *
-   * @param {{length: number, z: number}} [northWall] - for irregular rooms, the
-   *   length and z of a north wall (centred on x = 0) that isn't the field edge.
+   * @param {{length: number, z: number, x?: number}} [northWall] - for irregular
+   *   rooms, the length, z and centre x (default 0) of a north-facing wall that
+   *   isn't the field edge; the door is centred in it.
    */
   _createDoor(northWall = null) {
     // Always place the door on the north wall — opposite the camera's default
@@ -364,7 +370,7 @@ export default class Level {
     const wallPos = {
       x: this.doorWall === 'east'  ?  this.fieldWidth  / 2
        : this.doorWall === 'west'  ? -this.fieldWidth  / 2
-       : 0,
+       : (northWall?.x ?? 0),
       z: northWall                 ?  northWall.z
        : this.doorWall === 'north' ? -this.fieldDepth / 2
        : this.doorWall === 'south' ?  this.fieldDepth / 2
@@ -423,7 +429,7 @@ export default class Level {
       for (const sign of [-1, 1]) {
         const geo = new BoxGeometry(segLen, wallH, wallThick);
         this.applyWallUVs(geo, segLen, wallH, wallThick);
-        const mesh = addWallMesh(geo, sign * segOffset, wallH / 2, wallPos.z);
+        const mesh = addWallMesh(geo, wallPos.x + sign * segOffset, wallH / 2, wallPos.z);
         this.walls[`${this.doorWall}_${sign > 0 ? 'right' : 'left'}`] = mesh;
       }
 
@@ -431,20 +437,20 @@ export default class Level {
       for (const sign of [-1, 1]) {
         const geo = new BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
         this.applyWallUVs(geo, postWidth, DOOR_HEIGHT, frameThick);
-        addFrameMesh(geo, sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, wallPos.z);
+        addFrameMesh(geo, wallPos.x + sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, wallPos.z);
       }
 
       // ── Frame: lintel (top beam, same thickness as side posts) ───────────────
       const lintelW = DOOR_WIDTH + postWidth * 2;
       const lintelGeo = new BoxGeometry(lintelW, lintelH, frameThick);
       this.applyWallUVs(lintelGeo, lintelW, lintelH, frameThick);
-      addFrameMesh(lintelGeo, 0, DOOR_HEIGHT + lintelH / 2, wallPos.z);
+      addFrameMesh(lintelGeo, wallPos.x, DOOR_HEIGHT + lintelH / 2, wallPos.z);
 
       // ── Plain stone wall above the frame ──────────────────────────────────
       if (overDoorH > 0) {
         const overGeo = new BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
         this.applyWallUVs(overGeo, DOOR_WIDTH, overDoorH, wallThick);
-        const overMesh = addWallMesh(overGeo, 0, DOOR_HEIGHT + lintelH + overDoorH / 2, wallPos.z);
+        const overMesh = addWallMesh(overGeo, wallPos.x, DOOR_HEIGHT + lintelH + overDoorH / 2, wallPos.z);
         this.walls[`${this.doorWall}_above`] = overMesh;
       }
 
@@ -454,7 +460,7 @@ export default class Level {
       const voidMesh = new Mesh(voidGeo, voidMat);
       // Place slightly outside the wall so it sits behind the slab
       const voidSign = this.doorWall === 'north' ? -1 : 1;
-      voidMesh.position.set(0, DOOR_HEIGHT / 2, wallPos.z + voidSign * 0.4);
+      voidMesh.position.set(wallPos.x, DOOR_HEIGHT / 2, wallPos.z + voidSign * 0.4);
       this.scene.add(voidMesh);
       this.doorFrameMeshes.push(voidMesh);
       this._voidMesh = voidMesh;
@@ -464,7 +470,7 @@ export default class Level {
       const slabGeo = new BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
       this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
       this.doorSlab = new Mesh(slabGeo, this._slabMat);
-      this.doorSlab.position.set(0, DOOR_HEIGHT / 2, wallPos.z);
+      this.doorSlab.position.set(wallPos.x, DOOR_HEIGHT / 2, wallPos.z);
       this.scene.add(this.doorSlab);
 
     } else {
@@ -1084,6 +1090,8 @@ export default class Level {
     this.pcStartSlots = null;
     this.bossStart = null;
     this.spawnerSpots = [];
+    this.mortarSpots = [];
+    this.npcSpawnArea = null;
     this.homunculiGrown = 0;
     this.cameraView = null;
     disposeDonut.call(this);

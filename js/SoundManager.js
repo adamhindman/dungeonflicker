@@ -18,6 +18,9 @@ const DEATH_CRY_URLS = soundsIn('cries');
 const LAVA_HISS_URLS = soundsIn('fire', 'hiss');
 const LAVA_BURST_URLS = soundsIn('fire', 'burst-');
 
+// Mortars: a shot as one fires.
+const MORTAR_FIRE_URLS = soundsIn('mortar', 'weapons-sci-fi');
+
 // Homunculus voices: a pool per event, discovered from public/sounds/homunculi/<event>/.
 const HOMUNCULUS_SOUND_URLS = {
   attack: soundsIn('homunculi/attack'),
@@ -85,9 +88,11 @@ export class SoundManager {
     this.deathCryBuffers = [];
     this.lavaHissBuffers = [];
     this.lavaBurstBuffers = [];
+    this.mortarFireBuffers = [];
     this.volcanoLoopBuffer = null;
     this._volcanoLoop = null;          // the Donut room's background rumble while it loops
     this._volcanoLoopPending = false;  // start it once the buffer loads
+    this.pursuerEntersBuffer = null;
     this.homunculusBuffers = { attack: [], pain: [], death: [], idle: [] }; // filled by loadHomunculusSounds
     this._homunculusSoundsRequested = false;
     this.gameOverBuffer = null;
@@ -187,10 +192,15 @@ export class SoundManager {
     Promise.all(LAVA_BURST_URLS.map(url => load(url))).then(buffers => {
       this.lavaBurstBuffers = buffers.filter(Boolean);
     });
+    Promise.all(MORTAR_FIRE_URLS.map(url => load(url))).then(buffers => {
+      this.mortarFireBuffers = buffers.filter(Boolean);
+    });
     load('/sounds/fire/volcano-loop.mp3').then(buffer => {
       this.volcanoLoopBuffer = buffer || null;
       if (this._volcanoLoopPending) this.startVolcanoLoop();
     });
+    // Opus: browsers that can't decode it (some Safari versions) just go without
+    load('/sounds/atmosphere/pursuer-enters.opus').then(buffer => { this.pursuerEntersBuffer = buffer || null; });
     load('/sounds/energy/teleport.mp3').then(buffer => { this.teleportBuffer = buffer || null; });
     Promise.all([
       load('/sounds/menu/ui-medieval-collect-loot-light-01.mp3'),
@@ -639,6 +649,11 @@ export class SoundManager {
     this._play(this.lavaBurstBuffers, position, 1.0);
   }
 
+  /** A mortar fires: one of the shot sounds, at random. */
+  playMortarFire(position) {
+    this._play(this.mortarFireBuffers, position, 1.0);
+  }
+
   /**
    * Donut room: loops the volcano rumble under the music until
    * stopVolcanoLoop(). Starts once the sound has loaded if it hasn't yet.
@@ -659,6 +674,11 @@ export class SoundManager {
     this._volcanoLoopPending = false;
     if (this._volcanoLoop?.isPlaying) this._volcanoLoop.stop();
     this._volcanoLoop = null;
+  }
+
+  /** The Pursuer has come in through the door and onto the field: played once. */
+  playPursuerEnters() {
+    this._playBuffer(this.pursuerEntersBuffer, 0.5);
   }
 
   playBlobHit(position) {
