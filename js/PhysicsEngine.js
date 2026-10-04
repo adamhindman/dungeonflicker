@@ -1,5 +1,7 @@
 import { Vector3 } from 'three';
 
+const _columnPos = new Vector3(); // scratch for round columns' world positions
+
 /**
  * Handles all per-frame physics: disc movement, wall/obstacle/boundary
  * collision, disc-to-disc impulse resolution, and all damage-on-collision rules.
@@ -63,9 +65,14 @@ export class PhysicsEngine {
         if (hitBoundary) this._onWallBounce(disc);
 
         // Ghost Ring discs only collide with the room's outer walls.
+        // Round columns (userData.colliderRadius) collide as the circle they are,
+        // not as the square box around them, whose corners act as invisible walls.
         const walls = gc.level.getAllWalls(!!disc.isGhost);
         walls.forEach((wall) => {
-          const hitWall = disc.handleCollisionWithBox(wall, bounceDamping);
+          const radius = wall.userData?.colliderRadius;
+          const hitWall = radius
+            ? this._collideWithColumn(disc, wall.getWorldPosition(_columnPos), radius, bounceDamping)
+            : disc.handleCollisionWithBox(wall, bounceDamping);
           if (hitWall && gc.soundManager && disc.velocity.length() > 0.05) {
             gc.soundManager.playBounce(disc.mesh.position.clone());
           }
@@ -397,7 +404,7 @@ export class PhysicsEngine {
           const corpse = necro === d1 ? d2 : necro === d2 ? d1 : null;
           const isNecromancerCorpse = corpse && corpse.kind === 'Necromancer';
           if (necro && corpse && necro.carrionFeastActive && corpse.dead && !isNecromancerCorpse && !corpse.isDissolving) {
-            necro.restoreHealth(1);
+            necro.restoreHealth(2);
             corpse.startDissolve(2);
             if (gc.necromancerController) gc.necromancerController.carrionFeastAteThisTurn = true;
             if (gc.uiManager) gc.uiManager.updateCurrentTurnDiscName(necro);
@@ -727,6 +734,27 @@ export class PhysicsEngine {
   }
 
   /** `disc` bounced off a wall or obstacle: feeds Sneak Attack and Wall Slam. */
+  /**
+   * Pushes `disc` out of a round column at `pos` (world space) of `radius` and
+   * bounces it off. Returns true if it bounced (it was moving into the column).
+   */
+  _collideWithColumn(disc, pos, radius, bounceDamping) {
+    const dx = disc.mesh.position.x - pos.x;
+    const dz = disc.mesh.position.z - pos.z;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const minDist = disc.radius + radius;
+    if (dist >= minDist || dist < 0.001) return false;
+    const nx = dx / dist;
+    const nz = dz / dist;
+    disc.mesh.position.x = pos.x + nx * minDist;
+    disc.mesh.position.z = pos.z + nz * minDist;
+    const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+    if (vDotN >= 0) return false;
+    disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+    disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+    return true;
+  }
+
   _onWallBounce(disc) {
     const gc = this.gc;
     if (gc.rogueController?.isSneakAttackThrow && disc === gc.thrownDisc) {

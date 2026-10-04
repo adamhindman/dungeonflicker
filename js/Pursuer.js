@@ -79,7 +79,7 @@ export class PursuerController {
   constructor(gc) {
     this.gc = gc;
     this.pursuer = null;      // the disc, once it has arrived
-    this._arrivalRound = null; // room round it arrives at; null = never (Sanctuary, boss, cleared)
+    this._arrivalRound = null; // room round it arrives at; null = never (Sanctuary, boss) or already here
     this._round = 1;           // the room's current round
     this._glide = null;        // { disc, ... } while it's moving
     this._warningEl = null;
@@ -100,13 +100,6 @@ export class PursuerController {
     this.reset();
     this._arrivalRound = ARRIVAL_ROUND_OVERRIDE ??
       ARRIVAL_BASE_ROUNDS + Math.round(enemyPoints / POINTS_PER_ROUND);
-    this._refreshWarning();
-  }
-
-  /** Every enemy is dead before it came: it never will. */
-  onRoomCleared() {
-    if (this.isPresent) return;
-    this._arrivalRound = null;
     this._refreshWarning();
   }
 
@@ -158,8 +151,11 @@ export class PursuerController {
     this.pursuer = pursuer;
     gc.updateDiscNames();
     gc._updateSpotlights();
-    level.openDoor();
-    gc.soundManager?.playDoorUnlock(new Vector3(door.x, 0, door.z));
+    // The door may already be open (the room was cleared): then no unlock sound
+    if (!level.doorIsOpen && !level._doorAnimating) {
+      level.openDoor();
+      gc.soundManager?.playDoorUnlock(new Vector3(door.x, 0, door.z));
+    }
 
     // Glide in from the doorway toward the middle of the room.
     const inward = new Vector3(-door.x, 0, -door.z);

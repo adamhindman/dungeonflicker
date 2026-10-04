@@ -259,6 +259,7 @@ export function loadDonut() {
     this.applyCylinderUVs(geo, COL_R, wallH);
     const mesh = new Mesh(geo, this._getObstacleMaterial());
     mesh.position.set(x, MED_Y + wallH / 2, z);
+    mesh.userData.colliderRadius = COL_R; // collides as a circle, not its square box
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     this.scene.add(mesh);

@@ -535,8 +535,9 @@ export default class GameController {
 
     this.necromancerController?.handlePointerHover(event);
 
-    // Highlight the door frame when the round is won and the door is open (and clicking it works)
-    if (this.level && this.level.doorIsOpen && !this.pursuerController?.isPresent && this.level.doorFrameMeshes.length) {
+    // Highlight the door frame when the round is won and the door is open (when clicking it works;
+    // a door the Pursuer opened in an unfinished room isn't clickable)
+    if (this.roundWon && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
       this.raycaster.setFromCamera(this.mouse, this.camera);
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       const isHovered = hits.length > 0;
@@ -594,9 +595,9 @@ export default class GameController {
     this.mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    // If the round is won and the door is open, clicking anywhere on the doorway loads the next room
-    // (not while the Pursuer is here: then someone has to actually get through it)
-    if (this.roundWon && !this.pursuerController?.isPresent && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+    // If the round is won and the door is open, clicking anywhere on the doorway loads the next room,
+    // Pursuer or not. (Fleeing an unfinished room means actually getting someone through the door.)
+    if (this.roundWon && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       if (hits.length > 0) {
         this.startNextLevel(this.currentDisc);
@@ -1298,7 +1299,6 @@ clamp(value, min, max) {
     if (npcDiscsExist && aliveNpcDiscs === 0 && alivePlayerDiscs > 0) {
       if (!this.roundWon) {
         this.roundWon = true;
-        this.pursuerController?.onRoomCleared();
         if (this.necromancerController) {
           this.necromancerController?.cancelCarrionFeast();
         }
@@ -2426,8 +2426,11 @@ disc.isCurrentlyInLavaState = true;
 
       // The Donut room's lava pit may erupt, flinging its contents back onto the ring.
       await this.pitEruption.onRoundStart();
+    }
 
-      // Counts down to the Pursuer, and brings it in when it's due.
+    // Counts down to the Pursuer and brings it in when it's due, cleared room or
+    // not: lingering after the fight is lingering too.
+    if (this.level && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
       await this.pursuerController.onRoundStart();
     }
 

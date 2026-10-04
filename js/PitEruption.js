@@ -11,6 +11,8 @@ const FLIGHT_SECONDS = 1.1;
 const ARC_HEIGHT = 7;         // peak height of the flight above the higher end
 const SPIN_TURNS = 2;         // whole turns each disc spins on the way
 const LANDING_MARGIN = 1.5;   // keep landings this far from the pit's edge and the walls
+// Fire Elementals shrug off the lava itself, but being flung out of it hurts.
+const FIRE_ELEMENTAL_EJECTION_DAMAGE = 1;
 // Kinds that never get thrown: short-lived projectiles and the Wizard's orbs.
 const NOT_EJECTED = ['Orb', 'HealingOrb', 'Fireball', 'Bomb'];
 
@@ -131,6 +133,11 @@ export default class PitEruption {
         this._land(flight);
         this._flights.splice(this._flights.indexOf(flight), 1);
         this.gc.soundManager?.playBounce(disc.mesh.position.clone());
+        if (disc.kind === 'FireElemental' && !disc.dead) {
+          disc.takeHit(FIRE_ELEMENTAL_EJECTION_DAMAGE, null);
+          this.gc.updateAllDiscDeadStates();
+          this.gc.updateDiscNames();
+        }
       }
     }
     if (this._flights.length === 0 && this._onAllLanded) {

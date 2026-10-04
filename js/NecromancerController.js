@@ -62,7 +62,7 @@ export class NecromancerController {
     tooltipManager.register(
       this.carrionFeastButton,
       'carrion_feast_button_clicked',
-      'Spend 2 mana to activate. Feast on corpses each turn to keep it active. Each corpse devoured earns 1 HP.'
+      'Spend 2 mana to activate. Feast on corpses each turn to keep it active. Each corpse devoured earns 2 HP.'
     );
   }
 

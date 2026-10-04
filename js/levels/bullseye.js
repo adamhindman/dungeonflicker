@@ -104,6 +104,7 @@ export function loadBullseye() {
       this.applyCylinderUVs(geo, COL_RAD, wallH);
       const mesh = new Mesh(geo, this._getObstacleMaterial());
       mesh.position.set(cx, wallH / 2, cz);
+      mesh.userData.colliderRadius = COL_RAD; // collides as a circle, not its square box
       mesh.castShadow    = true;
       mesh.receiveShadow = true;
       group.add(mesh);
