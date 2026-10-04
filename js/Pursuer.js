@@ -167,8 +167,10 @@ export class PursuerController {
       const z = door.z + inward.z * depth;
       if (this._isFreeSpot(pursuer, x, z)) entry = { x, z };
     }
-    if (entry) await this._runGlide({ disc: pursuer, target: entry, catches: false });
-    if (this.pursuer === pursuer) gc.soundManager?.playPursuerEnters(); // it's in (unless the room was left meanwhile)
+    if (entry) {
+      gc.soundManager?.playPursuerMove(pursuer.mesh.position.clone());
+      await this._runGlide({ disc: pursuer, target: entry, catches: false });
+    }
   }
 
   /**
@@ -176,6 +178,7 @@ export class PursuerController {
    * it hasn't touched yet this turn, hurting and shoving each one it touches.
    */
   async glideAtParty(disc, distance) {
+    this.gc.soundManager?.playPursuerMove(disc.mesh.position.clone());
     await this._runGlide({ disc, remaining: distance, catches: true });
     await this.gc._waitForCrusherFlingToSettle(); // let the shoved come to rest
   }

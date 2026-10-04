@@ -17,7 +17,7 @@ const EXHAUSTED_HIT_DAMAGE = 1;
 // Taunt: costs this much to switch on, then stays on until switched off.
 // Enemies whose centre is within TAUNT_RADIUS of his must attack him.
 const TAUNT_CHARGE_COST = 1;
-const TAUNT_RADIUS = 12;
+const TAUNT_RADIUS = 16;
 const TAUNT_GLOW_RGB = [255, 68, 34];
 const TAUNT_GLOW_OPACITY = 1;   // overall strength (pulses between 50% and 100% of it)
 const TAUNT_GLOW_OUTER = 1.15;  // the glow fades out by this multiple of the radius

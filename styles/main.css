@@ -68,6 +68,13 @@ textarea {
     text-shadow: 0 0 .6rem #000, 0 0 1.2rem #000, 0 .2rem .3rem #000;
     pointer-events: none;
     user-select: none;
+    /* Fades in when the countdown first appears; later rounds just change the number */
+    animation: pursuer-warning-fade-in 3000ms ease-in both;
+}
+
+@keyframes pursuer-warning-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
 }
 
 #disc-names {

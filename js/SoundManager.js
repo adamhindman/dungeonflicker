@@ -92,7 +92,7 @@ export class SoundManager {
     this.volcanoLoopBuffer = null;
     this._volcanoLoop = null;          // the Donut room's background rumble while it loops
     this._volcanoLoopPending = false;  // start it once the buffer loads
-    this.pursuerEntersBuffer = null;
+    this.pursuerMoveBuffer = null;
     this.homunculusBuffers = { attack: [], pain: [], death: [], idle: [] }; // filled by loadHomunculusSounds
     this._homunculusSoundsRequested = false;
     this.gameOverBuffer = null;
@@ -200,7 +200,7 @@ export class SoundManager {
       if (this._volcanoLoopPending) this.startVolcanoLoop();
     });
     // Opus: browsers that can't decode it (some Safari versions) just go without
-    load('/sounds/atmosphere/pursuer-enters.opus').then(buffer => { this.pursuerEntersBuffer = buffer || null; });
+    load('/sounds/atmosphere/pursuer-move.opus').then(buffer => { this.pursuerMoveBuffer = buffer || null; });
     load('/sounds/energy/teleport.mp3').then(buffer => { this.teleportBuffer = buffer || null; });
     Promise.all([
       load('/sounds/menu/ui-medieval-collect-loot-light-01.mp3'),
@@ -676,9 +676,9 @@ export class SoundManager {
     this._volcanoLoop = null;
   }
 
-  /** The Pursuer has come in through the door and onto the field: played once. */
-  playPursuerEnters() {
-    this._playBuffer(this.pursuerEntersBuffer, 0.5);
+  /** The Pursuer starts one of its moves. */
+  playPursuerMove(position) {
+    if (this.pursuerMoveBuffer) this._play([this.pursuerMoveBuffer], position, 1.0);
   }
 
   playBlobHit(position) {
