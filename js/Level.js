@@ -80,9 +80,11 @@ export default class Level {
     this.floorRects = null;         // walkable rects for non-rectangular rooms; null = whole field
     this.altarPosition = null;      // { x, z } of the Sanctuary's resurrection prop
     this.shopPositions = null;      // [{ x, z }] of the Sanctuary's shop items
+    this.healingPosition = null;    // { x, z } of the Sanctuary's healing font
     // Boss room support
     this.isBossRoom = false;
     this.arcWall = null;            // { cx, cz, r }: circle the curved far wall lies on
+    this.boundaryEdges = null;      // [{ nx, nz, distance }]: a polygon room's outer edges, for physics
     this.pcStartSlots = null;       // [{ x, z }] fixed party start positions, or null = random
     this.bossStart = null;          // { x, z } where the boss starts
     this.spawnerSpots = [];         // [{ x, z }] of the boss's homunculus spawners
@@ -1085,8 +1087,10 @@ export default class Level {
     this.floorRects = null;
     this.altarPosition = null;
     this.shopPositions = null;
+    this.healingPosition = null;
     this.isBossRoom = false;
     this.arcWall = null;
+    this.boundaryEdges = null;
     this.pcStartSlots = null;
     this.bossStart = null;
     this.spawnerSpots = [];

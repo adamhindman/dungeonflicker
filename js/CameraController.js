@@ -86,20 +86,9 @@ export class CameraController {
     // Prevent camera from going below ~15 degrees from horizontal
     this.controls.maxPolarAngle = (Math.PI / 2) - (25 * Math.PI / 180);
 
-    // Restore saved free-cam state from a previous session
-    try {
-      const raw = localStorage.getItem('dungeonflicker_camera');
-      if (raw) {
-        const s = JSON.parse(raw);
-        this._savedFreeCamState = {
-          position: new Vector3(s.px, s.py, s.pz),
-          target:   new Vector3(s.tx, s.ty, s.tz),
-        };
-        this.camera.position.copy(this._savedFreeCamState.position);
-        this.controls.target.copy(this._savedFreeCamState.target);
-        this.controls.update();
-      }
-    } catch (_) {}
+    // Every session starts at the default view. (The camera used to be restored
+    // from the last session, which could open the game rotated and panned.)
+    try { localStorage.removeItem('dungeonflicker_camera'); } catch (_) {}
 
     // Detect orbit/zoom start: if in God's Eye, drop back to freeform immediately.
     this.controls.addEventListener('start', () => {
@@ -384,23 +373,13 @@ export class CameraController {
     this._saveFreeCamState();
   }
 
-  /** Persist current camera state to memory and localStorage. */
+  /** Remember the current free-cam view for this session (God's Eye returns to it). */
   _saveFreeCamState() {
     if (!this.camera || !this.controls) return;
     this._savedFreeCamState = {
       position: this.camera.position.clone(),
       target:   this.controls.target.clone(),
     };
-    try {
-      localStorage.setItem('dungeonflicker_camera', JSON.stringify({
-        px: this._savedFreeCamState.position.x,
-        py: this._savedFreeCamState.position.y,
-        pz: this._savedFreeCamState.position.z,
-        tx: this._savedFreeCamState.target.x,
-        ty: this._savedFreeCamState.target.y,
-        tz: this._savedFreeCamState.target.z,
-      }));
-    } catch (_) {}
   }
 
   /**

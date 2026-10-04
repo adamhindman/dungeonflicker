@@ -21,6 +21,7 @@ import { firstTimeEvents } from './FirstTimeEvents.js';
 import { NotificationManager } from './NotificationManager.js';
 import { SanctuaryShrine } from './SanctuaryShrine.js';
 import { SanctuaryShop } from './SanctuaryShop.js';
+import { SanctuaryHealing } from './SanctuaryHealing.js';
 import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
 import { getResource, isMainPC } from './PartyResources.js';
 import { RangeOverlay } from './RangeOverlay.js';
@@ -302,6 +303,7 @@ export default class GameController {
     this.notificationManager = new NotificationManager();
     this.sanctuaryShrine = new SanctuaryShrine(this);
     this.sanctuaryShop = new SanctuaryShop(this);
+    this.sanctuaryHealing = new SanctuaryHealing(this);
     this._sanctuaryDoorTimer = null;
     this.bossIntro = new BossIntroDialog();
     firstTimeEvents.addListener(key => this.notificationManager.push(key));
@@ -1218,6 +1220,13 @@ clamp(value, min, max) {
           firstTimeEvents.track('animated_dead_kill');
         }
         disc.die(silent);
+        // A monster that dies any way at all during the Barbarian's Rage counts as
+        // his kill (heal + another throw), unless its killer already claimed it.
+        if (disc.type === 'NPC' && disc.kind !== 'Fireball' && this.barbarianController?.rampaging &&
+            this.currentDisc?.kind === 'Barbarian' && !this.npcsKilledForRageCharge.has(disc.discName)) {
+          this.npcsKilledForRageCharge.add(disc.discName);
+          this.barbarianController.onKill(this.currentDisc);
+        }
         // When an AnimatedDead disc dies here (e.g. from lava while stationary),
         // clean up its state so it reverts to a plain dead NPC and can be re-animated.
         if (disc.kind === 'AnimatedDead' && this.necromancerController) {
@@ -1355,6 +1364,7 @@ clamp(value, min, max) {
     this.roundWon = true;
     this.sanctuaryShrine.setup();
     this.sanctuaryShop.setup();
+    this.sanctuaryHealing.setup();
     const FADE_IN_DELAY_MS = 1000; // matches fadeBlackOverlayAfterDelay in startNextLevel
     this._sanctuaryDoorTimer = setTimeout(() => this._openLevelDoor(), FADE_IN_DELAY_MS + 3000);
   }
@@ -1380,6 +1390,7 @@ clamp(value, min, max) {
     this.explosionParticles?.clear();
     this.sanctuaryShrine?.teardown();
     this.sanctuaryShop?.teardown();
+    this.sanctuaryHealing?.teardown();
     this.itemManager?.onLevelUnload();
     this.rangeOverlay?.hide();
     if (this.discInfoPopupSelectedDisc && !this.discs.includes(this.discInfoPopupSelectedDisc)) {
@@ -1389,9 +1400,10 @@ clamp(value, min, max) {
     this._hoverPendingDisc = null;
   }
 
-  /** The Sanctuary prop (altar or shop item) under the raycaster, if any. */
+  /** The Sanctuary prop (altar, shop item or healing font) under the raycaster, if any. */
   _pickProp() {
-    return this.sanctuaryShrine?.pickAt(this.raycaster) || this.sanctuaryShop?.pickAt(this.raycaster) || null;
+    return this.sanctuaryShrine?.pickAt(this.raycaster) || this.sanctuaryShop?.pickAt(this.raycaster) ||
+      this.sanctuaryHealing?.pickAt(this.raycaster) || null;
   }
 
   /**
@@ -1921,6 +1933,7 @@ clamp(value, min, max) {
     }
     this.rangeOverlay?.update();
     this.sanctuaryShop?.update(deltaTime);
+    this.sanctuaryHealing?.update(deltaTime);
     this.sanctuaryShrine?.update(deltaTime);
 
     // Animate descending turn-start beams and ring ripples

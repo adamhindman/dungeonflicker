@@ -30,6 +30,12 @@ export function loadCrusher() {
   const innerR = edges[farEdgeIndex].mid.length();
 
   this.circleRadius = innerR;
+  // The physics boundary is the hexagon itself, not the circle through its
+  // wall midpoints (which cut off every corner like an invisible wall):
+  // each edge's outward normal and distance from the centre.
+  this.boundaryEdges = edges.map(edge => ({
+    nx: -edge.inward.x, nz: -edge.inward.y, distance: edge.mid.length(),
+  }));
   this._circularWalls = [];
   this.fieldWidth = OUTER_R * 4;
   this.fieldDepth = OUTER_R * 4;

@@ -20,7 +20,7 @@ export default class FireElemental extends Disc {
             /* mass: */ 1.2,
             /* rageIsActiveForNextThrow: */ false,
             /* rageWasUsedThisThrow: */ false,
-            /* attackDamage: */ 2,
+            /* attackDamage: */ 1,
             /* gameController: */ gameController,
             /* description: */ description
         );

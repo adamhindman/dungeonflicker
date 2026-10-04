@@ -52,20 +52,20 @@ textarea {
     border-radius: .3rem;
 }
 
-/* "The Pursuer arrives in N rounds" (Pursuer.js), top centre */
+/* "The Pursuer arrives in N rounds" (Pursuer.js), top centre: big blood-red
+   blackletter straight on the scene, with a dark halo so it reads over the floor */
 #pursuer-warning {
     position: fixed;
-    top: 2rem;
+    top: 1.5rem;
     left: 50%;
     transform: translateX(-50%);
     z-index: 1000;
-    padding: .6rem 1.4rem;
-    background: var(--ui-bg-75);
-    border: .1rem solid rgba(190, 120, 255, 0.35);
-    border-radius: .3rem;
-    color: #e6ccff;
-    font-size: 1.6rem;
-    letter-spacing: .05em;
+    color: #a00000;
+    font-family: 'Pirata One', 'Times New Roman', serif;
+    font-size: 5.6rem;
+    letter-spacing: .03em;
+    white-space: nowrap;
+    text-shadow: 0 0 .6rem #000, 0 0 1.2rem #000, 0 .2rem .3rem #000;
     pointer-events: none;
     user-select: none;
 }

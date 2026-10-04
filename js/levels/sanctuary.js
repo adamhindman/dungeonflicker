@@ -2,14 +2,15 @@ import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, 
 
 // Sanctuary floorplan (north = -Z, the far wall; camera sits south): a central
 // aisle with one long alcove on each side. The shop's items stand in one line
-// across the room, just in front of the resurrection orb.
+// across the room, just in front of the resurrection orb, with the healing
+// font behind them in the aisle.
 //
 //              ┌─door─┐
 //              │chancel│
 //      ┌───────┘      └───────┐
 //      │          orb          │  ← resurrection orb (only when an ally is dead)
 //      │ item  item  item  item │  ← the four shop items
-//      │                       │
+//      │         font          │  ← the healing font
 //      └───────┐      ┌───────┘
 //              │ nave │  ← party starts here
 //              └──────┘
@@ -25,6 +26,7 @@ const ALCOVE_S_Z = 7;    // south edge of the alcoves
 const ALTAR_Z    = -9;   // where the resurrection orb floats
 const SHOP_Z     = -4;   // the line of shop items, between the orb and the party
 const SHOP_XS    = [-9, -3, 3, 9]; // across the aisle and into both alcoves
+const HEALING_Z  = 3;    // the healing font, in the aisle between the shop and the party
 
 export function loadSanctuary() {
   const wallH     = this.wallHeight;
@@ -44,6 +46,7 @@ export function loadSanctuary() {
   ];
   this.altarPosition = { x: 0, z: ALTAR_Z };
   this.shopPositions = SHOP_XS.map(x => ({ x, z: SHOP_Z }));
+  this.healingPosition = { x: 0, z: HEALING_Z };
 
   // ── Floor ──────────────────────────────────────────────────────────────────
   // One mesh built from the walkable rects, with world-space UVs so the tiles

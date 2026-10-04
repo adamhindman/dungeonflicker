@@ -197,7 +197,29 @@ export class PhysicsEngine {
         // The polygon wall segments use rotated BoxGeometry; Box3.setFromObject
         // inflates them into larger AABBs, leaving gaps a fast disc can slip through.
         // A radial clamp is exact and replaces the per-segment AABB check.
-        if (gc.level && gc.level.circleRadius && !gc.level.hexRings) {
+        // A polygon room that lists its edges (the Crusher's hexagon) is clamped to
+        // the polygon instead, so its corners stay reachable.
+        if (gc.level && gc.level.boundaryEdges) {
+          let bounced = false;
+          for (const { nx, nz, distance } of gc.level.boundaryEdges) {
+            const out = disc.mesh.position.x * nx + disc.mesh.position.z * nz - (distance - disc.radius);
+            if (out <= 0) continue;
+            disc.mesh.position.x -= nx * out;
+            disc.mesh.position.z -= nz * out;
+            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+            if (vDotN > 0) {
+              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+              bounced = true;
+            }
+          }
+          if (bounced) {
+            if (gc.soundManager && disc.velocity.length() > 0.05) {
+              gc.soundManager.playBounce(disc.mesh.position.clone());
+            }
+            this._onWallBounce(disc);
+          }
+        } else if (gc.level && gc.level.circleRadius && !gc.level.hexRings) {
           const R = gc.level.circleRadius;
           const dx = disc.mesh.position.x;
           const dz = disc.mesh.position.z;
