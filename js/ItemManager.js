@@ -329,6 +329,7 @@ export class ItemManager {
     inv.healingPotion -= 1;
     if (inv.healingPotion <= 0) delete inv.healingPotion;
     disc.restoreHealth(ITEMS.healingPotion.heal); // shows its own "+N HP"
+    this._onItemUsed(disc.kind);
     firstTimeEvents.track(itemUsedEvent('healingPotion'));
     this.gc.soundManager?.playPurchase();
     this.gc.updateDiscNames();
@@ -431,8 +432,14 @@ export class ItemManager {
     const inv = this.getInventory(disc.owner.kind);
     inv.resurrectionPotion = (inv.resurrectionPotion || 1) - 1;
     if (inv.resurrectionPotion <= 0) delete inv.resurrectionPotion;
+    this._onItemUsed(disc.owner.kind);
     firstTimeEvents.track(itemUsedEvent('resurrectionPotion'));
     this._buttonStateKey = '';
+  }
+
+  /** Using the knife or a potion counts as acting (it ends the Necromancer's Carrion Feast). */
+  _onItemUsed(kind) {
+    if (kind === 'Necromancer') this.gc.necromancerController?.onActed();
   }
 
   /**
@@ -852,6 +859,7 @@ export class ItemManager {
     const knife = this._knives[disc.owner.kind];
     if (knife) knife.landed = true;
     this._knifeThrownBy.add(disc.owner.kind);
+    this._onItemUsed(disc.owner.kind);
     this._buttonStateKey = '';
   }
 

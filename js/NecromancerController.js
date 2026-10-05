@@ -5,7 +5,6 @@ import { resurrectAlly } from './PartyResources.js';
 
 const DRAIN_LIFE_RADIUS = 8;
 const DRAIN_LIFE_MANA_COST = 2;
-const CARRION_FEAST_MANA_COST = 2;
 const ANIMATED_DEAD_MAX_COUNT = 6;
 
 export class NecromancerController {
@@ -26,6 +25,8 @@ export class NecromancerController {
     this.drainLifeActive = false;   // Whether Drain Life aura is currently active
     this.carrionFeastActive = false; // Whether Carrion Feast is currently active
     this.carrionFeastAteThisTurn = false; // Tracks if a corpse was consumed this turn
+    this.actedThisTurn = false; // cast a spell or used an item: Carrion Feast can only start before that (or moving)
+    this._draining = false;     // Drain Life's damage doesn't end Carrion Feast
 
     this.animateDeadButton = null;
     this.raiseDeadButton = null;
@@ -63,7 +64,7 @@ export class NecromancerController {
     tooltipManager.register(
       this.carrionFeastButton,
       'carrion_feast_button_clicked',
-      'Spend 2 mana to activate. Feast on corpses each turn to keep it active. Each corpse devoured earns 2 HP.'
+      'Free, but only before you move, cast or use an item. Each corpse you touch is devoured for 2 HP. Casting a spell, using an item, taking damage or dealing it (except by Drain Life) ends it; it lasts into your next turn only if you fed this turn.'
     );
   }
 
@@ -85,9 +86,40 @@ export class NecromancerController {
     if (this.mana >= 1 && deadNPCs.length > 0 && animatedCount < ANIMATED_DEAD_MAX_COUNT) return true;
     if (this.mana >= 2 && deadPCs.length > 0) return true;
     if (this.mana >= DRAIN_LIFE_MANA_COST) return true; // can activate drain life
-    const hasCorpsesForFeast = this.gc.discs.some(d => d.dead && d.kind !== 'Necromancer' && !d.isDissolving);
-    if (this.mana >= CARRION_FEAST_MANA_COST && !this.hasMovedThisTurn && hasCorpsesForFeast) return true; // can activate carrion feast
+    if (this._canStartCarrionFeast()) return true;
     return false;
+  }
+
+  /** Carrion Feast can be switched on for free, but only before he has moved, cast or used an item this turn. */
+  _canStartCarrionFeast() {
+    const hasCorpses = this.gc.discs.some(d => d.dead && d.kind !== 'Necromancer' && !d.isDissolving);
+    return hasCorpses && !this.hasMovedThisTurn && !this.actedThisTurn;
+  }
+
+  /**
+   * He cast a spell or used the knife or a potion (ItemManager calls this):
+   * it's no longer the start of his turn, and any feast ends.
+   */
+  onActed() {
+    this.actedThisTurn = true;
+    this._endCarrionFeast();
+  }
+
+  /** He dealt damage (Disc.takeHit calls this): any feast ends, unless it's Drain Life's. */
+  onDamageDealt() {
+    if (!this._draining) this._endCarrionFeast();
+  }
+
+  /** He took damage (Disc.takeHit calls this): any feast ends. */
+  onDamageTaken() {
+    this._endCarrionFeast();
+  }
+
+  _endCarrionFeast() {
+    if (!this.carrionFeastActive) return;
+    const necro = this.getDisc();
+    if (necro) this._deactivateCarrionFeast(necro);
+    this.updateActionButtons();
   }
 
   // ─── Button creation ────────────────────────────────────────────────────────
@@ -247,6 +279,7 @@ export class NecromancerController {
     } else {
       if (this.mana < DRAIN_LIFE_MANA_COST) return;
       firstTimeEvents.track('drain_life_button_clicked');
+      this.onActed();
       this._activateDrainLife(necro);
     }
     this.updateActionButtons();
@@ -261,8 +294,7 @@ export class NecromancerController {
     if (this.carrionFeastActive) {
       this._deactivateCarrionFeast(necro);
     } else {
-      if (this.hasMovedThisTurn) return;
-      if (this.mana < CARRION_FEAST_MANA_COST) return;
+      if (!this._canStartCarrionFeast()) return;
       firstTimeEvents.track('carrion_feast_button_clicked');
       this._activateCarrionFeast(necro);
     }
@@ -271,7 +303,6 @@ export class NecromancerController {
   }
 
   _activateCarrionFeast(necDisc) {
-    this.mana -= CARRION_FEAST_MANA_COST;
     this.carrionFeastActive = true;
     this.carrionFeastAteThisTurn = false;
     necDisc.carrionFeastActive = true;
@@ -347,7 +378,9 @@ export class NecromancerController {
       const dz = d.mesh.position.z - necPos.z;
       if (dx * dx + dz * dz > DRAIN_LIFE_RADIUS * DRAIN_LIFE_RADIUS) return;
       const oldHP = d.hitPoints;
+      this._draining = true;
       d.takeHit(1, necDisc);
+      this._draining = false;
       const drained = oldHP - d.hitPoints;
       if (d.hitPoints <= 0 && !d.dead) {
         if (!this.gc.npcsKilledForRageCharge.has(d.discName)) {
@@ -528,14 +561,14 @@ export class NecromancerController {
       this.carrionFeastButton.title = 'Deactivate Carrion Feast.';
     } else {
       const hasCorpses = this.gc.discs.some(d => d.dead && d.kind !== 'Necromancer' && !d.isDissolving);
-      const canActivate = this.mana >= CARRION_FEAST_MANA_COST && hasCorpses;
-      this.carrionFeastButton.style.display = canActivate ? 'inline-block' : 'none';
-      this.carrionFeastButton.disabled = !canActivate || this.hasMovedThisTurn;
-      if (this.hasMovedThisTurn) {
-        this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast (Move Used)';
+      const acted = this.hasMovedThisTurn || this.actedThisTurn;
+      this.carrionFeastButton.style.display = hasCorpses ? 'inline-block' : 'none';
+      this.carrionFeastButton.disabled = !hasCorpses || acted;
+      if (acted) {
+        this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast (Already Acted)';
       }
-      this.carrionFeastButton.title = this.hasMovedThisTurn
-        ? 'Requires the Necromancer to activate it before moving.'
+      this.carrionFeastButton.title = acted
+        ? 'Carrion Feast must be started before moving, casting a spell or using an item.'
         : '';
     }
   }
@@ -604,12 +637,14 @@ export class NecromancerController {
       if (this.targetSelectionMode === 'animateDead' && clickedDisc.type === 'NPC' && clickedDisc.dead) {
         const success = this.animateDeadDisc(necromancer, clickedDisc);
         if (success) {
+          this.onActed();
           if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necromancer);
           this.gc.updateDiscNames();
         }
       } else if (this.targetSelectionMode === 'raiseDead' && this._isRaiseDeadTarget(clickedDisc)) {
         const success = this.raiseDeadDisc(necromancer, clickedDisc);
         if (success) {
+          this.onActed();
           if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(necromancer);
           this.updateActionButtons();
           this.gc.updateDiscNames();
@@ -762,7 +797,9 @@ export class NecromancerController {
     if (dx * dx + dz * dz > DRAIN_LIFE_RADIUS * DRAIN_LIFE_RADIUS) return;
 
     const oldHP = npcDisc.hitPoints;
+    this._draining = true;
     npcDisc.takeHit(1, necDisc);
+    this._draining = false;
     const actualDamage = oldHP - npcDisc.hitPoints;
 
     if (npcDisc.hitPoints <= 0 && !npcDisc.dead) {
@@ -874,6 +911,7 @@ export class NecromancerController {
 
   onTurnEnd() {
     this.hasMovedThisTurn = false;
+    this.actedThisTurn = false;
     this.movedThisTurn.clear();
     this.carrionFeastAteThisTurn = false;
     this.cancelTargetSelection();
@@ -881,6 +919,7 @@ export class NecromancerController {
 
   onLevelStart() {
     this.hasMovedThisTurn = false;
+    this.actedThisTurn = false;
     this.manaEarnedThisTurn = 0;
     this.animatedDeadDiscs = [];
     this.movedThisTurn.clear();
@@ -905,6 +944,7 @@ export class NecromancerController {
     this.mana = 3;
     this.manaEarnedThisTurn = 0;
     this.hasMovedThisTurn = false;
+    this.actedThisTurn = false;
     this.animatedDeadDiscs = [];
     this.movedThisTurn.clear();
     this.cancelTargetSelection();

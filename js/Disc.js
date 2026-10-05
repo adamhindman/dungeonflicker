@@ -482,6 +482,14 @@ export default class Disc {
     if (actualDamage > 0 && attacker && (attacker.kind === 'Rogue' || attacker.kind === 'Bomb')) {
       this.gameController?.rogueController?.onDamageDealt();
     }
+    // Damage by the Necromancer (except his Drain Life) ends his Carrion Feast.
+    if (actualDamage > 0 && attacker && attacker.kind === 'Necromancer') {
+      this.gameController?.necromancerController?.onDamageDealt();
+    }
+    // So does any damage he takes.
+    if (actualDamage > 0 && this.kind === 'Necromancer' && this.type === 'player') {
+      this.gameController?.necromancerController?.onDamageTaken();
+    }
 
     // Every hit the Barbarian takes, however hard, feeds his Rage.
     if (actualDamage > 0 && this.kind === 'Barbarian' && this.type === 'player') {
