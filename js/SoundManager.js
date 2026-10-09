@@ -494,6 +494,11 @@ export class SoundManager {
     this._playBuffer(this.teleportBuffer, 0.8);
   }
 
+  /** A disc passes through a Mirror Gate (the Warp Ring's sound, quieter, for now). */
+  playMirrorGate() {
+    this._playBuffer(this.teleportBuffer, 0.4);
+  }
+
   /** Sanctuary shop purchase: one of the collect-loot sounds, picked at random. */
   playPurchase() {
     const buffers = this.purchaseBuffers;

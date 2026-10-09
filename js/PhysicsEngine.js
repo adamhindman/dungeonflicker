@@ -1,4 +1,6 @@
 import { Vector3 } from 'three';
+import { tryMirrorGate } from './MirrorGates.js';
+import { isOnIce, iceFriction } from './IcePatches.js';
 
 const _columnPos = new Vector3(); // scratch for round columns' world positions
 
@@ -46,13 +48,18 @@ export class PhysicsEngine {
 
         // Check door entry BEFORE the boundary-bounce so a disc heading into
         // the open doorway isn't pushed back before the transition fires.
-        // While the Pursuer is here its open door is an escape, cleared room or not.
-        if ((gc.roundWon || gc.pursuerController?.isPresent) && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion" && disc.kind !== "Fireball") {
+        // While the Pursuer is here its open door is an escape, cleared room or not,
+        // and so is a locked-away exit (open from the start).
+        if ((gc.roundWon || gc.pursuerController?.isPresent || gc.level.lockedExit) && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion" && disc.kind !== "Fireball") {
           if (gc.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
             await gc.startNextLevel(disc);
             return true; // signal animate() to exit early
           }
         }
+
+        // Mirror Gates: a disc sliding into one comes out of its partner
+        // (before wall collision, which would bounce it off the gate's wall).
+        tryMirrorGate(gc, disc);
 
         const hitBoundary = disc.handleWallCollision(
           gc.level.fieldWidth,
@@ -109,6 +116,8 @@ export class PhysicsEngine {
                 this._onWallBounce(disc);
               }
             }
+          } else if (obs.type === 'polygon') {
+            if (this._collideWithPolygon(disc, obs.points, bounceDamping)) this._onWallBounce(disc);
           } else if (obs.type === 'triangle') {
             // Three.js CylinderGeometry(r,r,h,3) places vertices at angles
             // rotY + k*2π/3 (k=0,1,2) from the +Z axis in the XZ plane (CW winding
@@ -303,7 +312,9 @@ export class PhysicsEngine {
         const currentFriction = isBombDisc
           ? 0.888
           : (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
-        disc.applyFriction(currentFriction);
+        // On ice, almost no friction at all.
+        const onIce = isOnIce(gc.level, disc.mesh.position.x, disc.mesh.position.z);
+        disc.applyFriction(onIce ? iceFriction(currentFriction) : currentFriction);
       }
     }
 
@@ -765,6 +776,42 @@ export class PhysicsEngine {
     if (vDotN >= 0) return false;
     disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
     disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+    return true;
+  }
+
+  /**
+   * Pushes `disc` out of a convex polygon obstacle (`points`: world [x, z]
+   * corners in order) and bounces it off. Returns true if it bounced.
+   */
+  _collideWithPolygon(disc, points, bounceDamping) {
+    const px = disc.mesh.position.x, pz = disc.mesh.position.z;
+    // The closest point on the outline, and whether the centre is inside.
+    let bestDist = Infinity, bestX = 0, bestZ = 0, crossings = 0;
+    points.forEach(([ax, az], i) => {
+      const [bx, bz] = points[(i + 1) % points.length];
+      const ex = bx - ax, ez = bz - az;
+      const t = Math.max(0, Math.min(1, ((px - ax) * ex + (pz - az) * ez) / (ex * ex + ez * ez)));
+      const cx = ax + ex * t, cz = az + ez * t;
+      const dist = Math.hypot(px - cx, pz - cz);
+      if (dist < bestDist) { bestDist = dist; bestX = cx; bestZ = cz; }
+      if ((az > pz) !== (bz > pz) && px < ax + (pz - az) * ex / ez) crossings++;
+    });
+    const inside = crossings % 2 === 1;
+    if (!inside && bestDist >= disc.radius) return false;
+    if (bestDist < 0.0001) return false;
+    // Outward normal: away from the outline (or towards it, from inside).
+    let nx = (px - bestX) / bestDist, nz = (pz - bestZ) / bestDist;
+    if (inside) { nx = -nx; nz = -nz; }
+    const push = inside ? bestDist + disc.radius : disc.radius - bestDist;
+    disc.mesh.position.x += nx * push;
+    disc.mesh.position.z += nz * push;
+    const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+    if (vDotN >= 0) return false;
+    disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+    disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+    if (this.gc.soundManager && disc.velocity.length() > 0.05) {
+      this.gc.soundManager.playBounce(disc.mesh.position.clone());
+    }
     return true;
   }
 

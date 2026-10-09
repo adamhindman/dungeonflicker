@@ -1254,7 +1254,11 @@ export class ItemManager {
     if (!gc.raycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), 0), hit)) return;
 
     this._teleportTarget.set(hit.x, 0, hit.z);
-    this._teleportTargetValid = this._isClearSpot(hit.x, hit.z, this._teleportDisc);
+    // Some rooms keep part of the floor out of the Warp Ring's reach (e.g. a
+    // vault reached only through a gate).
+    const area = gc.level.warpArea;
+    const inArea = !area || (hit.x >= area.minX && hit.x <= area.maxX && hit.z >= area.minZ && hit.z <= area.maxZ);
+    this._teleportTargetValid = inArea && this._isClearSpot(hit.x, hit.z, this._teleportDisc);
     this._teleportRing.position.set(hit.x, gc.level.getTerrainHeightAt(hit.x, hit.z) + 0.1, hit.z);
     this._teleportRing.material.color.setHex(this._teleportTargetValid ? 0xffffff : 0xff4444);
   }
@@ -1366,7 +1370,7 @@ export class ItemManager {
     const r = disc.radius;
     if (!gc.isPositionValid(x, z, r, true, [disc])) return false;
 
-    // Walls, columns, crushers and props are only in getAllWalls().
+    // Walls, columns and props are only in getAllWalls().
     const box = new Box3();
     for (const wall of gc.level.getAllWalls()) {
       box.setFromObject(wall);

@@ -26,6 +26,8 @@ import { ItemManager, GHOST_OPACITY } from './ItemManager.js';
 import { getResource, isMainPC } from './PartyResources.js';
 import { RangeOverlay } from './RangeOverlay.js';
 import { HitboxOverlay } from './HitboxOverlay.js';
+import { pickMirrorGate, setHoveredMirrorGate } from './MirrorGates.js';
+import { makePathChecker, planGateShot, chooseGateShot } from './GateAiming.js';
 import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
 import ExplosionParticles from './ExplosionParticles.js';
@@ -50,7 +52,8 @@ const AIM_LINE_PRECISION_COLOR = 0xffc53d;
 // A Rogue hiding for a Sneak Attack fades into the shadows.
 const HIDDEN_OPACITY = 0.3;
 // A throw still moving after this long is stopped by force (see the stuck-throw check in animate()).
-const THROW_SETTLE_TIMEOUT_MS = 10000;
+// (Long: a full-power slide across ice can take ~8 s, longer on a slow frame rate.)
+const THROW_SETTLE_TIMEOUT_MS = 20000;
 
 // A Sanctuary room follows every this-many cleared combat rooms.
 const SANCTUARY_INTERVAL = 3;
@@ -541,7 +544,7 @@ export default class GameController {
 
     // Highlight the door frame when the round is won and the door is open (when clicking it works;
     // a door the Pursuer opened in an unfinished room isn't clickable)
-    if (this.roundWon && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+    if (this.roundWon && this.level && this.level.doorIsOpen && !this.level.lockedExit && this.level.doorFrameMeshes.length) {
       this.raycaster.setFromCamera(this.mouse, this.camera);
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       const isHovered = hits.length > 0;
@@ -549,6 +552,12 @@ export default class GameController {
       this.renderer.domElement.style.cursor = isHovered ? 'pointer' : '';
     } else if (this.level) {
       this.level.setDoorHovered(false);
+    }
+
+    // Hovering a Mirror Gate outlines it and its partner (unless the room keeps that secret).
+    if (this.level?.mirrorGates.length && this.level.showGatePartners) {
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      setHoveredMirrorGate(this.level, pickMirrorGate(this.level, this.raycaster));
     }
 
     // Show disc-info popup after hovering a disc (or the Sanctuary prop) for 320 ms.
@@ -600,8 +609,9 @@ export default class GameController {
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
     // If the round is won and the door is open, clicking anywhere on the doorway loads the next room,
-    // Pursuer or not. (Fleeing an unfinished room means actually getting someone through the door.)
-    if (this.roundWon && this.level && this.level.doorIsOpen && this.level.doorFrameMeshes.length) {
+    // Pursuer or not. (Fleeing an unfinished room means actually getting someone through the door,
+    // and so does leaving a room whose exit is locked away, cleared or not.)
+    if (this.roundWon && this.level && this.level.doorIsOpen && !this.level.lockedExit && this.level.doorFrameMeshes.length) {
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       if (hits.length > 0) {
         this.startNextLevel(this.currentDisc);
@@ -1467,7 +1477,7 @@ clamp(value, min, max) {
     // Testing: the first room can be forced to a given room type.
     if (n === 1 && FIRST_ROOM_OVERRIDE) return FIRST_ROOM_OVERRIDE;
     // Level sequence cycles through the authored room types, ending with the boss.
-    const sequence = ['rect', 'circle', 'crusher', 'donut', 'siege', 'bullseye', 'boss'];
+    const sequence = ['rect', 'circle', 'ice', 'crusher', 'donut', 'siege', 'locked', 'bullseye', 'boss'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -2393,8 +2403,9 @@ disc.isCurrentlyInLavaState = true;
       d.kind !== 'Orb' && d.kind !== 'HealingOrb' && d.kind !== 'AnimatedDead' &&
       d.kind !== 'Bomb' && d.kind !== 'RoguePotion' && d.kind !== 'Fireball'
     );
-    // (The Pursuer opens the door when it arrives; the room carries on regardless.)
-    if (this.level && !this.roundWon && (!this.level.doorIsOpen || this.pursuerController?.isPresent) && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
+    // (The Pursuer opens the door when it arrives, and a locked-away exit is
+    // open from the start; the room carries on regardless.)
+    if (this.level && !this.roundWon && (!this.level.doorIsOpen || this.pursuerController?.isPresent || this.level.lockedExit) && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
       // End of round: grant bonus charge to Rogue
       this.rogueController?.onRoundEnd();
       const ringData = this.level.stepRings();
@@ -2815,10 +2826,12 @@ disc.isCurrentlyInLavaState = true;
     // Special targeting for FireElemental:
     //   - Within SELF_THROW_RANGE of a PC → throw itself (fall through)
     //   - Outside SELF_THROW_RANGE but within MAX_FIREBALL_RANGE + LOS → throw a fireball
+    //   - Otherwise, a Mirror Gate route within MAX_FIREBALL_RANGE → a fireball through the gate
     //   - Outside MAX_FIREBALL_RANGE, or no LOS → fall through to move closer
     if (disc.kind === 'FireElemental') {
       const SELF_THROW_RANGE = 10;
       const MAX_FIREBALL_RANGE = 22;
+      const FIREBALL_RADIUS = 0.4;
 
       const alivePlayers = this._aiTargetablePlayers(disc);
       if (alivePlayers.length === 0) return;
@@ -2830,33 +2843,32 @@ disc.isCurrentlyInLavaState = true;
         if (d < minDist) { minDist = d; target = alivePlayers[i]; }
       }
 
-      if (minDist > SELF_THROW_RANGE && minDist <= MAX_FIREBALL_RANGE) {
+      if (minDist > SELF_THROW_RANGE) {
         const fromPos = disc.mesh.position.clone();
         const toPos = target.mesh.position.clone();
+        const pathBlocked = makePathChecker(this.level);
 
-        const checkLOS = (start, end) => {
-          const walls = this.level.getAllWalls();
-          const direction = end.clone().sub(start).normalize();
-          const length = start.distanceTo(end);
-          const steps = Math.ceil(length * 10);
-          for (const wall of walls) {
-            const box = new Box3().setFromObject(wall);
-            for (let i = 0; i <= steps; i++) {
-              const point = start.clone().add(direction.clone().multiplyScalar((length / steps) * i));
-              if (box.containsPoint(point)) return false;
-            }
-          }
-          return true;
-        };
-
-        if (checkLOS(fromPos, toPos)) {
-          const dir = toPos.clone().sub(fromPos);
+        // Straight at the target if it's in range and in sight; otherwise
+        // through a Mirror Gate if a route's in range (the fireball fits any gate).
+        let dir = null;
+        this.lastAIPlan = null;
+        if (minDist <= MAX_FIREBALL_RANGE && !pathBlocked(fromPos, toPos)) {
+          dir = toPos.clone().sub(fromPos);
           dir.y = 0;
           dir.normalize();
+        } else {
+          const fireballProxy = { mesh: disc.mesh, radius: FIREBALL_RADIUS };
+          const shot = planGateShot(this.level, fireballProxy, toPos, pathBlocked);
+          if (shot && shot.length <= MAX_FIREBALL_RANGE) {
+            dir = shot.dir;
+            this.lastAIPlan = shot;
+          }
+        }
 
+        if (dir) {
           const spawnOffset = disc.radius + 0.5;
           const fireball = new Disc(
-            /* radius: */ 0.4,
+            /* radius: */ FIREBALL_RADIUS,
             /* height: */ 0.2,
             /* color: */ 0xFF6600,
             /* startX: */ fromPos.x + dir.x * spawnOffset,
@@ -2888,7 +2900,8 @@ disc.isCurrentlyInLavaState = true;
           this.waitingForDiscToStop = true;
           return;
         }
-        // No LOS: fall through to standard throw to move closer
+        // No shot (out of range, or no line of sight, even through a gate):
+        // fall through to standard throw to move closer
       }
       // Within SELF_THROW_RANGE: fall through to standard throw to hurl itself
     }
@@ -2916,36 +2929,22 @@ disc.isCurrentlyInLavaState = true;
       if (!target) return;
 
       // Continue with standard throw logic using the Blob's target
-      const idealDir = target.mesh.position.clone().sub(disc.mesh.position);
+      let idealDir = target.mesh.position.clone().sub(disc.mesh.position);
       idealDir.y = 0;
       idealDir.normalize();
 
-      // Function to check if a line segment intersects any wall
-      const intersectsAnyWall = (start, end) => {
-        const walls = this.level.getAllWalls();
-        for (const wall of walls) {
-          const box = new Box3().setFromObject(wall);
+      // Checks a line segment against every wall and obstacle
+      const intersectsAnyWall = makePathChecker(this.level);
 
-          // Calculate the closest point on box to the line segment
-          const direction = end.clone().sub(start).normalize();
-          const length = start.distanceTo(end);
-
-          // Approximate by sampling points along the segment
-          const steps = Math.ceil(length * 10); // sampling 10 points per unit length
-          for (let i = 0; i <= steps; i++) {
-            const point = start
-              .clone()
-              .add(direction.clone().multiplyScalar((length / steps) * i));
-            if (box.containsPoint(point)) {
-              return true;
-            }
-          }
-        }
-        return false;
-      };
+      // Through a Mirror Gate if that's the better way (a grown Blob won't fit)
+      const gateShot = chooseGateShot(this, disc, target.mesh.position, intersectsAnyWall);
+      if (gateShot) {
+        idealDir = gateShot.dir;
+        minDist = gateShot.length;
+      }
 
       // Calculate throw parameters
-      const maxAttempts = 999;
+      const maxAttempts = gateShot ? 1 : 999;
       const maxFuzzDegrees = 15;
       const fuzzFactor = (100 - disc.skillLevel) / 100;
 
@@ -3006,36 +3005,23 @@ disc.isCurrentlyInLavaState = true;
     }
 
     // Compute ideal direction towards target on horizontal plane
-    const idealDir = target.mesh.position.clone().sub(disc.mesh.position);
+    let idealDir = target.mesh.position.clone().sub(disc.mesh.position);
     idealDir.y = 0;
     idealDir.normalize();
 
-    // Function to check if a line segment intersects any wall
-    const intersectsAnyWall = (start, end) => {
-      const walls = this.level.getAllWalls();
-      for (const wall of walls) {
-        const box = new Box3().setFromObject(wall);
+    // Checks a line segment against every wall and obstacle
+    const intersectsAnyWall = makePathChecker(this.level);
 
-        // Calculate the closest point on box to the line segment
-        const direction = end.clone().sub(start).normalize();
-        const length = start.distanceTo(end);
-
-        // Approximate by sampling points along the segment
-        const steps = Math.ceil(length * 10); // sampling 10 points per unit length
-        for (let i = 0; i <= steps; i++) {
-          const point = start
-            .clone()
-            .add(direction.clone().multiplyScalar((length / steps) * i));
-          if (box.containsPoint(point)) {
-            return true;
-          }
-        }
-      }
-      return false;
-    };
+    // Through a Mirror Gate, if the way straight there is blocked or a gate
+    // is clearly shorter: aim at the gate, as hard as the whole trip needs.
+    const gateShot = chooseGateShot(this, disc, target.mesh.position, intersectsAnyWall);
+    if (gateShot) {
+      idealDir = gateShot.dir;
+      minDist = gateShot.length;
+    }
 
     // Calculate maximum allowed attempts to find a non-blocked throw direction
-    const maxAttempts = 999;
+    const maxAttempts = gateShot ? 1 : 999; // a gate shot is already clear (just wobble)
     const maxFuzzDegrees = 15;
     const fuzzFactor = (100 - disc.skillLevel) / 100;
 

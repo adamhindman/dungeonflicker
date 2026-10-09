@@ -2,6 +2,7 @@ import {
   TextureLoader, RepeatWrapping, MeshStandardMaterial, AmbientLight,
   DirectionalLight, Plane, Vector3, Color, BoxGeometry, Mesh,
   MeshBasicMaterial, DoubleSide, PointLight, PlaneGeometry, CylinderGeometry,
+  ExtrudeGeometry, Shape, Vector2,
 } from "three";
 import { loadRectangular } from "./levels/rectangular.js";
 import { loadCircular, resetCircularState } from "./levels/circular.js";
@@ -12,6 +13,11 @@ import { loadCrusher, setCrusherLength, stepCrushers, updateCrusherAnimation, di
 import { loadSanctuary } from "./levels/sanctuary.js";
 import { loadBoss } from "./levels/boss.js";
 import { loadSiege } from "./levels/siege.js";
+import { loadMirror } from "./levels/mirror.js";
+import { loadLocked } from "./levels/locked.js";
+import { loadIce } from "./levels/ice.js";
+import { disposeIcePatches } from "./IcePatches.js";
+import { updateMirrorGates, disposeMirrorGates, nearMirrorGate } from "./MirrorGates.js";
 
 // Keys in Level.walls for meshes that sit inside the room rather than forming
 // its boundary (see getAllWalls(boundaryOnly)).
@@ -90,6 +96,14 @@ export default class Level {
     this.spawnerSpots = [];         // [{ x, z }] of the boss's homunculus spawners
     this.mortarSpots = [];          // [{ x, z }] where a room's mortars stand (see ROOM_ROSTERS)
     this.npcSpawnArea = null;       // { minX, maxX, minZ, maxZ } a room's monsters start inside; null = anywhere
+    this.mirrorGates = [];          // the room's Mirror Gates (see MirrorGates.js)
+    this.showGatePartners = true;   // hovering a gate outlines it and its partner
+    this.lockedExit = false;        // door open from the start; only a disc through it leaves (no clicking it)
+    this.pursuerEntrances = null;   // [{ x, z, nx, nz }] the Pursuer arrives from one of these (e.g. gates); null = the door
+    this.pursuerBounds = null;      // { minX, maxX, minZ, maxZ } the Pursuer can't glide out of; null = anywhere
+    this.warpArea = null;           // { minX, maxX, minZ, maxZ } the Warp Ring can only land in; null = anywhere
+    this.icePatches = [];           // the room's ice (see IcePatches.js)
+    this.noLava = false;            // true: LavaManager adds no random lava pools
     this.homunculiGrown = 0;        // homunculi grown so far in this room (names them)
     // Any room: its own default camera view { distance, targetZ }, or null = standard
     this.cameraView = null;
@@ -189,7 +203,7 @@ export default class Level {
         if (key.startsWith('obstacle_')) {
           const idx = parseInt(key.slice('obstacle_'.length));
           const obs = this.obstacles[idx];
-          if (obs && (obs.type === 'pillar' || obs.type === 'triangle')) return false;
+          if (obs && (obs.type === 'pillar' || obs.type === 'triangle' || obs.type === 'polygon')) return false;
         }
         return true;
       })
@@ -203,9 +217,9 @@ export default class Level {
     if (this._bullseyeColumnMeshes && this._bullseyeColumnMeshes.length) {
       walls.push(...this._bullseyeColumnMeshes);
     }
-    if (this.crusherConfig && this._crusherMeshes && this._crusherMeshes.length) {
-      walls.push(...this._crusherMeshes);
-    }
+    // (Not the Crusher room's crushers: they're rotated boxes, whose
+    // axis-aligned Box3 spills far past them on the diagonal walls.
+    // PhysicsEngine._handleCrusherCollision collides with them exactly.)
     return walls;
   }
 
@@ -280,6 +294,12 @@ export default class Level {
       this._loadSanctuary();
     } else if (shape === 'siege') {
       loadSiege.call(this);
+    } else if (shape === 'mirror') {
+      loadMirror.call(this);
+    } else if (shape === 'locked') {
+      loadLocked.call(this);
+    } else if (shape === 'ice') {
+      loadIce.call(this);
     } else if (shape === 'boss') {
       loadBoss.call(this);
     } else {
@@ -666,6 +686,7 @@ export default class Level {
   update(deltaTime) {
     updateCrusherAnimation.call(this, deltaTime);
     updateBullseyeAnimation.call(this, deltaTime);
+    updateMirrorGates(this, deltaTime);
 
     // ── Slab lift animation ──────────────────────────────────────────────────
     if (this._doorAnimating && this.doorSlab) {
@@ -851,6 +872,14 @@ export default class Level {
         3 // three sides = equilateral triangle cross-section
       );
       this.applyCylinderUVs(geometry, obstacle.width / 2, this.wallHeight);
+    } else if (obstacle.type === "polygon") {
+      // A convex prism from its floor outline (points are world [x, z]). The
+      // outline is drawn in the shape's XY plane as (x, -z) and extruded up
+      // +Z, which the mesh's rotation turns into +Y. Built at the origin.
+      const shape = new Shape(obstacle.points.map(([px, pz]) => new Vector2(px - obstacle.x, -(pz - obstacle.z))));
+      geometry = new ExtrudeGeometry(shape, { depth: this.wallHeight, bevelEnabled: false });
+      const uv = geometry.attributes.uv; // in world units: one tile per 6
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 6, uv.getY(i) / 6);
     } else {
       geometry = new BoxGeometry(
         obstacle.width,
@@ -864,6 +893,9 @@ export default class Level {
     mesh.position.set(obstacle.x, this.wallHeight / 2, obstacle.z);
     if (obstacle.type === "triangle") {
       mesh.rotation.y = obstacle.rotY ?? 0;
+    } else if (obstacle.type === "polygon") {
+      mesh.position.y = 0;
+      mesh.rotation.x = -Math.PI / 2;
     }
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -907,10 +939,13 @@ export default class Level {
       }
     }
 
+    // Don't start a disc in front of a Mirror Gate.
+    if (nearMirrorGate(this, x, z, padding)) return false;
+
     // Check against all generated obstacles
     for (const obs of this.obstacles) {
-      if (obs.type === "pillar" || obs.type === "triangle") {
-        // Circular check — exact for pillars; conservative (circumscribed) for triangles
+      if (obs.type === "pillar" || obs.type === "triangle" || obs.type === "polygon") {
+        // Circular check — exact for pillars; conservative (circumscribed) for triangles and polygons
         const dx = x - obs.x;
         const dz = z - obs.z;
         const distSq = dx * dx + dz * dz;
@@ -1096,11 +1131,19 @@ export default class Level {
     this.spawnerSpots = [];
     this.mortarSpots = [];
     this.npcSpawnArea = null;
+    this.showGatePartners = true;
+    this.lockedExit = false;
+    this.pursuerEntrances = null;
+    this.pursuerBounds = null;
+    this.warpArea = null;
+    this.noLava = false;
     this.homunculiGrown = 0;
     this.cameraView = null;
     disposeDonut.call(this);
     disposeHexagon.call(this);
     disposeBullseye.call(this);
     disposeCrusher.call(this);
+    disposeMirrorGates(this);
+    disposeIcePatches(this);
   }
 }

@@ -145,26 +145,34 @@ export class PursuerController {
     this._arrivalRound = null;
     this._refreshWarning();
 
+    // It comes in through the door, or (in a room that lists them) out of one
+    // of its entrances, such as a Mirror Gate, picked at random.
     const door = level._doorOpeningCenter ?? { x: 0, z: 0 };
-    const pursuer = new Pursuer(gc.scene, door.x, door.z, gc, gc.discDescriptions.Pursuer);
+    const entrances = level.pursuerEntrances;
+    const entrance = entrances?.length ? entrances[Math.floor(Math.random() * entrances.length)] : null;
+    const origin = entrance ?? door;
+    const pursuer = new Pursuer(gc.scene, origin.x, origin.z, gc, gc.discDescriptions.Pursuer);
     gc.discs.push(pursuer); // last in the turn order: the party gets a round to react
     this.pursuer = pursuer;
     gc.updateDiscNames();
     gc._updateSpotlights();
-    // The door may already be open (the room was cleared): then no unlock sound
+    // The door opens as an escape route. It may already be open (the room was
+    // cleared, or it's open from the start): then no unlock sound.
     if (!level.doorIsOpen && !level._doorAnimating) {
       level.openDoor();
       gc.soundManager?.playDoorUnlock(new Vector3(door.x, 0, door.z));
     }
+    if (entrance?.flash !== undefined) entrance.flash = 1; // a Mirror Gate flares as it comes through
 
-    // Glide in from the doorway toward the middle of the room.
-    const inward = new Vector3(-door.x, 0, -door.z);
+    // Glide in: out of the entrance it came from, or from the doorway toward
+    // the middle of the room.
+    const inward = entrance ? new Vector3(entrance.nx, 0, entrance.nz) : new Vector3(-door.x, 0, -door.z);
     if (inward.lengthSq() < 0.001) inward.set(0, 0, -1);
     inward.normalize();
     let entry = null;
     for (let depth = pursuer.radius + ENTRY_DEPTH; depth < 30 && !entry; depth += 1) {
-      const x = door.x + inward.x * depth;
-      const z = door.z + inward.z * depth;
+      const x = origin.x + inward.x * depth;
+      const z = origin.z + inward.z * depth;
       if (this._isFreeSpot(pursuer, x, z)) entry = { x, z };
     }
     if (entry) {
@@ -208,7 +216,10 @@ export class PursuerController {
     if (glide.catches) {
       if (glide.remaining <= 0) { this._finishGlide(); return; }
       step = Math.min(step, glide.remaining);
-      const prey = this._party().filter(p => !glide.caught.has(p));
+      // Prefer party members it can reach (inside its bounds, if the room sets them).
+      const untouched = this._party().filter(p => !glide.caught.has(p));
+      const reachable = untouched.filter(p => this._inBounds(p.mesh.position, 0));
+      const prey = reachable.length ? reachable : untouched;
       target = prey.reduce((best, p) =>
         !best || dist(p, pos) < dist(best, pos) ? p : best, null)?.mesh.position;
       if (!target) { this._finishGlide(); return; }
@@ -221,6 +232,12 @@ export class PursuerController {
     if (gap > 0.0001) {
       pos.x += (dx / gap) * move;
       pos.z += (dz / gap) * move;
+    }
+    // It passes through walls, but not out of the part of the room it's held to.
+    const bounds = this.gc.level?.pursuerBounds;
+    if (bounds) {
+      pos.x = Math.min(Math.max(pos.x, bounds.minX + disc.radius), bounds.maxX - disc.radius);
+      pos.z = Math.min(Math.max(pos.z, bounds.minZ + disc.radius), bounds.maxZ - disc.radius);
     }
     disc.updatePosition(); // velocity is zero: this just brings its spotlight along
     glide.path.push({ x: pos.x, z: pos.z });
@@ -269,6 +286,13 @@ export class PursuerController {
     }
     disc.updatePosition();
     glide.resolve();
+  }
+
+  /** Is `pos` inside the room's Pursuer bounds (shrunk by `margin`)? Always, if the room sets none. */
+  _inBounds(pos, margin) {
+    const b = this.gc.level?.pursuerBounds;
+    return !b || (pos.x >= b.minX + margin && pos.x <= b.maxX - margin &&
+                  pos.z >= b.minZ + margin && pos.z <= b.maxZ - margin);
   }
 
   /** Living party members (the main characters), hidden or not: it always finds them. */

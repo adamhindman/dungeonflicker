@@ -8,9 +8,12 @@
 //           circular room / the boss room's arc / the hex room's ring
 //   yellow  box walls, as the axis-aligned box Box3 makes of them (a rotated
 //           wall shows how far its box overshoots)
-//   cyan    round columns (colliderRadius), pillar and triangle obstacles
+//   cyan    round columns (colliderRadius), pillar, triangle and polygon obstacles
+//   ice blue the edges of ice patches (where friction nearly vanishes)
+//   (pair)  Mirror Gates' faces, a colour per pair (so the pairs show), with a tick outwards
 //   magenta crushers at their current length
 //   green   every disc's radius
+//   white   the last gate shot a monster planned (to the entry gate; from the exit to its target)
 //
 // Must match PhysicsEngine's collision code.
 
@@ -22,7 +25,13 @@ const COLORS = {
   round: [0.2, 0.9, 1],
   crusher: [1, 0.3, 1],
   disc: [0.3, 1, 0.3],
+  plan: [1, 1, 1],
+  ice: [0.6, 0.85, 1],
 };
+const PAIR_COLORS = [      // one per Mirror Gate pair
+  [1, 0.3, 0.3], [1, 0.6, 0.2], [0.4, 0.9, 0.4], [0.3, 0.6, 1], [0.8, 0.4, 1],
+  [1, 1, 0.4], [0.4, 1, 1], [1, 0.5, 0.8],
+];
 const LINE_Y = 0.1;        // just above the floor
 const CIRCLE_SEGMENTS = 48;
 
@@ -105,7 +114,23 @@ export class HitboxOverlay {
           return [obs.x + R * Math.sin(a), obs.z + R * Math.cos(a)];
         });
         loop(COLORS.round, corners, this._floorY(obs.x, obs.z));
+      } else if (obs.type === 'polygon') {
+        loop(COLORS.round, obs.points);
       }
+    }
+
+    // Ice patches: where friction nearly vanishes.
+    for (const patch of level.icePatches || []) loop(COLORS.ice, patch.points);
+
+    // Mirror Gates: the face a disc must touch, in the pair's colour, with a
+    // tick pointing out of it.
+    // Each pair gets its own colour here, whatever the gates look like in the game.
+    const pairs = [...new Set((level.mirrorGates || []).map(g => g.pair))];
+    for (const g of level.mirrorGates || []) {
+      const color = PAIR_COLORS[pairs.indexOf(g.pair) % PAIR_COLORS.length];
+      const hx = g.tx * g.width / 2, hz = g.tz * g.width / 2;
+      segment(color, g.x - hx, LINE_Y, g.z - hz, g.x + hx, LINE_Y, g.z + hz);
+      segment(color, g.x, LINE_Y, g.z, g.x + g.nx, LINE_Y, g.z + g.nz);
     }
 
     // Crushers: a box from the anchor out to the current length.
@@ -116,6 +141,14 @@ export class HitboxOverlay {
       loop(COLORS.crusher, [
         [c.anchorX + sx, c.anchorZ + sz], [ex + sx, ez + sz], [ex - sx, ez - sz], [c.anchorX - sx, c.anchorZ - sz],
       ]);
+    }
+
+    // The last gate shot a monster planned: shooter → entry gate, exit gate → target.
+    const plan = this.gc.lastAIPlan;
+    if (plan) {
+      const [from, entry, exit, to] = plan.points;
+      segment(COLORS.plan, from.x, LINE_Y, from.z, entry.x, LINE_Y, entry.z);
+      segment(COLORS.plan, exit.x, LINE_Y, exit.z, to.x, LINE_Y, to.z);
     }
 
     // Discs.

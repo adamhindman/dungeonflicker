@@ -28,8 +28,9 @@ return;
     }
     gc.lavaPools = [];
 
-    // Crusher, Sanctuary, boss and mortar test levels: no random lava pools.
-    if (gc.level.crusherConfig || gc.level.isSanctuary || gc.level.isBossRoom || gc.level.shape === 'siege') {
+    // Crusher, Sanctuary, boss and mortar test levels, and any room that says
+    // so (e.g. the Ice Cave): no random lava pools.
+    if (gc.level.noLava || gc.level.crusherConfig || gc.level.isSanctuary || gc.level.isBossRoom || gc.level.shape === 'siege') {
       return;
     }
 
