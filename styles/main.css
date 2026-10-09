@@ -98,17 +98,26 @@ textarea {
     text-shadow: 0 0 .5rem #000, 0 0 1.4rem #000, 0 .15rem .25rem #000;
     pointer-events: none;
     user-select: none;
-    /* ease-in-out: an even fade across the whole duration (ease-out would look
-       finished in under half of it) */
+}
+
+/* Each line fades in on its own: "Room N" first, the name a beat later.
+   ease-in-out: an even fade across the whole duration (ease-out would look
+   finished in under half of it). The banner as a whole fades out (.leaving). */
+#room-title .room-title-number,
+#room-title .room-title-name {
     animation: room-title-in var(--room-title-in) ease-in-out var(--room-title-delay) both;
 }
 
-/* "Room N", small above the name */
+#room-title .room-title-name {
+    animation-delay: calc(var(--room-title-delay) + var(--room-title-beat));
+}
+
+/* "Room N", small above the name (dimmed by its colour: opacity is the fade's) */
 #room-title .room-title-number {
     font-size: 1.3rem;
     letter-spacing: .35em;
     margin-bottom: .4rem;
-    opacity: .8;
+    color: rgba(234, 220, 184, .8);
 }
 
 #room-title.leaving {

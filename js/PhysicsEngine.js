@@ -355,6 +355,19 @@ export class PhysicsEngine {
           continue;
         }
 
+        // A potion a fallen character spilled: everything passes over it; a
+        // living party member who touches it picks it up (ItemManager checks who counts).
+        if (d1.kind === 'DroppedPotion' || d2.kind === 'DroppedPotion') {
+          const potion = d1.kind === 'DroppedPotion' ? d1 : d2;
+          const other = potion === d1 ? d2 : d1;
+          const dx = potion.mesh.position.x - other.mesh.position.x;
+          const dz = potion.mesh.position.z - other.mesh.position.z;
+          if (Math.hypot(dx, dz) < potion.radius + other.radius) {
+            gc.itemManager?.onPotionTouched(potion, other);
+          }
+          continue;
+        }
+
         // Resurrection flask: passes over everything; a flask in flight that
         // touches a fallen ally brings them back (ItemManager checks who counts).
         if (d1.kind === 'ResurrectionFlask' || d2.kind === 'ResurrectionFlask') {

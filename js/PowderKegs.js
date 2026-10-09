@@ -386,7 +386,7 @@ export class PowderKegManager {
     const monsters = gc.discs.filter(d => d.type === 'NPC' && !d.dead && d !== shooter &&
       d.kind !== 'Fireball' && d.kind !== 'Pursuer' && d.kind !== 'Mortar');
     const blockers = gc.discs.filter(d => d !== shooter && d.mesh && !d.isGhost && d.kind !== 'Knife' &&
-      d.kind !== 'ResurrectionFlask' && !(d.dead && d.isDissolving));
+      d.kind !== 'ResurrectionFlask' && d.kind !== 'DroppedPotion' && !(d.dead && d.isDissolving));
 
     let best = null;
     for (const keg of kegs) {

@@ -22,6 +22,7 @@ export const ROOM_TITLES = {
 };
 
 const START_DELAY_MS = 500; // before the fade-in begins
+const BEAT_MS = 700;        // "Room N" fades in first; the name follows this much later
 const FADE_IN_MS = 2000;
 const HOLD_MS = 700;      // on screen after the black has gone
 const FADE_OUT_MS = 1100;
@@ -46,6 +47,7 @@ export class RoomTitle {
     const title = ROOM_TITLES[shape];
     if (!title) return;
     const fadeInMs = slow ? FADE_IN_MS * 2 : FADE_IN_MS;
+    const beatMs = slow ? BEAT_MS * 2 : BEAT_MS;
     const el = document.createElement('div');
     el.id = 'room-title';
     if (number !== null) {
@@ -59,13 +61,14 @@ export class RoomTitle {
     nameEl.textContent = title;
     el.appendChild(nameEl);
     el.style.setProperty('--room-title-delay', `${START_DELAY_MS}ms`);
+    el.style.setProperty('--room-title-beat', `${beatMs}ms`);
     el.style.setProperty('--room-title-in', `${fadeInMs}ms`);
     el.style.setProperty('--room-title-out', `${FADE_OUT_MS}ms`);
     document.body.appendChild(el);
     this._el = el;
     // Fades in straight away, over the black screen, while the room is still
     // loading behind it.
-    this._holdUntilRoomVisible(el, START_DELAY_MS + fadeInMs);
+    this._holdUntilRoomVisible(el, START_DELAY_MS + beatMs + fadeInMs);
   }
 
   /**

@@ -24,6 +24,9 @@ import { updateMirrorGates, disposeMirrorGates, nearMirrorGate } from "./MirrorG
 // its boundary (see getAllWalls(boundaryOnly)).
 const INTERIOR_WALL_PREFIXES = ['obstacle_', 'donut_col_', 'hex_col_', 'sanctuary_'];
 
+// How far random obstacles keep from the doorway (see generateRandomObstacles).
+const DOOR_CLEARANCE = 7;
+
 export default class Level {
   constructor(scene) {
     this.scene = scene;
@@ -746,6 +749,14 @@ export default class Level {
    * Generates a random set of obstacles (blocks and walls) for the level.
    * Obstacles are arranged to avoid the player starting area and each other.
    */
+  /**
+   * Where the door will be: the middle of the north wall, as _createDoor puts
+   * it by default (the random obstacles go in before the door is built).
+   */
+  _doorSpot() {
+    return { x: 0, z: -(this.circleRadius ?? this.fieldDepth / 2) };
+  }
+
   generateRandomObstacles(maxCount = null) {
     this.obstacles = [];
     const defaultCount = 3 + Math.floor(Math.random() * 3);
@@ -800,6 +811,16 @@ export default class Level {
         const distToWizard = Math.sqrt(x * x + (z + 3) * (z + 3));
 
         if (distToStart < playerBuffer || distToWizard < playerBuffer) {
+          attempts++;
+          continue;
+        }
+
+        // Keep the way to the door clear: no part of the obstacle (its
+        // bounding box) within DOOR_CLEARANCE of the doorway.
+        const door = this._doorSpot();
+        const gapX = Math.max(0, Math.abs(x - door.x) - width / 2);
+        const gapZ = Math.max(0, Math.abs(z - door.z) - depth / 2);
+        if (Math.hypot(gapX, gapZ) < DOOR_CLEARANCE) {
           attempts++;
           continue;
         }

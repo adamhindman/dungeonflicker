@@ -15,6 +15,7 @@ import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
 import {
   KNIFE_BLADE_THICKNESS, KNIFE_STEEL, SHIELD_THICKNESS, makeKnifeBlade, makeKnifeHandle, makeShieldMesh,
+  makeHealingFlaskModel, makeResurrectionFlaskModel,
 } from './ItemModels.js';
 import { getResource, formatAmount, isMainPC, resurrectAlly } from './PartyResources.js';
 
@@ -104,6 +105,7 @@ export const ITEMS = {
     help: [
       'Press <kbd>0</kbd> (or click the Healing button) on your turn to drink one and restore 3 HP.',
       'It doesn\'t use your move, and the button shows how many you have left.',
+      'If you fall, your potions spill on the floor; an ally who touches one keeps it.',
     ],
   },
   resurrectionPotion: {
@@ -121,6 +123,7 @@ export const ITEMS = {
       'Press <kbd>5</kbd> (or click the Resurrection button) on your turn to ready a flask beside you.',
       'Drag the flask to flick it at a fallen ally. It passes over everything else.',
       'The ally returns with half their HP and acts right after you. A miss shatters the flask.',
+      'If you fall, your potions spill on the floor; an ally who touches one keeps it.',
     ],
   },
 };
@@ -165,6 +168,15 @@ const KNIFE_READY_DISTANCE = 2;   // how far from its owner a readied knife wait
 const FLASK_RADIUS = 0.4;          // a readied/thrown Resurrection flask's collision size
 const FLASK_READY_DISTANCE = 2;    // how far from its owner a readied flask waits
 
+// Potions a dead character spills (see _spillPotions), and their floor models.
+const SPILLED_POTIONS = {
+  healingPotion: makeHealingFlaskModel,
+  resurrectionPotion: makeResurrectionFlaskModel,
+};
+const DROPPED_RADIUS = 0.6;        // how close a party member must come to pick one up
+const DROPPED_SCALE = 0.8;         // of the shop's flask model
+const SPILL_GAP = 0.9;             // between a fallen character's edge and the flasks around them
+
 // Teleport beams: same shape as the turn-start beam (tall, open, drawn from the
 // inside) plus a bright additive core. Timings in seconds.
 const BEAM_HEIGHT = 200;
@@ -198,6 +210,7 @@ export class ItemManager {
     this.healingPotionButton = null;
     this.resurrectionPotionButton = null;
     this._flasks = {};               // kind → { disc, thrown } while a Resurrection flask is out
+    this._dropped = new Set();       // potion discs a fallen character spilled, waiting to be picked up
     this._shieldSlots = {};          // kind → chosen spot (index into SHIELD_SLOT_ANGLES); kept between rooms
     this._shields = {};              // kind → { mesh, owner } while the owner is alive in this room
     this.shieldMoveActive = false;   // choosing a new spot for the current character's shield
@@ -263,6 +276,9 @@ export class ItemManager {
    */
   onLevelUnload() {
     this._flasks = {}; // the level disposes the flask discs with the rest
+    // Spilled potions nobody picked up stay behind (the level disposes their discs; their models are ours).
+    for (const disc of this._dropped) this._disposeMesh(disc.potionModel);
+    this._dropped.clear();
     this.cancelTeleportTargeting();
     if (this._teleport) {
       this._teleport.pillars.forEach(p => this._disposeMesh(p));
@@ -509,6 +525,7 @@ export class ItemManager {
       const setAside = this._setAside[disc.kind];
 
       if (disc.dead && inv && Object.keys(inv).length > 0) {
+        this._spillPotions(disc, inv); // takes them out of `inv`: they don't come back with the rest
         this._setAside[disc.kind] = { ...setAside, ...inv };
         this.inventories[disc.kind] = {};
         disc.isGhost = false;
@@ -520,6 +537,90 @@ export class ItemManager {
         this._buttonStateKey = '';
       }
     }
+  }
+
+  // ─── Spilled potions ──────────────────────────────────────────────────────
+  // A character who dies spills their Healing and Resurrection potions on the
+  // floor around them, one flask per potion. Any living party member who
+  // touches one picks it up and owns it as if they'd bought it. Monsters and
+  // everything else pass over them; nothing can break them. Flasks nobody
+  // picks up are left behind in the room.
+
+  /** Takes `owner`'s potions out of `inv` and lays them around their body. */
+  _spillPotions(owner, inv) {
+    const potions = [];
+    for (const itemId of Object.keys(SPILLED_POTIONS)) {
+      for (let i = 0; i < (inv[itemId] || 0); i++) potions.push(itemId);
+      delete inv[itemId];
+    }
+    if (potions.length === 0) return;
+
+    const { x, z } = owner.mesh.position;
+    const start = Math.random() * Math.PI * 2;
+    potions.forEach((itemId, i) => {
+      // Evenly round the body; further out if that spot's taken (the last try
+      // goes down regardless, so no potion is ever lost).
+      const angle = start + (i / potions.length) * Math.PI * 2;
+      const RINGS = 6;
+      for (let ring = 0; ring < RINGS; ring++) {
+        const r = owner.radius + SPILL_GAP + (ring < RINGS - 1 ? ring * 0.8 : 0);
+        const px = x + Math.cos(angle) * r;
+        const pz = z + Math.sin(angle) * r;
+        if (ring < RINGS - 1 && !this.gc.isPositionValid(px, pz, DROPPED_RADIUS, true, [owner])) continue;
+        this._dropPotion(itemId, px, pz, owner);
+        return;
+      }
+    });
+    this.gc.soundManager?.playDiscHit(owner.mesh.position.clone());
+  }
+
+  /** A potion flask lying on the floor at (x, z), dropped by `owner`. */
+  _dropPotion(itemId, x, z, owner) {
+    const item = ITEMS[itemId];
+    const disc = new Disc(
+      DROPPED_RADIUS, 0.2, item.color, x, z,
+      this.gc.scene, `${item.name} potion`, 'item', 'DroppedPotion',
+      1, 0, null, false, 0, 0.5, false, false, 0,
+      this.gc, `${owner.discName} dropped this ${item.name} potion. Touch it with a living character ` +
+        `to pick it up; it's theirs as if they'd bought it.`,
+    );
+    disc.itemId = itemId;
+    disc.mesh.material.visible = false; // just the flask shows, not a disc
+    this.gc.scene.remove(disc.spotlight); // its own glowing liquid is enough to spot it by
+
+    // The shop's flask, lying on its side on the floor.
+    const model = SPILLED_POTIONS[itemId]();
+    model.scale.setScalar(DROPPED_SCALE);
+    model.position.y = -disc.height / 2; // the model's origin is its base, on the floor
+    model.rotation.y = Math.random() * Math.PI * 2;
+    const flask = model.children[0];
+    flask.rotation.set(0, 0, Math.PI / 2);
+    flask.position.set(0.6, 0.42, 0); // centred over the disc, resting on its belly
+    disc.mesh.add(model);
+    disc.potionModel = model;
+
+    this.gc.discs.push(disc);
+    this._dropped.add(disc);
+  }
+
+  /** Called by PhysicsEngine when a disc touches a spilled potion: a living party member picks it up. */
+  onPotionTouched(potion, toucher) {
+    if (!this._dropped.has(potion) || !isMainPC(toucher) || toucher.dead) return;
+    this._dropped.delete(potion);
+    const inv = this.getInventory(toucher.kind);
+    inv[potion.itemId] = (inv[potion.itemId] || 0) + 1;
+
+    const gc = this.gc;
+    const index = gc.discs.indexOf(potion);
+    if (index > -1) {
+      gc.discs.splice(index, 1);
+      if (index < gc.currentTurnIndex) gc.currentTurnIndex--;
+    }
+    if (gc.discInfoPopupSelectedDisc === potion) gc.discInfoPopupSelectedDisc = null;
+    this._disposeMesh(potion.potionModel);
+    potion.dispose();
+    gc.soundManager?.playMenuOpen(); // as when a knife is picked up
+    this._buttonStateKey = '';
   }
 
   /** The Big Golden Orb's price: a character it resurrects doesn't get their items back. */

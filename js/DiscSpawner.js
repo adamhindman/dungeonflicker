@@ -42,13 +42,17 @@ const NPC_HEX_COLORS = [
 // Per-room enemy tweaks, keyed by room id (Level.shape). `kinds` are the only
 // kinds the room's budget may buy (null = any); `bonus` are free extras on top
 // of it; `mortars` (settings over MORTAR_DEFAULTS) puts a mortar on each of the
-// room's level.mortarSpots. Rooms not listed use DEFAULT_ROSTER.
+// room's level.mortarSpots; `maxBlobLevel` caps the size Blobs start at.
+// Rooms not listed use DEFAULT_ROSTER.
 const DEFAULT_ROSTER = { kinds: null, bonus: { kind: 'Skeleton', min: 3, max: 5 } };
 const ROOM_ROSTERS = {
   // The lava pit room is all lava-proof Fire Elementals.
   donut: { kinds: ['FireElemental'], bonus: { kind: 'FireElemental', min: 1, max: 2 } },
   // Mortar test room: mortars aimed at the party, destroyed when beaten.
   siege: { ...DEFAULT_ROSTER, mortars: { targeting: 'party', onDefeat: 'destroy' } },
+  // Powder Store: only small Blobs. A big one can't move without bumping (and
+  // setting off) kegs, which would blow the room up before the party can act.
+  powder: { ...DEFAULT_ROSTER, maxBlobLevel: 1 },
 };
 const MORTAR_POINTS = 3; // what a mortar adds to the room's enemy points (for the Pursuer's timing)
 
@@ -88,7 +92,7 @@ export class DiscSpawner {
       if (remaining >= 3) options.push({ kind: 'FireElemental', cost: 3, skillLevel: 85 });
       if (remaining >= 3) options.push({ kind: 'Warden', cost: 3, skillLevel: 85 });
       if (remaining >= 3) {
-        const maxLevel = Math.min(Math.max(1, budget - 2), remaining - 2);
+        const maxLevel = Math.min(Math.max(1, budget - 2), remaining - 2, roster.maxBlobLevel ?? Infinity);
         const level = 1 + Math.floor(Math.random() * maxLevel);
         options.push({ kind: 'Blob', cost: level + 2, skillLevel: 75, startingLevel: level });
       }
@@ -503,6 +507,11 @@ export class DiscSpawner {
       npcIdx++;
 
       if (!position) position = generateRandomPosition(npcRadius, existingPositions, minDistance);
+      // A crowded room (or a big Blob) can leave nowhere that far from everything:
+      // relax the spacing, then settle for any spot clear of obstacles, lava and walls.
+      if (!position) position = generateRandomPosition(npcRadius, existingPositions, npcRadius + 1.5);
+      if (!position) position = generateRandomPosition(npcRadius, [], 0);
+      if (!position) console.warn(`[spawn] no clear spot for ${npc.name} (radius ${npcRadius}); placing it anywhere`);
       const finalX = position ? position.x : (Math.random() - 0.5) * gc.level.fieldWidth  * 0.7;
       const finalZ = position ? position.z : (Math.random() - 0.5) * gc.level.fieldDepth  * 0.7;
 
