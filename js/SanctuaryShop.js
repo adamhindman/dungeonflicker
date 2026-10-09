@@ -1,5 +1,5 @@
 // js/SanctuaryShop.js
-// The shop's items, in random order, on the Sanctuary's pedestals. The
+// A random selection of the shop's items on the Sanctuary's pedestals. The
 // character whose turn it is can buy one with their own mana/charges; a bought
 // item disappears for the rest of this visit, except potions, which stay on
 // sale (buy as many as you like).
@@ -13,9 +13,11 @@ import { ITEMS } from './ItemManager.js';
 import { ItemHelpDialog } from './ItemHelpDialog.js';
 import {
   makeHealingFlaskModel, makeKnifeModel, makeResurrectionFlaskModel, makeRingModel, makeShieldModel,
+  makeSpectaclesModel,
 } from './ItemModels.js';
 import { getResource, formatAmount } from './PartyResources.js';
 
+const SHOP_SIZE = 6;           // items on sale each visit, picked at random from all of them
 const PEDESTAL_RADIUS = 0.4;   // plain coloured disc for items without a model
 const PEDESTAL_HEIGHT = 0.2;
 const SPIN_SPEED = 1.5;        // radians per second
@@ -35,13 +37,14 @@ export class SanctuaryShop {
     const level = this.gc.level;
     if (!level || !level.isSanctuary || !level.shopPositions) return;
 
-    // Fisher–Yates shuffle, then take as many as there are display spots.
+    // Fisher–Yates shuffle, then a random SHOP_SIZE of them (no more than
+    // there are display spots).
     const itemIds = Object.keys(ITEMS);
     for (let i = itemIds.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [itemIds[i], itemIds[j]] = [itemIds[j], itemIds[i]];
     }
-    itemIds.length = Math.min(itemIds.length, level.shopPositions.length);
+    itemIds.length = Math.min(itemIds.length, SHOP_SIZE, level.shopPositions.length);
     itemIds.forEach((itemId, i) => {
       const pos = level.shopPositions[i];
       if (!pos) return;
@@ -53,6 +56,7 @@ export class SanctuaryShop {
       const makeModel = {
         ring: makeRingModel, knife: makeKnifeModel, shield: makeShieldModel,
         healingFlask: makeHealingFlaskModel, resurrectionFlask: makeResurrectionFlaskModel,
+        spectacles: makeSpectaclesModel,
       }[item.model];
       if (makeModel) {
         spinner = makeModel(item.color);

@@ -310,6 +310,7 @@ export default class UIManager {
             <li><kbd>W</kbd>/<kbd>S</kbd> Pan Up/Down</li>
             <li><kbd>Scroll</kbd> Zoom</li>
             <li><kbd>Shift</kbd> Precision Mode (hold)</li>
+            <li><kbd>Caps Lock</kbd> Bounce Preview (on/off, needs Spectacles)</li>
             <li><kbd>Tab</kbd> Throw Radius (hold)</li>
         </ul>`;
 

@@ -46,7 +46,7 @@ export const ITEMS = {
   },
   ghostRing: {
     name: 'Ghost Ring',
-    cost: 3,
+    cost: 1,
     color: 0x00e5ff, // electric cyan
     model: 'ring',
     description: 'Toggle on to pass through discs and obstacles, taking and dealing no damage. ' +
@@ -110,7 +110,7 @@ export const ITEMS = {
   },
   resurrectionPotion: {
     name: 'Resurrection',
-    cost: 3,
+    cost: 2,
     stackable: true,
     color: 0xffc83d, // the Big Golden Orb's gold
     model: 'resurrectionFlask',
@@ -124,6 +124,22 @@ export const ITEMS = {
       'Drag the flask to flick it at a fallen ally. It passes over everything else.',
       'The ally returns with half their HP and acts right after you. A miss shatters the flask.',
       'If you fall, your potions spill on the floor; an ally who touches one keeps it.',
+    ],
+  },
+  spectacles: {
+    name: 'Spectacles',
+    cost: 1,
+    color: 0xc9a04a, // brass
+    model: 'spectacles',
+    description: 'With Caps Lock on, your aim shows the path your throw will take, off up to 3 walls ' +
+      'or obstacles (or one disc). Only you can see through them.',
+    helpIntro: 'Round brass spectacles. Through them, the angles of things are plain.',
+    help: [
+      'Turn on <kbd>Caps Lock</kbd>: while you aim, a dashed line shows your path off up to 3 walls ' +
+        'or obstacles, with an X where you\'ll strike each one. If you\'ll hit a disc, it shows your ' +
+        'rebound from it, and no further.',
+      'The "Specs" chip in your action bar lights up while it\'s on. Turn Caps Lock off to aim normally.',
+      'Sloped floors aren\'t allowed for, and the line stops at a Mirror Gate.',
     ],
   },
 };
@@ -147,6 +163,7 @@ const KNIFE_KEY = '8';
 const SHIELD_KEY = '9';
 const HEALING_POTION_KEY = '0';
 const RESURRECTION_POTION_KEY = '5';
+const SPECTACLES_KEY = 'capslock'; // a toggle key, not a number: only labels the chip
 
 // Hardy Shield spots: world directions around its owner, 120° apart. 0° is
 // north (−Z, away from the default camera), then south-east and south-west.
@@ -230,6 +247,16 @@ export class ItemManager {
       HEALING_POTION_KEY, 'healingPotion', () => this.drinkHealingPotion());
     this.resurrectionPotionButton = this._createButton(actionButtonsContainer, 'resurrection-potion-button',
       RESURRECTION_POTION_KEY, 'resurrectionPotion', () => this.toggleResurrectionFlask());
+    // Spectacles have no button to press (Caps Lock turns them on): this chip
+    // just shows they're owned, and lights up while they're on.
+    this.spectaclesChip = this._createButton(actionButtonsContainer, 'spectacles-chip',
+      SPECTACLES_KEY, 'spectacles', () => {});
+  }
+
+  /** True if the character whose turn it is can use the bounce preview (owns Spectacles). */
+  canPreviewBounce() {
+    const disc = this.activeCharacter();
+    return !!(disc && this.getInventory(disc.kind).spectacles);
   }
 
   /**
@@ -240,7 +267,7 @@ export class ItemManager {
   placeButtons(container) {
     if (!container) return;
     container.append(this.warpRingButton, this.ghostRingButton, this.knifeButton, this.shieldButton,
-      this.healingPotionButton, this.resurrectionPotionButton);
+      this.healingPotionButton, this.resurrectionPotionButton, this.spectaclesChip);
     const endTurnButtons = [...container.querySelectorAll('button')].filter(b => b.id.includes('end-turn'));
     container.append(...endTurnButtons);
   }
@@ -673,10 +700,13 @@ export class ItemManager {
     const flaskReady = !!(flaskOut && !flaskOut.thrown);
     const reviveBlocker = revives > 0 && !flaskReady ? this._resurrectionBlocker(disc) : null;
 
+    const hasSpecs = !!(inv && inv.spectacles);
+    const specsOn = hasSpecs && !!this.gc.bouncePreviewOn;
+
     // Only touch the DOM when something changed.
     const key = [hasWarp, warpCost, warpBlocker, hasRing, ghost, busy, ringBlocker,
       hasKnife, knifeReady, knifeBlocker, hasShield, potions, potionBlocker,
-      revives, flaskReady, reviveBlocker].join('|');
+      revives, flaskReady, reviveBlocker, hasSpecs, specsOn].join('|');
     if (key === this._buttonStateKey) return;
     this._buttonStateKey = key;
 
@@ -706,6 +736,12 @@ export class ItemManager {
         ? 'Put the flask away (free).'
         : 'Ready a Resurrection flask beside you, then flick it at a fallen ally to bring them back ' +
           `with half their HP (doesn't use your move). A miss shatters it. ${revives} left.`));
+    this._setButton(this.spectaclesChip, hasSpecs, false,
+      `<kbd>Caps</kbd> Specs`,
+      specsOn
+        ? 'Spectacles on: your aim shows the path to your first bounce. Turn off Caps Lock to aim normally.'
+        : 'Turn on Caps Lock to see, while you aim, the path to your first bounce and your rebound.');
+    this.spectaclesChip?.classList.toggle('on', specsOn);
   }
 
   _setButton(button, visible, disabled, html, title) {

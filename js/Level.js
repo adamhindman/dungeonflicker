@@ -109,6 +109,7 @@ export default class Level {
     this.icePatches = [];           // the room's ice (see IcePatches.js)
     this.noLava = false;            // true: LavaManager adds no random lava pools
     this.kegClusters = null;        // { clusters: [min, max], kegs: [min, max] } of powder kegs (see PowderKegs.js); null = none
+    this.solidZones = [];           // [{ minX, maxX, minZ, maxZ }] of solid wall inside the boundary: nothing spawns there
     this.homunculiGrown = 0;        // homunculi grown so far in this room (names them)
     // Any room: its own default camera view { distance, targetZ }, or null = standard
     this.cameraView = null;
@@ -750,11 +751,12 @@ export default class Level {
    * Obstacles are arranged to avoid the player starting area and each other.
    */
   /**
-   * Where the door will be: the middle of the north wall, as _createDoor puts
-   * it by default (the random obstacles go in before the door is built).
+   * Where the door is: wherever the room has already put it, or else where it
+   * will go (the middle of the north wall, as _createDoor puts it by default),
+   * for rooms that add their random obstacles before building the door.
    */
   _doorSpot() {
-    return { x: 0, z: -(this.circleRadius ?? this.fieldDepth / 2) };
+    return this._doorOpeningCenter ?? { x: 0, z: -(this.circleRadius ?? this.fieldDepth / 2) };
   }
 
   generateRandomObstacles(maxCount = null) {
@@ -967,6 +969,12 @@ export default class Level {
     // Don't start a disc in front of a Mirror Gate.
     if (nearMirrorGate(this, x, z, padding)) return false;
 
+    // Nor inside solid wall that juts into the room (e.g. the Rotunda's buttress)
+    for (const zone of this.solidZones) {
+      if (x + padding > zone.minX && x - padding < zone.maxX &&
+          z + padding > zone.minZ && z - padding < zone.maxZ) return false;
+    }
+
     // Check against all generated obstacles
     for (const obs of this.obstacles) {
       if (obs.type === "pillar" || obs.type === "triangle" || obs.type === "polygon") {
@@ -1163,6 +1171,7 @@ export default class Level {
     this.warpArea = null;
     this.noLava = false;
     this.kegClusters = null;
+    this.solidZones = [];
     this.homunculiGrown = 0;
     this.cameraView = null;
     disposeDonut.call(this);

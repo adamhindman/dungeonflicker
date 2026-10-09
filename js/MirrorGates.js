@@ -200,12 +200,11 @@ export function fitsThroughGate(disc, gate) {
 }
 
 /**
- * Sends `disc` through a gate if it is sliding into one. Call after the disc
- * moves and before wall collision.
- * @returns {object|null} the exit gate, if it went through
+ * The gate `disc` is sliding into, if any (it would go through it this step).
+ * No side effects: the aim preview uses it too.
  */
-export function tryMirrorGate(gc, disc) {
-  const gates = gc.level?.mirrorGates;
+export function gateEntered(level, disc) {
+  const gates = level?.mirrorGates;
   if (!gates?.length || disc.kind === 'Pursuer' || disc.isGhost) return null;
   const p = disc.mesh.position;
   const v = disc.velocity;
@@ -218,28 +217,43 @@ export function tryMirrorGate(gc, disc) {
     if (d > disc.radius + TOUCH_SLACK || d < BEHIND_LIMIT) continue;
     const u = dx * gate.tx + dz * gate.tz;          // across the face
     if (Math.abs(u) > gate.width / 2) continue;
-
-    // Out of the partner: same point across the width and the same angle, as
-    // if the two gates were one doorway (a half turn maps one onto the other).
-    const out = gate.partner;
-    const vt = v.x * gate.tx + v.z * gate.tz;
-    const outSpeed = Math.max(-vn, MIN_EXIT_SPEED);
-    const offset = disc.radius + EXIT_GAP;
-    p.x = out.x - u * out.tx + out.nx * offset;
-    p.z = out.z - u * out.tz + out.nz * offset;
-    v.x = out.nx * outSpeed - vt * out.tx;
-    v.z = out.nz * outSpeed - vt * out.tz;
-    disc.moving = true; // (its spotlight and auras catch up on the next step)
-
-    gate.flash = out.flash = 1;
-    for (const g of [gate, out]) {
-      g.lamp.material.color.setHex(LAMP_ON);
-      g.lampGlow.visible = true;
-    }
-    gc.soundManager?.playMirrorGate();
-    return out;
+    return gate;
   }
   return null;
+}
+
+/**
+ * Sends `disc` through a gate if it is sliding into one. Call after the disc
+ * moves and before wall collision.
+ * @returns {object|null} the exit gate, if it went through
+ */
+export function tryMirrorGate(gc, disc) {
+  const gate = gateEntered(gc.level, disc);
+  if (!gate) return null;
+  const p = disc.mesh.position;
+  const v = disc.velocity;
+  const vn = v.x * gate.nx + v.z * gate.nz;
+  const u = (p.x - gate.x) * gate.tx + (p.z - gate.z) * gate.tz; // across the face
+
+  // Out of the partner: same point across the width and the same angle, as
+  // if the two gates were one doorway (a half turn maps one onto the other).
+  const out = gate.partner;
+  const vt = v.x * gate.tx + v.z * gate.tz;
+  const outSpeed = Math.max(-vn, MIN_EXIT_SPEED);
+  const offset = disc.radius + EXIT_GAP;
+  p.x = out.x - u * out.tx + out.nx * offset;
+  p.z = out.z - u * out.tz + out.nz * offset;
+  v.x = out.nx * outSpeed - vt * out.tx;
+  v.z = out.nz * outSpeed - vt * out.tz;
+  disc.moving = true; // (its spotlight and auras catch up on the next step)
+
+  gate.flash = out.flash = 1;
+  for (const g of [gate, out]) {
+    g.lamp.material.color.setHex(LAMP_ON);
+    g.lampGlow.visible = true;
+  }
+  gc.soundManager?.playMirrorGate();
+  return out;
 }
 
 /** Drifts each gate's motes and fades its flash. Call every frame. */

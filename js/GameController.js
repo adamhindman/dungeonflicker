@@ -31,6 +31,7 @@ import { makePathChecker, planGateShot, chooseGateShot } from './GateAiming.js';
 import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
 import { RoomTitle, ROOM_TITLE_AFTER_FADE_MS } from './RoomTitle.js';
+import { BouncePreview } from './BouncePreview.js';
 import ExplosionParticles from './ExplosionParticles.js';
 import PitEruption from './PitEruption.js';
 import { PursuerController } from './Pursuer.js';
@@ -47,6 +48,9 @@ const ROGUE_CURVE_RANGE = 220;     // Rogue's gentler low-end response curve
 // full power within a few pixels, so a fixed ratio wouldn't give a usable range.)
 const PRECISION_DRAG_RANGE = 150;
 const PRECISION_POWER_CAP = 0.5;
+// Precision aiming turns the aim as the pointer swings round the press point,
+// except within this many px of it, where a twitch would swing it wildly.
+const PRECISION_MIN_TURN_RADIUS = 12;
 const AIM_LINE_LENGTH = 10;        // world length of the aiming line at full power
 const AIM_LINE_COLOR = 0xffffff;
 const AIM_LINE_PRECISION_COLOR = 0xffc53d;
@@ -344,6 +348,10 @@ export default class GameController {
     this.throwDirectionLine.frustumCulled = false;
     this.throwDirectionLine.visible = false;
     this.scene.add(this.throwDirectionLine);
+    // Caps Lock on while aiming: the throw's path to its first bounce, and on
+    this.bouncePreview = new BouncePreview(this);
+    this.bouncePreviewOn = false;
+    this._lastAim = null; // { disc, dirX, dirZ, speed } of the aim on screen, for the preview
 
     // Instantiate InputHandler
     this.inputHandler = new InputHandler(this.renderer.domElement, this, this.uiManager);
@@ -827,6 +835,7 @@ export default class GameController {
         direction.add(forward.multiplyScalar(-normY));
         direction.normalize();
         direction.negate();
+        this._lastAim = power ? { disc: this.currentDisc, dirX: direction.x, dirZ: direction.z, speed: power.speed } : null;
 
         // The line's length is the true throw power: full length = full power.
         const lineLength = power ? power.fraction * AIM_LINE_LENGTH : 0;
@@ -888,6 +897,9 @@ export default class GameController {
         positions.needsUpdate = true;
 
         this.throwDirectionLine.visible = true;
+        // Caps Lock may have changed while another window had focus
+        this.bouncePreviewOn = !!event.getModifierState?.('CapsLock');
+        this._updateBouncePreview();
       }
     } else {
       if (this.uiManager) {
@@ -1103,10 +1115,36 @@ export default class GameController {
     this.cameraController.setPanningState(key, isPressed);
   }
 
+  /** Caps Lock turned on or off (InputHandler): show or hide the bounce preview. */
+  setBouncePreviewOn(on) {
+    this.bouncePreviewOn = on;
+    this._updateBouncePreview();
+  }
+
+  /**
+   * Shows the bounce preview for the aim on screen while Caps Lock is on and
+   * the character whose turn it is owns Spectacles, in place of the white aim
+   * line (which stays "visible", i.e. aiming, but isn't drawn).
+   */
+  _updateBouncePreview() {
+    const aim = this._lastAim;
+    const showing = !!(this.bouncePreviewOn && this.itemManager?.canPreviewBounce() &&
+      aim && this.throwDirectionLine?.visible && !aim.disc.dead);
+    if (showing) {
+      this.bouncePreview.show(aim.disc, aim.dirX, aim.dirZ, aim.speed);
+    } else {
+      this.bouncePreview?.hide();
+    }
+    if (this.throwDirectionLine) this.throwDirectionLine.material.visible = !showing;
+  }
+
   /**
    * Adds the pointer's movement since the last event to the aim drag. While
-   * Shift is held the movement is scaled down (precision aiming), so pressing
-   * or releasing Shift mid-drag never makes the aim jump.
+   * Shift is held (precision aiming) the two parts of the movement are split:
+   * moving around the press point turns the aim at the normal rate, while
+   * moving towards or away from it changes the power, scaled right down. All
+   * changes are relative, so pressing or releasing Shift mid-drag never makes
+   * the aim jump.
    * @returns {{x: number, y: number, precision: boolean}} the drag in screen px
    */
   _accumulateAimDrag(event, initialPointerDownPos) {
@@ -1118,9 +1156,34 @@ export default class GameController {
         precision: false,
       };
     }
-    const scale = event.shiftKey ? this._precisionDragScale(this.currentDisc) : 1;
-    aim.x += (event.clientX - aim.lastX) * scale;
-    aim.y += (event.clientY - aim.lastY) * scale;
+    if (event.shiftKey) {
+      // The pointer's position relative to the press point, before and after this move
+      const prevX = aim.lastX - initialPointerDownPos.x, prevY = aim.lastY - initialPointerDownPos.y;
+      const nextX = event.clientX - initialPointerDownPos.x, nextY = event.clientY - initialPointerDownPos.y;
+      const prevLen = Math.hypot(prevX, prevY), nextLen = Math.hypot(nextX, nextY);
+      // Turn: by however far the pointer swung round the press point (ignored
+      // right next to it, where the slightest twitch would swing it wildly)
+      if (prevLen >= PRECISION_MIN_TURN_RADIUS && nextLen >= PRECISION_MIN_TURN_RADIUS) {
+        let turn = Math.atan2(nextY, nextX) - Math.atan2(prevY, prevX);
+        if (turn > Math.PI) turn -= 2 * Math.PI;
+        if (turn < -Math.PI) turn += 2 * Math.PI;
+        const cos = Math.cos(turn), sin = Math.sin(turn);
+        [aim.x, aim.y] = [aim.x * cos - aim.y * sin, aim.x * sin + aim.y * cos];
+      }
+      // Power: by how much nearer or further it moved, slowed down
+      const len = Math.hypot(aim.x, aim.y);
+      const newLen = Math.max(0, len + (nextLen - prevLen) * this._precisionDragScale(this.currentDisc));
+      if (len > 1e-6) {
+        aim.x *= newLen / len;
+        aim.y *= newLen / len;
+      } else if (nextLen > 1e-6) {
+        aim.x = nextX / nextLen * newLen; // from nothing: start along the pointer's direction
+        aim.y = nextY / nextLen * newLen;
+      }
+    } else {
+      aim.x += event.clientX - aim.lastX;
+      aim.y += event.clientY - aim.lastY;
+    }
     aim.lastX = event.clientX;
     aim.lastY = event.clientY;
     aim.precision = event.shiftKey;
@@ -1971,6 +2034,9 @@ clamp(value, min, max) {
     if (this.throwDirectionLine?.visible && !this.inputHandler?.isPointerDown) {
       this.throwDirectionLine.visible = false;
     }
+    // The bounce preview goes with the aim line, however that was hidden
+    // (and the aim line is drawn again for the next aim).
+    if (!this.throwDirectionLine?.visible && this.bouncePreview?.line.visible) this._updateBouncePreview();
     if (!this.bossIntro?.holdsChatter) {
       for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
     }

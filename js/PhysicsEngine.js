@@ -35,8 +35,7 @@ export class PhysicsEngine {
         disc.moving = false;
       }
       if (disc.moving) {
-        const isBombDisc = disc.kind === 'Bomb';
-        const bounceDamping = isBombDisc ? 0.35 : 0.8;
+        const bounceDamping = this.bounceDampingFor(disc);
         disc.updatePosition();
 
         // Apply gravity along ramp slope (hex and donut levels).
@@ -61,30 +60,13 @@ export class PhysicsEngine {
         // (before wall collision, which would bounce it off the gate's wall).
         tryMirrorGate(gc, disc);
 
-        const hitBoundary = disc.handleWallCollision(
-          gc.level.fieldWidth,
-          gc.level.fieldDepth,
-          bounceDamping,
-        );
-        if (hitBoundary && gc.soundManager && disc.velocity.length() > 0.05) {
-          gc.soundManager.playBounce(disc.mesh.position.clone());
-        }
-        if (hitBoundary) this._onWallBounce(disc);
-
-        // Ghost Ring discs only collide with the room's outer walls.
-        // Round columns (userData.colliderRadius) collide as the circle they are,
-        // not as the square box around them, whose corners act as invisible walls.
-        const walls = gc.level.getAllWalls(!!disc.isGhost);
-        walls.forEach((wall) => {
-          const radius = wall.userData?.colliderRadius;
-          const hitWall = radius
-            ? this._collideWithColumn(disc, wall.getWorldPosition(_columnPos), radius, bounceDamping)
-            : disc.handleCollisionWithBox(wall, bounceDamping);
-          if (hitWall && gc.soundManager && disc.velocity.length() > 0.05) {
+        // Walls, obstacles and the room's outer boundary
+        if (this.collideWithRoom(disc, bounceDamping)) {
+          if (gc.soundManager && disc.velocity.length() > 0.05) {
             gc.soundManager.playBounce(disc.mesh.position.clone());
           }
-          if (hitWall) this._onWallBounce(disc);
-        });
+          this._onWallBounce(disc);
+        }
 
         if (gc.level && gc.level.crusherConfig && !disc.isGhost) {
           for (const crusher of gc.level.crusherConfig.crushers) {
@@ -92,229 +74,7 @@ export class PhysicsEngine {
           }
         }
 
-        // Obstacle collision: pillars use exact circle push; triangles use
-        // proper polygon collision against the actual triangle edges + vertices.
-        for (const obs of (disc.isGhost ? [] : (gc.level.obstacles || []))) {
-          if (obs.type === 'pillar') {
-            const obsRadius = obs.width / 2;
-            const dx = disc.mesh.position.x - obs.x;
-            const dz = disc.mesh.position.z - obs.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
-            const minDist = disc.radius + obsRadius;
-            if (dist < minDist && dist > 0.001) {
-              const nx = dx / dist;
-              const nz = dz / dist;
-              disc.mesh.position.x = obs.x + nx * minDist;
-              disc.mesh.position.z = obs.z + nz * minDist;
-              const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-              if (vDotN < 0) {
-                disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
-                disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
-                if (gc.soundManager && disc.velocity.length() > 0.05) {
-                  gc.soundManager.playBounce(disc.mesh.position.clone());
-                }
-                this._onWallBounce(disc);
-              }
-            }
-          } else if (obs.type === 'polygon') {
-            if (this._collideWithPolygon(disc, obs.points, bounceDamping)) this._onWallBounce(disc);
-          } else if (obs.type === 'triangle') {
-            // Three.js CylinderGeometry(r,r,h,3) places vertices at angles
-            // rotY + k*2π/3 (k=0,1,2) from the +Z axis in the XZ plane (CW winding
-            // when viewed from above). Collision uses SAT against the 3 edge normals
-            // plus vertex-region handling for disc centers near corners.
-            const R = obs.width / 2; // circumradius
-            const discR = disc.radius;
-            const rotY = obs.rotY ?? 0;
-            const px = disc.mesh.position.x;
-            const pz = disc.mesh.position.z;
-
-            // Quick reject: outside circumscribed circle + discR
-            const qdx = px - obs.x, qdz = pz - obs.z;
-            if (qdx * qdx + qdz * qdz > (R + discR) * (R + discR)) continue;
-
-            // Build the 3 vertices in world space
-            const verts = [];
-            for (let k = 0; k < 3; k++) {
-              const a = rotY + k * 2 * Math.PI / 3;
-              verts.push([obs.x + R * Math.sin(a), obs.z + R * Math.cos(a)]);
-            }
-
-            // For CW winding the outward normal of edge V_k→V_{k+1} is the
-            // 90° CCW rotation of the edge direction: n = ((az-bz), (bx-ax)) / len.
-            // Signed distance is positive when disc center is outside that half-plane.
-            const sDist = [];
-            const normals = [];
-            for (let k = 0; k < 3; k++) {
-              const [ax, az] = verts[k];
-              const [bx, bz] = verts[(k + 1) % 3];
-              const edgeDx = bx - ax, edgeDz = bz - az;
-              const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
-              const nx = (az - bz) / edgeLen;
-              const nz = (bx - ax) / edgeLen;
-              normals.push([nx, nz]);
-              sDist.push((px - ax) * nx + (pz - az) * nz);
-            }
-
-            // SAT separating axis test
-            let maxDist = -Infinity, maxK = 0;
-            let separated = false;
-            for (let k = 0; k < 3; k++) {
-              if (sDist[k] > discR) { separated = true; break; }
-              if (sDist[k] > maxDist) { maxDist = sDist[k]; maxK = k; }
-            }
-            if (separated) continue;
-
-            // Determine which region the disc center is in
-            const outerEdges = sDist.reduce((acc, d, k) => { if (d > 0) acc.push(k); return acc; }, []);
-
-            let resolveNx, resolveNz, penetration;
-
-            if (outerEdges.length === 0) {
-              // Inside triangle: push through nearest edge (the one with max signed dist)
-              resolveNx = normals[maxK][0];
-              resolveNz = normals[maxK][1];
-              penetration = discR - maxDist;
-            } else if (outerEdges.length === 1) {
-              // Face region: push along that edge's outward normal
-              const k = outerEdges[0];
-              resolveNx = normals[k][0];
-              resolveNz = normals[k][1];
-              penetration = discR - sDist[k];
-            } else {
-              // Vertex region: disc is outside 2 adjacent edges, push from shared vertex
-              const e0 = outerEdges[0], e1 = outerEdges[1];
-              // Edge e goes V_e → V_{(e+1)%3}; shared vertex is (e0+1)%3 if that equals e1, else e0
-              const vertIdx = (e0 + 1) % 3 === e1 ? e1 : e0;
-              const [vx, vz] = verts[vertIdx];
-              const dvx = px - vx, dvz = pz - vz;
-              const dvDist = Math.sqrt(dvx * dvx + dvz * dvz);
-              if (dvDist < 0.001 || dvDist >= discR) continue; // no actual collision at vertex
-              resolveNx = dvx / dvDist;
-              resolveNz = dvz / dvDist;
-              penetration = discR - dvDist;
-            }
-
-            disc.mesh.position.x += resolveNx * penetration;
-            disc.mesh.position.z += resolveNz * penetration;
-            const vDotN = disc.velocity.x * resolveNx + disc.velocity.z * resolveNz;
-            if (vDotN < 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * resolveNx) * bounceDamping;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * resolveNz) * bounceDamping;
-              if (gc.soundManager && disc.velocity.length() > 0.05) {
-                gc.soundManager.playBounce(disc.mesh.position.clone());
-              }
-              this._onWallBounce(disc);
-            }
-          }
-        }
-
-        // Circular/bullseye/donut level: enforce circular outer boundary.
-        // The polygon wall segments use rotated BoxGeometry; Box3.setFromObject
-        // inflates them into larger AABBs, leaving gaps a fast disc can slip through.
-        // A radial clamp is exact and replaces the per-segment AABB check.
-        // A polygon room that lists its edges (the Crusher's hexagon) is clamped to
-        // the polygon instead, so its corners stay reachable.
-        if (gc.level && gc.level.boundaryEdges) {
-          let bounced = false;
-          for (const { nx, nz, distance } of gc.level.boundaryEdges) {
-            const out = disc.mesh.position.x * nx + disc.mesh.position.z * nz - (distance - disc.radius);
-            if (out <= 0) continue;
-            disc.mesh.position.x -= nx * out;
-            disc.mesh.position.z -= nz * out;
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-            if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
-              bounced = true;
-            }
-          }
-          if (bounced) {
-            if (gc.soundManager && disc.velocity.length() > 0.05) {
-              gc.soundManager.playBounce(disc.mesh.position.clone());
-            }
-            this._onWallBounce(disc);
-          }
-        } else if (gc.level && gc.level.circleRadius && !gc.level.hexRings) {
-          const R = gc.level.circleRadius;
-          const dx = disc.mesh.position.x;
-          const dz = disc.mesh.position.z;
-          const r  = Math.sqrt(dx * dx + dz * dz);
-          const maxR = R - disc.radius;
-          if (r > maxR && r > 0.001) {
-            const nx = dx / r;
-            const nz = dz / r;
-            disc.mesh.position.x = nx * maxR;
-            disc.mesh.position.z = nz * maxR;
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-            if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
-              if (gc.soundManager && disc.velocity.length() > 0.05) {
-                gc.soundManager.playBounce(disc.mesh.position.clone());
-              }
-              this._onWallBounce(disc);
-            }
-          }
-        }
-
-        // Boss room: the curved far wall lies on a circle; keep discs inside it.
-        // (Ghosts too: it's an outer wall.)
-        if (gc.level && gc.level.arcWall) {
-          const { cx, cz, r: R } = gc.level.arcWall;
-          const dx = disc.mesh.position.x - cx;
-          const dz = disc.mesh.position.z - cz;
-          const r  = Math.sqrt(dx * dx + dz * dz);
-          const maxR = R - disc.radius;
-          if (r > maxR && r > 0.001) {
-            const nx = dx / r;
-            const nz = dz / r;
-            disc.mesh.position.x = cx + nx * maxR;
-            disc.mesh.position.z = cz + nz * maxR;
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-            if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
-              if (gc.soundManager && disc.velocity.length() > 0.05) {
-                gc.soundManager.playBounce(disc.mesh.position.clone());
-              }
-              this._onWallBounce(disc);
-            }
-          }
-        }
-
-        // Hexagonal level: enforce circular outer boundary (replaces AABB collision
-        // on the large rotated wall panels, which inflate badly).
-        if (gc.level && gc.level.hexRings) {
-          const { RA_in } = gc.level.hexRings;
-          const dx = disc.mesh.position.x;
-          const dz = disc.mesh.position.z;
-          const r  = Math.sqrt(dx * dx + dz * dz);
-          const maxR = RA_in - disc.radius;
-          if (r > maxR && r > 0.001) {
-            const nx = dx / r;
-            const nz = dz / r;
-            disc.mesh.position.x = nx * maxR;
-            disc.mesh.position.z = nz * maxR;
-            const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
-            if (vDotN > 0) {
-              disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
-              disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
-              if (gc.soundManager && disc.velocity.length() > 0.05) {
-                gc.soundManager.playBounce(disc.mesh.position.clone());
-              }
-              this._onWallBounce(disc);
-            }
-          }
-        }
-
-        // Apply friction (Wizards and Necromancers have more drag and slow down faster)
-        const currentFriction = isBombDisc
-          ? 0.888
-          : (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
-        // On ice, almost no friction at all.
-        const onIce = isOnIce(gc.level, disc.mesh.position.x, disc.mesh.position.z);
-        disc.applyFriction(onIce ? iceFriction(currentFriction) : currentFriction);
+        disc.applyFriction(this.frictionFor(disc));
       }
     }
 
@@ -776,6 +536,202 @@ export class PhysicsEngine {
     return false; // no early exit needed
   }
 
+  /** What `disc`'s speed is multiplied by each step, where it is now. */
+  frictionFor(disc) {
+    // Wizards and Necromancers have more drag and slow down faster
+    const friction = disc.kind === 'Bomb'
+      ? 0.888
+      : (disc.kind === 'Wizard' || disc.kind === 'Necromancer') ? 0.92 : 0.96;
+    // On ice, almost no friction at all.
+    const onIce = isOnIce(this.gc.level, disc.mesh.position.x, disc.mesh.position.z);
+    return onIce ? iceFriction(friction) : friction;
+  }
+
+  /** How bouncy walls are for `disc` (the fraction of its speed it keeps). */
+  bounceDampingFor(disc) {
+    return disc.kind === 'Bomb' ? 0.35 : 0.8;
+  }
+
+  /**
+   * Keeps `disc` inside the room and out of its walls and obstacles, bouncing
+   * it off whatever it has run into this step. Plays no sounds and has no other
+   * side effects, so the aim preview (BouncePreview.js) can run it on a
+   * stand-in disc. (Crushers, which hurt and fling, are handled separately.)
+   * @returns {boolean} true if it bounced off anything
+   */
+  collideWithRoom(disc, bounceDamping) {
+    const level = this.gc.level;
+    let bounced = disc.handleWallCollision(level.fieldWidth, level.fieldDepth, bounceDamping);
+
+    // Ghost Ring discs only collide with the room's outer walls.
+    // Round columns (userData.colliderRadius) collide as the circle they are,
+    // not as the square box around them, whose corners act as invisible walls.
+    for (const wall of level.getAllWalls(!!disc.isGhost)) {
+      const radius = wall.userData?.colliderRadius;
+      const hit = radius
+        ? this._collideWithColumn(disc, wall.getWorldPosition(_columnPos), radius, bounceDamping)
+        : disc.handleCollisionWithBox(wall, bounceDamping);
+      if (hit) bounced = true;
+    }
+
+    // Obstacles: pillars are exact circles; triangles and polygons collide
+    // with their actual edges and corners.
+    for (const obs of (disc.isGhost ? [] : (level.obstacles || []))) {
+      let hit = false;
+      if (obs.type === 'pillar') hit = this._collideWithColumn(disc, obs, obs.width / 2, bounceDamping);
+      else if (obs.type === 'polygon') hit = this._collideWithPolygon(disc, obs.points, bounceDamping);
+      else if (obs.type === 'triangle') hit = this._collideWithTriangle(disc, obs, bounceDamping);
+      if (hit) bounced = true;
+    }
+
+    // Circular/bullseye/donut level: enforce circular outer boundary.
+    // The polygon wall segments use rotated BoxGeometry; Box3.setFromObject
+    // inflates them into larger AABBs, leaving gaps a fast disc can slip through.
+    // A radial clamp is exact and replaces the per-segment AABB check.
+    // A polygon room that lists its edges (the Crusher's hexagon) is clamped to
+    // the polygon instead, so its corners stay reachable.
+    if (level.boundaryEdges) {
+      for (const { nx, nz, distance } of level.boundaryEdges) {
+        const out = disc.mesh.position.x * nx + disc.mesh.position.z * nz - (distance - disc.radius);
+        if (out <= 0) continue;
+        disc.mesh.position.x -= nx * out;
+        disc.mesh.position.z -= nz * out;
+        const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+        if (vDotN > 0) {
+          disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+          disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+          bounced = true;
+        }
+      }
+    } else if (level.circleRadius && !level.hexRings) {
+      if (this._keepInsideCircle(disc, 0, 0, level.circleRadius, bounceDamping)) bounced = true;
+    }
+
+    // Boss room: the curved far wall lies on a circle; keep discs inside it.
+    // (Ghosts too: it's an outer wall.)
+    if (level.arcWall) {
+      const { cx, cz, r } = level.arcWall;
+      if (this._keepInsideCircle(disc, cx, cz, r, bounceDamping)) bounced = true;
+    }
+
+    // Hexagonal level: enforce circular outer boundary (replaces AABB collision
+    // on the large rotated wall panels, which inflate badly).
+    if (level.hexRings) {
+      if (this._keepInsideCircle(disc, 0, 0, level.hexRings.RA_in, bounceDamping)) bounced = true;
+    }
+    return bounced;
+  }
+
+  /**
+   * Keeps `disc` inside the circle of radius `R` centred at (cx, cz), bouncing
+   * it off the edge. Returns true if it bounced.
+   */
+  _keepInsideCircle(disc, cx, cz, R, bounceDamping) {
+    const dx = disc.mesh.position.x - cx;
+    const dz = disc.mesh.position.z - cz;
+    const r  = Math.sqrt(dx * dx + dz * dz);
+    const maxR = R - disc.radius;
+    if (r <= maxR || r <= 0.001) return false;
+    const nx = dx / r;
+    const nz = dz / r;
+    disc.mesh.position.x = cx + nx * maxR;
+    disc.mesh.position.z = cz + nz * maxR;
+    const vDotN = disc.velocity.x * nx + disc.velocity.z * nz;
+    if (vDotN <= 0) return false;
+    disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
+    disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
+    return true;
+  }
+
+  /**
+   * Pushes `disc` out of a triangle obstacle and bounces it off. Returns true
+   * if it bounced.
+   *
+   * Three.js CylinderGeometry(r,r,h,3) places vertices at angles
+   * rotY + k*2π/3 (k=0,1,2) from the +Z axis in the XZ plane (CW winding
+   * when viewed from above). Collision uses SAT against the 3 edge normals
+   * plus vertex-region handling for disc centers near corners.
+   */
+  _collideWithTriangle(disc, obs, bounceDamping) {
+    const R = obs.width / 2; // circumradius
+    const discR = disc.radius;
+    const rotY = obs.rotY ?? 0;
+    const px = disc.mesh.position.x;
+    const pz = disc.mesh.position.z;
+
+    // Quick reject: outside circumscribed circle + discR
+    const qdx = px - obs.x, qdz = pz - obs.z;
+    if (qdx * qdx + qdz * qdz > (R + discR) * (R + discR)) return false;
+
+    // Build the 3 vertices in world space
+    const verts = [];
+    for (let k = 0; k < 3; k++) {
+      const a = rotY + k * 2 * Math.PI / 3;
+      verts.push([obs.x + R * Math.sin(a), obs.z + R * Math.cos(a)]);
+    }
+
+    // For CW winding the outward normal of edge V_k→V_{k+1} is the
+    // 90° CCW rotation of the edge direction: n = ((az-bz), (bx-ax)) / len.
+    // Signed distance is positive when disc center is outside that half-plane.
+    const sDist = [];
+    const normals = [];
+    for (let k = 0; k < 3; k++) {
+      const [ax, az] = verts[k];
+      const [bx, bz] = verts[(k + 1) % 3];
+      const edgeDx = bx - ax, edgeDz = bz - az;
+      const edgeLen = Math.sqrt(edgeDx * edgeDx + edgeDz * edgeDz);
+      const nx = (az - bz) / edgeLen;
+      const nz = (bx - ax) / edgeLen;
+      normals.push([nx, nz]);
+      sDist.push((px - ax) * nx + (pz - az) * nz);
+    }
+
+    // SAT separating axis test
+    let maxDist = -Infinity, maxK = 0;
+    for (let k = 0; k < 3; k++) {
+      if (sDist[k] > discR) return false;
+      if (sDist[k] > maxDist) { maxDist = sDist[k]; maxK = k; }
+    }
+
+    // Determine which region the disc center is in
+    const outerEdges = sDist.reduce((acc, d, k) => { if (d > 0) acc.push(k); return acc; }, []);
+
+    let resolveNx, resolveNz, penetration;
+
+    if (outerEdges.length === 0) {
+      // Inside triangle: push through nearest edge (the one with max signed dist)
+      resolveNx = normals[maxK][0];
+      resolveNz = normals[maxK][1];
+      penetration = discR - maxDist;
+    } else if (outerEdges.length === 1) {
+      // Face region: push along that edge's outward normal
+      const k = outerEdges[0];
+      resolveNx = normals[k][0];
+      resolveNz = normals[k][1];
+      penetration = discR - sDist[k];
+    } else {
+      // Vertex region: disc is outside 2 adjacent edges, push from shared vertex
+      const e0 = outerEdges[0], e1 = outerEdges[1];
+      // Edge e goes V_e → V_{(e+1)%3}; shared vertex is (e0+1)%3 if that equals e1, else e0
+      const vertIdx = (e0 + 1) % 3 === e1 ? e1 : e0;
+      const [vx, vz] = verts[vertIdx];
+      const dvx = px - vx, dvz = pz - vz;
+      const dvDist = Math.sqrt(dvx * dvx + dvz * dvz);
+      if (dvDist < 0.001 || dvDist >= discR) return false; // no actual collision at vertex
+      resolveNx = dvx / dvDist;
+      resolveNz = dvz / dvDist;
+      penetration = discR - dvDist;
+    }
+
+    disc.mesh.position.x += resolveNx * penetration;
+    disc.mesh.position.z += resolveNz * penetration;
+    const vDotN = disc.velocity.x * resolveNx + disc.velocity.z * resolveNz;
+    if (vDotN >= 0) return false;
+    disc.velocity.x = (disc.velocity.x - 2 * vDotN * resolveNx) * bounceDamping;
+    disc.velocity.z = (disc.velocity.z - 2 * vDotN * resolveNz) * bounceDamping;
+    return true;
+  }
+
   /** `disc` bounced off a wall or obstacle: feeds Sneak Attack and Wall Slam. */
   /**
    * Pushes `disc` out of a round column at `pos` (world space) of `radius` and
@@ -828,9 +784,6 @@ export class PhysicsEngine {
     if (vDotN >= 0) return false;
     disc.velocity.x = (disc.velocity.x - 2 * vDotN * nx) * bounceDamping;
     disc.velocity.z = (disc.velocity.z - 2 * vDotN * nz) * bounceDamping;
-    if (this.gc.soundManager && disc.velocity.length() > 0.05) {
-      this.gc.soundManager.playBounce(disc.mesh.position.clone());
-    }
     return true;
   }
 

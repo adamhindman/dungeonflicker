@@ -2,7 +2,7 @@
 // 3D display models for Sanctuary shop items.
 
 import {
-  BoxGeometry, CylinderGeometry, DoubleSide, ExtrudeGeometry, LatheGeometry, Shape, Group, Mesh, MeshStandardMaterial,
+  BoxGeometry, CircleGeometry, CylinderGeometry, DoubleSide, ExtrudeGeometry, LatheGeometry, Shape, Group, Mesh, MeshStandardMaterial,
   OctahedronGeometry, SphereGeometry, TorusGeometry, Vector2,
 } from 'three';
 
@@ -52,6 +52,61 @@ export function makeRingModel(gemColor) {
 
   const model = new Group();
   model.add(ring);
+  return model;
+}
+
+// Spectacles: two round brass rims with glass lenses, a little arched bridge
+// between them and straight arms running back from the outer edges. They
+// stand upright facing +Z, hovering and tilted like the rings.
+const SPECS_RIM_RADIUS = 0.27;
+const SPECS_RIM_THICKNESS = 0.035;
+const SPECS_LENS_GAP = 0.16;       // between the two rims
+const SPECS_ARM_LENGTH = 0.85;
+const SPECS_BRASS = {
+  color: 0xc9a04a,
+  metalness: 0.85,
+  roughness: 0.3,
+  emissive: 0x6e4f14, // keeps the brass readable in the dim Sanctuary
+  emissiveIntensity: 0.9,
+};
+
+/** A pair of round brass spectacles. Origin on the floor, so rotation.y spins it. */
+export function makeSpectaclesModel() {
+  const brass = new MeshStandardMaterial(SPECS_BRASS);
+  const glass = new MeshStandardMaterial({
+    color: 0xdff4ff, metalness: 0, roughness: 0.05, transparent: true, opacity: 0.25,
+    side: DoubleSide, depthWrite: false, emissive: 0x5f7f8f, emissiveIntensity: 0.4,
+  });
+  const lensX = SPECS_RIM_RADIUS + SPECS_LENS_GAP / 2; // each lens's centre, either side of the middle
+
+  const frame = new Group();
+  for (const sign of [-1, 1]) {
+    // Rim and lens (a torus and a disc both lie in the XY plane, facing +Z)
+    const rim = new Mesh(new TorusGeometry(SPECS_RIM_RADIUS, SPECS_RIM_THICKNESS, 12, 40), brass);
+    rim.position.x = sign * lensX;
+    const lens = new Mesh(new CircleGeometry(SPECS_RIM_RADIUS, 40), glass);
+    lens.position.x = sign * lensX;
+    // Arm: straight back from the rim's outer edge
+    const arm = new Mesh(new CylinderGeometry(SPECS_RIM_THICKNESS * 0.8, SPECS_RIM_THICKNESS * 0.8, SPECS_ARM_LENGTH, 8), brass);
+    arm.rotation.x = Math.PI / 2;
+    arm.position.set(sign * (lensX + SPECS_RIM_RADIUS), 0.04, -SPECS_ARM_LENGTH / 2);
+    frame.add(lens, rim, arm);
+  }
+  // Bridge: a small arch over the gap between the rims
+  const bridge = new Mesh(
+    new TorusGeometry(SPECS_LENS_GAP / 2 + SPECS_RIM_THICKNESS, SPECS_RIM_THICKNESS * 0.8, 8, 16, Math.PI),
+    brass,
+  );
+  bridge.position.y = 0.06;
+  frame.add(bridge);
+
+  // Lifted onto the pedestal and pushed forward a little, so the whole pair
+  // (rims in front, arms behind) is centred over it as it spins.
+  frame.position.set(0, HOVER_HEIGHT + SPECS_RIM_RADIUS + 0.25, SPECS_ARM_LENGTH * 0.35);
+  frame.rotation.z = TILT;
+
+  const model = new Group();
+  model.add(frame);
   return model;
 }
 

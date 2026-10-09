@@ -134,6 +134,13 @@ export default class InputHandler {
             return;
         }
 
+        // Caps Lock on: preview the throw's first bounce while aiming. (Its
+        // lock state, not the key: macOS only reports it turning on and off.)
+        if (key === 'capslock') {
+            this.gameController.setBouncePreviewOn?.(event.getModifierState('CapsLock'));
+            return;
+        }
+
         // Hold Tab: show every disc's flick range (instead of moving browser focus).
         if (key === 'tab') {
             event.preventDefault();
@@ -282,6 +289,10 @@ export default class InputHandler {
 
         if (key === 'tab') {
             this.gameController.rangeOverlay?.hide();
+            return;
+        }
+        if (key === 'capslock') {
+            this.gameController.setBouncePreviewOn?.(event.getModifierState('CapsLock'));
             return;
         }
 

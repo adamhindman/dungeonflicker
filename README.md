@@ -33,7 +33,8 @@ The game unfolds in a turn-based fashion. Players take control of their active d
 Mastering the controls is essential for victory in Dungeonflicker:
 
 *   **Aim and Throw:** Click and drag the currently active disc. The direction of the drag determines the throw angle, and the length of the drag dictates the power.
-*   **Precision Mode:** Hold `Shift` while aiming for short, exact throws. The drag is slowed so that 150 px of mouse movement spans 0–50% power, and the throw is capped at half power. Shift can be pressed or released mid-drag without the aim jumping.
+*   **Precision Mode:** Hold `Shift` while aiming for short, exact throws. Moving toward or away from where you pressed is slowed so that 150 px of mouse movement spans 0–50% power, and the throw is capped at half power; moving around that point still turns the aim at the normal rate. Shift can be pressed or released mid-drag without the aim jumping.
+*   **Bounce Preview (needs Spectacles):** A character who owns Spectacles, from the Sanctuary shop, can turn on `Caps Lock` to see, while aiming, the throw's path off up to 3 walls or obstacles, with an X where it strikes each one. If it will hit another disc, the path shows the rebound and ends there. It ignores sloped floors (straight lines only) and stops at Mirror Gates.
 *   **Throw Radius:** Hold `Tab` to show every disc's full-power reach.
 *   **Cancel:** Press `Escape` while dragging to cancel the throw, or to cancel targeting (Flame Strike, Warp Ring, moving the Hardy Shield).
 *   **Abilities:** `1`–`5` use the current character's abilities (shown as buttons at the bottom of the screen).
@@ -60,7 +61,7 @@ Mastering the controls is essential for victory in Dungeonflicker:
 
 ### Proposed Sanctuary items
 
-Ideas for the Sanctuary shop, not yet built. Already in the game: Warp Ring, Ghost Ring, Throwing Knife, Hardy Shield.
+Ideas for the Sanctuary shop, not yet built. Already in the game: Warp Ring, Ghost Ring, Throwing Knife, Hardy Shield, Healing and Resurrection potions, Spectacles. Each Sanctuary visit offers a random 6 of them.
 
 * **Decoy** — place a dummy disc that enemies target first until it's hit.
 * **Gas Grenade** — throw it to leave a poison cloud for 2–3 rounds; anything that starts its turn inside takes 1 damage.
