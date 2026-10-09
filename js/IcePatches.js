@@ -39,8 +39,8 @@ export function isOnIce(level, x, z) {
  */
 export function addIcePatches(level, { count, minRadius, maxRadius, area }) {
   const material = new MeshStandardMaterial({
-    color: 0xcfe8f7, roughness: 0.12, metalness: 0.15,
-    emissive: 0x16303e, emissiveIntensity: 0.6, // stays pale in the dim rooms
+    color: 0xaed7f3, roughness: 0.12, metalness: 0.15,     // pale icy blue
+    emissive: 0x12334a, emissiveIntensity: 0.6, // a blue glow, so it reads as ice in the dim rooms
     map: crackTexture(),
   });
   level._iceMaterial = material;
@@ -88,7 +88,7 @@ function crackTexture() {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, px, px);
-  ctx.strokeStyle = 'rgba(150, 185, 210, 0.55)';
+  ctx.strokeStyle = 'rgba(70, 120, 170, 0.6)'; // darker than the blue ice, so the cracks show
   for (let c = 0; c < 14; c++) {
     // A crack: a jagged line wandering from a random point.
     ctx.lineWidth = 0.5 + Math.random() * 1.2;
