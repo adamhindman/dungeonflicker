@@ -30,9 +30,11 @@ import { pickMirrorGate, setHoveredMirrorGate } from './MirrorGates.js';
 import { makePathChecker, planGateShot, chooseGateShot } from './GateAiming.js';
 import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
+import { RoomTitle, ROOM_TITLE_AFTER_FADE_MS } from './RoomTitle.js';
 import ExplosionParticles from './ExplosionParticles.js';
 import PitEruption from './PitEruption.js';
 import { PursuerController } from './Pursuer.js';
+import { PowderKegManager, KEG_DESCRIPTION } from './PowderKegs.js';
 
 // Flick tuning: drag length (screen px × camera distance) → throw speed.
 const THROW_DRAG_THRESHOLD = 2;    // drags shorter than this (in world-drag units) don't throw
@@ -174,6 +176,7 @@ export default class GameController {
         Homunculus: "A small, imperfect copy of one of the party, grown in Paracelsus's flasks. 2 HP, 1 damage.",
         Mortar: "A siege engine dug in where it stands. It marks a circle on the floor, then shells it on its next turn: 2 damage and a hard shove to everything inside, friend or foe. 3 HP; in some rooms, beating it turns it on the monsters.",
         Pursuer: "An inconceivable being from another dimension who arrives when you have stayed too long in this room. It is implacable and pitiless. It cannot be persuaded or destroyed, only fled. It wants you to leave or die.",
+        PowderKeg: KEG_DESCRIPTION,
         Alembic: "One of Paracelsus's flasks. Grows 1–3 homunculi every round until it's broken. The flasks break when he falls, but the homunculi fight on."
     };
 
@@ -252,6 +255,7 @@ export default class GameController {
     this.blastRings = new BlastRings(this.scene); // Paracelsus's Radius Blast shockwaves
     this.explosionParticles = new ExplosionParticles(this.scene); // grenade and lava-pit blasts
     this.pitEruption = new PitEruption(this); // the Donut room's erupting lava pit
+    this.powderKegs = new PowderKegManager(this); // the Powder Store's kegs: fuses, smoke and blasts
     this.pursuerController = new PursuerController(this); // comes through the door if a room drags on
 
     // Camera, renderer, and OrbitControls are owned by CameraController.
@@ -312,6 +316,7 @@ export default class GameController {
     this.sanctuaryHealing = new SanctuaryHealing(this);
     this._sanctuaryDoorTimer = null;
     this.bossIntro = new BossIntroDialog();
+    this.roomTitle = new RoomTitle(); // the room's name as you enter it
     firstTimeEvents.addListener(key => this.notificationManager.push(key));
     this.actionButtonsContainer = this.uiManager.getActionButtonsContainer();
     if (!this.actionButtonsContainer) {
@@ -326,6 +331,9 @@ export default class GameController {
       color: 0xffffff,
       linewidth: 2,
       depthTest: false,
+      // Drawn with the transparent things (lava, ice…), after the solid ones,
+      // so its renderOrder puts it on top of everything, not just the solids.
+      transparent: true,
     });
     const vertices = new Float32Array(6); // 2 vertices * 3 coords each
     const geometry = new BufferGeometry();
@@ -367,7 +375,7 @@ export default class GameController {
 
     // Initialize discs for gameplay
     this.initDiscs();
-    this._startBossIfNeeded();
+    this._announceRoom({ afterMenu: true });
 
     // Generate lava pools
     this.lavaManager.generate();
@@ -1394,16 +1402,26 @@ clamp(value, min, max) {
     return !!this.bossIntro?.isOpen;
   }
 
-  /** The boss room opens with its story popup. */
-  _startBossIfNeeded() {
-    if (this.level?.isBossRoom) this.bossIntro?.showWhenRoomVisible('paracelsus');
+  /**
+   * Every room opens with its title; the boss room's story popup follows once
+   * the title has gone, so the two don't overlap. `afterMenu`: the first room
+   * after character select, whose fade from black is much longer (see
+   * initDiscs), so the title fades in more slowly to match.
+   */
+  _announceRoom({ afterMenu = false } = {}) {
+    // The Sanctuary sits between numbered rooms and has no number of its own.
+    const number = this.level?.isSanctuary ? null : this.currentLevelNumber;
+    this.roomTitle?.show(this.level?.shape, { slow: afterMenu, number });
+    if (this.level?.isBossRoom) this.bossIntro?.showWhenRoomVisible('paracelsus', ROOM_TITLE_AFTER_FADE_MS);
   }
 
   _clearRoomState() {
     clearTimeout(this._sanctuaryDoorTimer);
     this._sanctuaryDoorTimer = null;
     this.bossIntro?.close();
+    this.roomTitle?.clear();
     this.pitEruption?.reset();
+    this.powderKegs?.reset();
     this.pursuerController?.reset();
     this.soundManager?.stopVolcanoLoop();
     this.explosionParticles?.clear();
@@ -1477,7 +1495,7 @@ clamp(value, min, max) {
     // Testing: the first room can be forced to a given room type.
     if (n === 1 && FIRST_ROOM_OVERRIDE) return FIRST_ROOM_OVERRIDE;
     // Level sequence cycles through the authored room types, ending with the boss.
-    const sequence = ['rect', 'circle', 'ice', 'crusher', 'donut', 'siege', 'locked', 'bullseye', 'boss'];
+    const sequence = ['rect', 'circle', 'ice', 'powder', 'crusher', 'donut', 'siege', 'locked', 'bullseye', 'boss'];
     return sequence[(n - 1) % sequence.length];
   }
 
@@ -1568,7 +1586,7 @@ clamp(value, min, max) {
     this.lavaManager.generate();
     this.initDiscs(playerStats);
     this._startSanctuaryIfNeeded();
-    this._startBossIfNeeded();
+    this._announceRoom();
 
     // 4. Reset turn-specific state
     this.wizardController?.onTurnEnd();
@@ -1688,7 +1706,7 @@ clamp(value, min, max) {
     this.roundWon = false;
     this.panningKeys = { up: false, down: false, left: false, right: false };
     this._startSanctuaryIfNeeded();
-    this._startBossIfNeeded();
+    this._announceRoom();
 
     if (this.discs.length > 0) {
       let startingDisc = this.discs.find(disc => disc.type === 'player');
@@ -1794,7 +1812,7 @@ clamp(value, min, max) {
     // 4. Re-initialize world (lava first so disc spawning can avoid pools)
     this.lavaManager.generate();
     this.initDiscs(); // This will populate this.discs with new instances
-    this._startBossIfNeeded();
+    this._announceRoom({ afterMenu: true });
 
     // 5. Reset core game state variables
     this.currentTurnIndex = 0;
@@ -1946,7 +1964,13 @@ clamp(value, min, max) {
     this.blastRings?.update(deltaTime);
     this.explosionParticles?.update(deltaTime);
     this.pitEruption?.update(deltaTime);
+    this.powderKegs?.update(deltaTime);
     this.pursuerController?.update(deltaTime);
+    // The aim line only belongs on screen mid-drag. If a release went unheard
+    // (let go over a button, outside the window…), don't leave it lying there.
+    if (this.throwDirectionLine?.visible && !this.inputHandler?.isPointerDown) {
+      this.throwDirectionLine.visible = false;
+    }
     if (!this.bossIntro?.holdsChatter) {
       for (const disc of this.discs) disc.updateIdleChatter?.(deltaTime);
     }
@@ -2187,7 +2211,9 @@ disc.isCurrentlyInLavaState = true;
         }
       }
 
-      if ((this.thrownDisc.velocity.length() < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead || isConsumedPotion || isConsumedFireball) {
+      // A powder keg about to go off holds the turn open until it has.
+      const settled = (this.thrownDisc.velocity.length() < 0.01 && !this.thrownDisc.moving) || isConsumedOrb || isConsumedAnimatedDead || isConsumedPotion || isConsumedFireball;
+      if (settled && !this.powderKegs?.isBusy()) {
         this._throwWaitStart = null;
         this.waitingForDiscToStop = false;
         const justMovedDisc = this.thrownDisc;
@@ -2323,6 +2349,10 @@ disc.isCurrentlyInLavaState = true;
     this._autoTurnEnd = false;
     if (autoTurnEnd && this.itemManager?.holdTurnForReadiedItem()) return;
     this.itemManager?.onTurnEnd();
+
+    // Powder kegs this disc lit on its previous turn go off now that it has had a turn to get clear.
+    await this.powderKegs.onTurnEnd(this.discs[this.currentTurnIndex]);
+    if (this.checkGameOverConditions()) return;
 
     const previousTurnIndex = this.currentTurnIndex;
     this.wizardController?.onTurnEnd();
@@ -2475,6 +2505,8 @@ disc.isCurrentlyInLavaState = true;
     // Counts down to the Pursuer and brings it in when it's due, cleared room or
     // not: lingering after the fight is lingering too.
     if (this.level && nextAvailableDiscFound && nextIndex === firstAliveIndex) {
+      // Smoking powder kegs whose lighter has died go off (the rest wait for their lighter's turn).
+      await this.powderKegs.onRoundStart();
       await this.pursuerController.onRoundStart();
     }
 
@@ -2843,16 +2875,23 @@ disc.isCurrentlyInLavaState = true;
         if (d < minDist) { minDist = d; target = alivePlayers[i]; }
       }
 
-      if (minDist > SELF_THROW_RANGE) {
+      // A powder keg that would catch more of the party than of the monsters:
+      // a fireball sets it off, at any range.
+      const kegPathBlocked = makePathChecker(this.level);
+      const kegShot = this.powderKegs.chooseKegShot(disc, alivePlayers, kegPathBlocked, { fireball: true });
+
+      if (kegShot || minDist > SELF_THROW_RANGE) {
         const fromPos = disc.mesh.position.clone();
         const toPos = target.mesh.position.clone();
-        const pathBlocked = makePathChecker(this.level);
+        const pathBlocked = kegPathBlocked;
 
-        // Straight at the target if it's in range and in sight; otherwise
-        // through a Mirror Gate if a route's in range (the fireball fits any gate).
+        // At a keg; else straight at the target if it's in range and in sight;
+        // otherwise through a Mirror Gate if a route's in range (the fireball fits any gate).
         let dir = null;
         this.lastAIPlan = null;
-        if (minDist <= MAX_FIREBALL_RANGE && !pathBlocked(fromPos, toPos)) {
+        if (kegShot) {
+          dir = kegShot.dir;
+        } else if (minDist <= MAX_FIREBALL_RANGE && !pathBlocked(fromPos, toPos)) {
           dir = toPos.clone().sub(fromPos);
           dir.y = 0;
           dir.normalize();
@@ -2993,14 +3032,34 @@ disc.isCurrentlyInLavaState = true;
     const alivePlayers = this._aiTargetablePlayers(disc);
     if (alivePlayers.length === 0) return;
 
-    // Select closest player disc as target
-    let target = alivePlayers[0];
+    // Skeletons are mindless: one will hurl itself at a powder keg if the
+    // blast would catch more of the party than of the monsters.
+    if (disc.kind === 'Skeleton') {
+      const kegShot = this.powderKegs.chooseKegShot(disc, alivePlayers, makePathChecker(this.level));
+      if (kegShot) {
+        disc.velocity.set(kegShot.dir.x * kegShot.speed, 0, kegShot.dir.z * kegShot.speed);
+        disc.moving = true;
+        disc.hasThrown = true;
+        if (this.uiManager) this.uiManager.updateMoveStatusChip(disc);
+        disc.resetDamageState();
+        disc.onAttackLaunched?.();
+        this.thrownDisc = disc;
+        this.waitingForDiscToStop = true;
+        return;
+      }
+    }
+
+    // Select closest player disc as target, leaving alone anyone standing
+    // where a smoking powder keg will blow (unless that's everyone)
+    const outOfDanger = alivePlayers.filter(p => !this.powderKegs.inDangerAt(p.mesh.position.x, p.mesh.position.z));
+    const candidates = outOfDanger.length ? outOfDanger : alivePlayers;
+    let target = candidates[0];
     let minDist = disc.mesh.position.distanceTo(target.mesh.position);
-    for (let i = 1; i < alivePlayers.length; i++) {
-      const dist = disc.mesh.position.distanceTo(alivePlayers[i].mesh.position);
+    for (let i = 1; i < candidates.length; i++) {
+      const dist = disc.mesh.position.distanceTo(candidates[i].mesh.position);
       if (dist < minDist) {
         minDist = dist;
-        target = alivePlayers[i];
+        target = candidates[i];
       }
     }
 

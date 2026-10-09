@@ -512,8 +512,14 @@ export class PhysicsEngine {
             d1.mesh.position.add(normal.clone().multiplyScalar(separationOverlap * (d2.mass / totalMass)));
             d2.mesh.position.sub(normal.clone().multiplyScalar(separationOverlap * (totalMass === 0 ? 0 : d1.mass / totalMass)));
 
+            // Powder kegs take no damage and deal none: a hit lights them or sets them off.
+            if (d1.kind === 'PowderKeg' || d2.kind === 'PowderKeg') {
+              const speed = -velocityAlongNormal;
+              if (d1.kind === 'PowderKeg') gc.powderKegs?.onKegStruck(d1, d2, speed);
+              if (d2.kind === 'PowderKeg') gc.powderKegs?.onKegStruck(d2, d1, speed);
+            }
             // Apply damage rules — both discs must be alive (Bombs deal no disc-collision damage)
-            if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead && d1.kind !== 'Bomb' && d2.kind !== 'Bomb') {
+            else if (d1.hitPoints > 0 && d2.hitPoints > 0 && !d1.dead && !d2.dead && d1.kind !== 'Bomb' && d2.kind !== 'Bomb') {
               // Special Case: AnimatedDead hitting a live NPC (deals damage but is NOT consumed).
               // A fireball is left to the fireball case below, which burns it and is used up.
               if ((d1.kind === 'AnimatedDead' && !d1.dead && d2.type === 'NPC' && !d2.dead && d2.kind !== 'Fireball') ||

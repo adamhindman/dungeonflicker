@@ -35,17 +35,21 @@ export function applyRadiusBlast(gc, caster, radius, force) {
  * within `radius` is shoved away from the centre (harder the closer it
  * stood) and, if `shouldDamage(disc)` says so, takes `damage`. A Hardy Shield
  * between the centre and its owner takes 1 off the damage but not the shove.
- * Ghost Ring discs, items and anything `skip(disc)` names aren't touched.
+ * Ghost Ring discs, items and anything `skip(disc)` names aren't touched,
+ * except that a powder keg in reach is set off.
  * Returns the discs it reached.
  */
 export function applyBlastAt(gc, x, z, radius, force, { damage = 1, shouldDamage = () => true, skip = () => false } = {}) {
   const reached = [];
   gc.discs.forEach(disc => {
-    if (disc.dead || disc.isGhost || disc.type === 'item' || skip(disc)) return;
+    if (disc.dead || disc.isGhost || skip(disc)) return;
     const dx = disc.mesh.position.x - x;
     const dz = disc.mesh.position.z - z;
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist > radius) return;
+    // A powder keg in the blast goes off too; other items aren't touched.
+    if (disc.kind === 'PowderKeg') { disc.takeHit(damage, null); return; }
+    if (disc.type === 'item') return;
     if (!disc.immovable) {
       // Dead centre has no direction: shove it any way at all
       const angle = Math.random() * Math.PI * 2;

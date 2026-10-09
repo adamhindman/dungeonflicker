@@ -45,8 +45,11 @@ export class BossIntroDialog {
     return this._shownAt !== null && performance.now() - this._shownAt < CHATTER_DELAY_MS;
   }
 
-  /** Shows the intro for `bossId` once the screen has faded in from black. */
-  showWhenRoomVisible(bossId) {
+  /**
+   * Shows the intro for `bossId` once the screen has faded in from black, and
+   * `delayMs` more after that (e.g. for the room's title to come and go).
+   */
+  showWhenRoomVisible(bossId, delayMs = 0) {
     this.close();
     const overlay = document.getElementById('black-overlay');
     const start = performance.now();
@@ -55,8 +58,10 @@ export class BossIntroDialog {
       if (fading && performance.now() - start < 10000) {
         this._waitTimer = setTimeout(check, 150);
       } else {
-        this._waitTimer = null;
-        this.show(bossId);
+        this._waitTimer = setTimeout(() => {
+          this._waitTimer = null;
+          this.show(bossId);
+        }, delayMs);
       }
     };
     check();

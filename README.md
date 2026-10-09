@@ -74,12 +74,11 @@ Ideas for the Sanctuary shop, not yet built. Already in the game: Warp Ring, Gho
 
 Room ideas filed for later; each still needs designing in detail.
 
-* **Powder Store** — explosive barrels around the room. Hit one hard enough, or knock something into it, and it blows, damaging and scattering everything nearby; barrels can set each other off.
 * **Crumbling Floor** — floor tiles crack and fall away over time, from the edges in, so the room keeps shrinking.
 * **Flooded Crypt** — a current of water that carries every disc in it a set distance at the end of each round.
 * **Mirror Gates** — several paired portals along each wall; a disc that enters one comes out of its partner at the same speed and heading, so they can be used to cross the room (or for trick shots). *(The gates themselves are built and used in the Locked Gate room; a standalone Mirror Gates room isn't in the rotation yet.)*
 
-Built so far: **Ice Cave** and **Locked Gate**.
+Built so far: **Ice Cave**, **Locked Gate** and **Powder Store** (clusters of powder kegs, some round a bigger Great Powder Keg: a hard hit or fire sets one off at once, a gentle hit makes it smoke and blow at the end of its lighter's next turn; blasts hurt everyone and set off other kegs. Skeletons hurl themselves at kegs and Fire Elementals shoot them when the blast would catch the party, and monsters steer clear of targets beside a smoking keg).
 
 ### Proposed room goals
 

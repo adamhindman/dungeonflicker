@@ -77,6 +77,54 @@ textarea {
     to   { opacity: 1; }
 }
 
+/* The room's name as you enter it (RoomTitle.js), mid-screen in carved-stone
+   capitals. Fades in over the black screen between rooms, stays while the room
+   fades in, then fades out (.leaving); durations come from RoomTitle.js.
+   Clicks pass straight through. */
+#room-title {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 10001; /* above the black overlay (9999); only shown once character select has closed */
+    color: #eadcb8;
+    font-family: 'Cinzel', 'Times New Roman', serif;
+    font-weight: 600;
+    font-size: 3.6rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    text-align: center;
+    white-space: nowrap;
+    text-shadow: 0 0 .5rem #000, 0 0 1.4rem #000, 0 .15rem .25rem #000;
+    pointer-events: none;
+    user-select: none;
+    /* ease-in-out: an even fade across the whole duration (ease-out would look
+       finished in under half of it) */
+    animation: room-title-in var(--room-title-in) ease-in-out var(--room-title-delay) both;
+}
+
+/* "Room N", small above the name */
+#room-title .room-title-number {
+    font-size: 1.3rem;
+    letter-spacing: .35em;
+    margin-bottom: .4rem;
+    opacity: .8;
+}
+
+#room-title.leaving {
+    animation: room-title-out var(--room-title-out) ease-in forwards;
+}
+
+@keyframes room-title-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+@keyframes room-title-out {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+}
+
 #disc-names {
     position: fixed;
     top: 2rem;

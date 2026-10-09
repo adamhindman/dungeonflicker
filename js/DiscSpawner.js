@@ -6,6 +6,7 @@ import FireElemental from './FireElemental.js';
 import Paracelsus from './Paracelsus.js';
 import Alembic from './Alembic.js';
 import Mortar from './Mortar.js';
+import { placeKegClusters } from './PowderKegs.js';
 
 const NECROMANCER_MAX_HEALTH = 6;
 
@@ -457,6 +458,9 @@ export class DiscSpawner {
       : [];
     for (const mortar of mortars) existingPositions.push({ x: mortar.mesh.position.x, z: mortar.mesh.position.z });
 
+    // Powder kegs in clusters (the Powder Store), placed before the monsters so they spawn clear of them.
+    const kegs = gc.level.kegClusters ? placeKegClusters(gc, existingPositions, gc.level.kegClusters) : [];
+
     // The Pursuer's arrival is timed by how much the room has to fight.
     gc.pursuerController?.onRoomStart(
       baseNpcDefinitions.reduce((sum, def) => sum + def.cost, 0) + mortars.length * MORTAR_POINTS);
@@ -524,6 +528,6 @@ export class DiscSpawner {
       existingPositions.push({ x: finalX, z: finalZ });
     }
 
-    return [barbarian, wizard, necromancer, rogue].filter(Boolean).concat(npcDiscs, mortars);
+    return [barbarian, wizard, necromancer, rogue].filter(Boolean).concat(npcDiscs, mortars, kegs);
   }
 }

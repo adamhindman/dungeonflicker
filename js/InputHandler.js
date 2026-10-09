@@ -35,8 +35,15 @@ export default class InputHandler {
 
         window.addEventListener('keyup', this._handleKeyUp);
         // A held Tab never sends keyup if the window loses focus: hide the range circles then.
-        this._handleBlur = () => this.gameController.rangeOverlay?.hide();
+        // Nor does a held mouse button send pointerup: cancel any aim in progress.
+        this._handleBlur = () => {
+            this.gameController.rangeOverlay?.hide();
+            this._cancelDrag();
+        };
         window.addEventListener('blur', this._handleBlur);
+        // The browser can take the pointer away mid-drag (e.g. a system gesture): cancel the aim.
+        this._handlePointerCancel = () => this._cancelDrag();
+        window.addEventListener('pointercancel', this._handlePointerCancel);
         // Note: The window resize listener is still in GameController as it directly affects camera and renderer.
     }
 
@@ -80,6 +87,14 @@ export default class InputHandler {
         if (this.gameController.handlePointerUpInteraction) {
             this.gameController.handlePointerUpInteraction(event, this.pointerDownInitialPos);
         }
+    }
+
+    /** A drag that will never get its pointerup: cancel it as Escape would. */
+    _cancelDrag() {
+        if (!this.isPointerDown) return;
+        this.isPointerDown = false;
+        this.gameController.cancelAiming?.();
+        this.uiManager?.updateThrowInfo?.("", false);
     }
 
     _handleKeyDown(event) {
@@ -327,5 +342,6 @@ export default class InputHandler {
         document.removeEventListener('keydown', this._handleKeyDown, { capture: true });
         window.removeEventListener('keyup', this._handleKeyUp);
         window.removeEventListener('blur', this._handleBlur);
+        window.removeEventListener('pointercancel', this._handlePointerCancel);
     }
 }

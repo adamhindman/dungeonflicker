@@ -16,6 +16,7 @@ import { loadSiege } from "./levels/siege.js";
 import { loadMirror } from "./levels/mirror.js";
 import { loadLocked } from "./levels/locked.js";
 import { loadIce } from "./levels/ice.js";
+import { loadPowder } from "./levels/powder.js";
 import { disposeIcePatches } from "./IcePatches.js";
 import { updateMirrorGates, disposeMirrorGates, nearMirrorGate } from "./MirrorGates.js";
 
@@ -104,6 +105,7 @@ export default class Level {
     this.warpArea = null;           // { minX, maxX, minZ, maxZ } the Warp Ring can only land in; null = anywhere
     this.icePatches = [];           // the room's ice (see IcePatches.js)
     this.noLava = false;            // true: LavaManager adds no random lava pools
+    this.kegClusters = null;        // { clusters: [min, max], kegs: [min, max] } of powder kegs (see PowderKegs.js); null = none
     this.homunculiGrown = 0;        // homunculi grown so far in this room (names them)
     // Any room: its own default camera view { distance, targetZ }, or null = standard
     this.cameraView = null;
@@ -300,6 +302,8 @@ export default class Level {
       loadLocked.call(this);
     } else if (shape === 'ice') {
       loadIce.call(this);
+    } else if (shape === 'powder') {
+      loadPowder.call(this);
     } else if (shape === 'boss') {
       loadBoss.call(this);
     } else {
@@ -1137,6 +1141,7 @@ export default class Level {
     this.pursuerBounds = null;
     this.warpArea = null;
     this.noLava = false;
+    this.kegClusters = null;
     this.homunculiGrown = 0;
     this.cameraView = null;
     disposeDonut.call(this);
