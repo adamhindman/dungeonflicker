@@ -75,11 +75,11 @@ Ideas for the Sanctuary shop, not yet built. Already in the game: Warp Ring, Gho
 Room ideas filed for later; each still needs designing in detail.
 
 * **Powder Store** — explosive barrels around the room. Hit one hard enough, or knock something into it, and it blows, damaging and scattering everything nearby; barrels can set each other off.
-* **Ice Cave** — patches of ice where friction nearly vanishes, so discs slide much farther; heavy Wardens become hard to stop.
 * **Crumbling Floor** — floor tiles crack and fall away over time, from the edges in, so the room keeps shrinking.
 * **Flooded Crypt** — a current of water that carries every disc in it a set distance at the end of each round.
-* **Mirror Gates** — several paired portals along each wall; a disc that enters one comes out of its partner at the same speed and heading, so they can be used to cross the room (or for trick shots). *(Mechanic and test room built on the `mirror-gates` branch.)*
-* **Locked Gate** — the door to the next room stands open inside a sealed chamber reachable only through a Mirror Gate. The big room beside it has many gates, and only one leads into the chamber; the party must fight off monsters and find the right gate before the Pursuer arrives. Needs: a per-room switch to turn off the hover outline that shows a gate's partner (or it gives the answer away), and a way for the Pursuer to arrive somewhere other than the exit door (which is inside the sealed chamber).
+* **Mirror Gates** — several paired portals along each wall; a disc that enters one comes out of its partner at the same speed and heading, so they can be used to cross the room (or for trick shots). *(The gates themselves are built and used in the Locked Gate room; a standalone Mirror Gates room isn't in the rotation yet.)*
+
+Built so far: **Ice Cave** and **Locked Gate**.
 
 ### Proposed room goals
 
