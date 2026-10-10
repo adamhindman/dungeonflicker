@@ -1961,8 +1961,10 @@ clamp(value, min, max) {
     this.cameraController.update(deltaTime, this.level);
 
     if (this.currentDisc) {
-      // Reset current disc scale and position.y (skip for Blob to preserve evolution size)
-      if (this.currentDisc.kind !== 'Blob') {
+      // Reset current disc scale and position.y (skip for Blob to preserve
+      // evolution size, including a Blob raised as Animated Dead, whose kind
+      // is 'AnimatedDead' until it falls again)
+      if ((this.currentDisc._originalKind ?? this.currentDisc.kind) !== 'Blob') {
         this.currentDisc.mesh.scale.set(1, 1, 1);
       }
       this.currentDisc.mesh.position.y = this.currentDisc.basePositionY;

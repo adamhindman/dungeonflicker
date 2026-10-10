@@ -1,23 +1,24 @@
-import { BoxGeometry, BufferAttribute, BufferGeometry, Color, CylinderGeometry, DoubleSide, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, PlaneGeometry, RepeatWrapping, Vector3 } from "three";
+import { BufferAttribute, BufferGeometry, CylinderGeometry, DoubleSide, Mesh, MeshStandardMaterial, RepeatWrapping, Vector3 } from "three";
+import { buildRoundWall } from "./roundWall.js";
 
+// The Caldera: a round room around a sunken lava pit (which erupts; see
+// PitEruption.js). Its outer wall and door buttress are the Rotunda's (see
+// roundWall.js); the floor is three round bands: the flat stone ring, the red
+// slope down into the pit, and the pit floor.
 export function loadDonut() {
-  // All polygon rings share vertex angles at multiples of 2π/N so every edge aligns.
-  const N          = 12;     // sides on every polygon ring
-  const OUTER_R    = 24.2;   // wall panel center radius (≈ polygon apothem for outer walls)
-  const HOLE_APO   = 11.0;   // flat ring inner hole apothem (floor ends / pit begins)
-  const PIT_APO    = 6.0;    // pit base apothem
+  const N          = 64;     // segments in each round floor band (all at the same angles, so the edges meet)
+  const OUTER_R    = 24.2;   // wall segment centre radius (where discs bounce)
+  const HOLE_APO   = 11.0;   // flat ring's inner edge (floor ends / pit begins)
+  const PIT_APO    = 6.0;    // pit base radius
   const MED_Y      = 0;      // ring floor elevation
   const PIT_Y      = -2.5;   // pit floor elevation
   const wallThick  = 0.5;
   const wallH      = this.wallHeight;
-  const DOOR_WIDTH  = this.DOOR_WIDTH;
-  const DOOR_HEIGHT = this.DOOR_HEIGHT;
 
-  // Circumradii: center-to-vertex distance for each polygon ring
-  const cosN       = Math.cos(Math.PI / N);
-  const OUTER_CIRC = (OUTER_R - wallThick / 2) / cosN; // outer ring vertex radius
-  const HOLE_CIRC  = HOLE_APO / cosN;                   // inner hole vertex radius
-  const PIT_CIRC   = PIT_APO  / cosN;                   // pit base vertex radius
+  // Band radii (the floor runs on under the wall)
+  const OUTER_CIRC = OUTER_R + wallThick / 2;
+  const HOLE_CIRC  = HOLE_APO;
+  const PIT_CIRC   = PIT_APO;
 
   // Alias to match callers that use the old constant name
   const RING_INNER_R = HOLE_APO;
@@ -26,7 +27,6 @@ export function loadDonut() {
   this.circleRadius     = OUTER_R;
   this.donutInnerRadius = HOLE_APO;
   this.donutRings       = { MED_Y, PIT_Y, RING_INNER_R, PIT_R, OUTER_R };
-  this._circularWalls   = [];
   this.fieldWidth       = OUTER_R * 4;
   this.fieldDepth       = OUTER_R * 4;
   this.obstacles        = [];
@@ -97,15 +97,13 @@ export function loadDonut() {
   };
 
   // ── Floor construction ────────────────────────────────────────────────────
-  // One pass: for each of the N polygon faces, build three panels that share
-  // vertices at the same angles, so every edge meets perfectly.
+  // One pass: for each of the N segments round the room, build three panels
+  // that share vertices at the same angles, so every edge meets perfectly.
   for (let i = 0; i < N; i++) {
-    // Offset by half a face so each floor face is centred on wall face i.
-    // Vertices fall at the wall inner-face corners: (i±0.5)·2π/N.
     const a0 = (i - 0.5) * (Math.PI * 2 / N);
     const a1 = (i + 0.5) * (Math.PI * 2 / N);
 
-    // Pre-compute the four polygon vertex positions used across all three panels.
+    // The vertex positions shared across all three panels.
     const outerX0 = Math.sin(a0) * OUTER_CIRC,  outerZ0 = Math.cos(a0) * OUTER_CIRC;
     const outerX1 = Math.sin(a1) * OUTER_CIRC,  outerZ1 = Math.cos(a1) * OUTER_CIRC;
     const holeX0  = Math.sin(a0) * HOLE_CIRC,   holeZ0  = Math.cos(a0) * HOLE_CIRC;
@@ -140,109 +138,8 @@ export function loadDonut() {
     );
   }
 
-  // ── Outer polygon wall (12 sides) with door on north face ─────────────────
-  const outerSideLen = 2 * OUTER_R * Math.tan(Math.PI / N);
-  const DOOR_FACE    = N / 2;
-  const doorTheta    = DOOR_FACE * (2 * Math.PI / N); // = π
-  const doorZ        = Math.cos(doorTheta) * OUTER_R;       // = -OUTER_R
-
-  this.doorWall           = 'north';
-  this._doorIsNS          = true;
-  this._doorOpeningCenter = { x: 0, z: doorZ };
-  this._doorSlabStartY    = DOOR_HEIGHT / 2;
-  this._doorSlabEndY      = wallH + DOOR_HEIGHT;
-
-  this._frameMat = this.wallMaterial.clone();
-  this._frameMat.color.setHex(0x999999);
-  this._frameMat.emissive          = new Color(0x000000);
-  this._frameMat.emissiveIntensity = 0;
-
-  this._slabMat = this.wallMaterial.clone();
-  this._slabMat.color.setHex(0x999999);
-  this._slabMat.clippingPlanes = [
-    new Plane(new Vector3(0, -1, 0), wallH),
-  ];
-  this._slabMat.clipShadows = true;
-
-  const addWallMesh = (geo, x, y, z, rotY = 0) => {
-    const mesh = new Mesh(geo, this.wallMaterial);
-    mesh.position.set(x, y, z);
-    if (rotY !== 0) mesh.rotation.y = rotY;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
-    return mesh;
-  };
-
-  const addFrameMesh = (geo, x, y, z) => {
-    const mesh = new Mesh(geo, this._frameMat);
-    mesh.position.set(x, y, z);
-    this.scene.add(mesh);
-    this.doorFrameMeshes.push(mesh);
-    return mesh;
-  };
-
-  const frameThick = 0.7;
-  const postWidth  = 0.5;
-  const lintelH    = postWidth;
-  const overDoorH  = wallH - DOOR_HEIGHT - lintelH;
-  const segLen     = (outerSideLen - DOOR_WIDTH) / 2;
-  const segOff     = segLen / 2 + DOOR_WIDTH / 2;
-
-  for (const sign of [-1, 1]) {
-    const geo = new BoxGeometry(segLen, wallH, wallThick);
-    this.applyWallUVs(geo, segLen, wallH, wallThick);
-    const mesh = addWallMesh(geo, sign * segOff, wallH / 2, doorZ);
-    this.walls[`north_${sign > 0 ? 'right' : 'left'}`] = mesh;
-  }
-  for (const sign of [-1, 1]) {
-    const geo = new BoxGeometry(postWidth, DOOR_HEIGHT, frameThick);
-    this.applyWallUVs(geo, postWidth, DOOR_HEIGHT, frameThick);
-    addFrameMesh(geo, sign * (DOOR_WIDTH / 2 + postWidth / 2), DOOR_HEIGHT / 2, doorZ);
-  }
-  const lintelW   = DOOR_WIDTH + postWidth * 2;
-  const lintelGeo = new BoxGeometry(lintelW, lintelH, frameThick);
-  this.applyWallUVs(lintelGeo, lintelW, lintelH, frameThick);
-  addFrameMesh(lintelGeo, 0, DOOR_HEIGHT + lintelH / 2, doorZ);
-
-  if (overDoorH > 0) {
-    const overGeo = new BoxGeometry(DOOR_WIDTH, overDoorH, wallThick);
-    this.applyWallUVs(overGeo, DOOR_WIDTH, overDoorH, wallThick);
-    this.walls['north_above'] = addWallMesh(overGeo, 0, DOOR_HEIGHT + lintelH + overDoorH / 2, doorZ);
-  }
-
-  const voidGeo = new PlaneGeometry(DOOR_WIDTH, DOOR_HEIGHT);
-  const voidMat = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
-  const voidMesh = new Mesh(voidGeo, voidMat);
-  voidMesh.position.set(0, DOOR_HEIGHT / 2, doorZ - 0.4);
-  this.scene.add(voidMesh);
-  this.doorFrameMeshes.push(voidMesh);
-  this._voidMesh = voidMesh;
-
-  const slabGeo = new BoxGeometry(DOOR_WIDTH, DOOR_HEIGHT, wallThick);
-  this.applyWallUVs(slabGeo, DOOR_WIDTH, DOOR_HEIGHT, wallThick);
-  this.doorSlab = new Mesh(slabGeo, this._slabMat);
-  this.doorSlab.position.set(0, DOOR_HEIGHT / 2, doorZ);
-  this.scene.add(this.doorSlab);
-
-  this._circularWalls.push({ theta: doorTheta, sideLen: outerSideLen, isDoor: true });
-
-  for (let i = 0; i < N; i++) {
-    if (i === DOOR_FACE) continue;
-    const theta = i * (2 * Math.PI / N);
-    const cx    = Math.sin(theta) * OUTER_R;
-    const cz    = Math.cos(theta) * OUTER_R;
-    const geo   = new BoxGeometry(outerSideLen, wallH, wallThick);
-    this.applyWallUVs(geo, outerSideLen, wallH, wallThick);
-    const mesh = new Mesh(geo, this.wallMaterial);
-    mesh.position.set(cx, wallH / 2, cz);
-    mesh.rotation.y    = theta;
-    mesh.castShadow    = true;
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
-    this._hexOuterWalls.push(mesh);
-    this._circularWalls.push({ theta, sideLen: outerSideLen, isDoor: false });
-  }
+  // ── Outer wall and door ────────────────────────────────────────────────────
+  buildRoundWall.call(this, OUTER_R);
 
   // ── Pillars around the ring ────────────────────────────────────────────────
   // 4 round pillars at r=17, offset 45° so none sits near the door (θ=π).

@@ -104,8 +104,8 @@ return;
         centerX:      0,
         centerZ:      0,
         baseRadius:   PIT_R - 0.3,
-        numVertices:  12,
-        irregularity: 0.08,
+        numVertices:  32,     // enough to sit round in the round pit
+        irregularity: 0.05,
         yPosition:    PIT_Y + 0.05,
       });
       centerPool.isPit = true; // discs burned here hiss
