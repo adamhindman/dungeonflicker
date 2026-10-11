@@ -1,23 +1,21 @@
-import { BoxGeometry, CircleGeometry, Color, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Plane, PlaneGeometry, RepeatWrapping, RingGeometry, Vector3 } from "three";
+import { CircleGeometry, CylinderGeometry, DoubleSide, Group, Mesh, MeshStandardMaterial, RepeatWrapping, RingGeometry } from "three";
+import { buildRoundWall } from "./roundWall.js";
 
 export function loadBullseye() {
-  const OUTER_R    = 22;   // inradius of outer polygon wall
+  const OUTER_R    = 22;   // where discs bounce (the radial clamp); the wall's centre
   const RING_R1    = 8;    // inner ↔ middle boundary
   const RING_R2    = 16;   // middle ↔ outer boundary
   const COL_R_MID  = 12;   // column radius on middle ring
   const COL_R_OUT  = 19;   // column radius on outer ring
   const COL_RAD    = 0.8;  // column cylinder radius
-  const N_WALL     = 12;   // polygon sides for outer wall
   const N_COL_MID  = 5;
   const N_COL_OUT  = 9;
   const ROT_SPEED_INNER  = 0.03;  // rad/s — very slow
   const ROT_SPEED_MIDDLE = 0.15;  // rad/s — medium
   const ROT_SPEED_OUTER  = 0.10;  // rad/s — slow-medium
   const wallH      = this.wallHeight;
-  const wallThick  = 0.5;
 
   this.circleRadius          = OUTER_R;
-  this._circularWalls        = [];
   this.fieldWidth            = OUTER_R * 4;
   this.fieldDepth            = OUTER_R * 4;
   this.obstacles             = [];
@@ -124,111 +122,11 @@ export function loadBullseye() {
 
   const outerColData = [];
 
-  // ── Outer polygon wall with door on the north face ───────────────────────
-  const sideLen   = 2 * OUTER_R * Math.tan(Math.PI / N_WALL);
-  const DOOR_FACE = N_WALL / 2;                          // face 6, theta = π
-  const doorTheta = DOOR_FACE * (2 * Math.PI / N_WALL);  // = π
-  const doorZ     = Math.cos(doorTheta) * OUTER_R;       // = −OUTER_R
-
-  this.doorWall           = 'north';
-  this._doorIsNS          = true;
-  this._doorOpeningCenter = { x: 0, z: doorZ };
-  this._doorSlabStartY    = this.DOOR_HEIGHT / 2;
-  this._doorSlabEndY      = wallH + this.DOOR_HEIGHT;
-
-  this._frameMat = this.wallMaterial.clone();
-  this._frameMat.color.setHex(0x999999);
-  this._frameMat.emissive          = new Color(0x000000);
-  this._frameMat.emissiveIntensity = 0;
-
-  this._slabMat = this.wallMaterial.clone();
-  this._slabMat.color.setHex(0x999999);
-  this._slabMat.clippingPlanes = [
-    new Plane(new Vector3(0, -1, 0), wallH),
-  ];
-  this._slabMat.clipShadows = true;
-
-  const addWallMesh = (geo, x, y, z, rotY = 0) => {
-    const mesh = new Mesh(geo, this.wallMaterial);
-    mesh.position.set(x, y, z);
-    if (rotY !== 0) mesh.rotation.y = rotY;
-    mesh.castShadow    = true;
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
-    return mesh;
-  };
-
-  const addFrameMesh = (geo, x, y, z) => {
-    const mesh = new Mesh(geo, this._frameMat);
-    mesh.position.set(x, y, z);
-    this.scene.add(mesh);
-    this.doorFrameMeshes.push(mesh);
-    return mesh;
-  };
-
-  const frameThick = 0.7;
-  const postWidth  = 0.5;
-  const lintelH    = postWidth;
-  const overDoorH  = wallH - this.DOOR_HEIGHT - lintelH;
-  const segLen     = (sideLen - this.DOOR_WIDTH) / 2;
-  const segOff     = segLen / 2 + this.DOOR_WIDTH / 2;
-
-  for (const sign of [-1, 1]) {
-    const geo  = new BoxGeometry(segLen, wallH, wallThick);
-    this.applyWallUVs(geo, segLen, wallH, wallThick);
-    const mesh = addWallMesh(geo, sign * segOff, wallH / 2, doorZ);
-    this.walls[`north_${sign > 0 ? 'right' : 'left'}`] = mesh;
-  }
-  for (const sign of [-1, 1]) {
-    const geo = new BoxGeometry(postWidth, this.DOOR_HEIGHT, frameThick);
-    this.applyWallUVs(geo, postWidth, this.DOOR_HEIGHT, frameThick);
-    addFrameMesh(geo, sign * (this.DOOR_WIDTH / 2 + postWidth / 2), this.DOOR_HEIGHT / 2, doorZ);
-  }
-  const lintelGeo = new BoxGeometry(this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
-  this.applyWallUVs(lintelGeo, this.DOOR_WIDTH + postWidth * 2, lintelH, frameThick);
-  addFrameMesh(lintelGeo, 0, this.DOOR_HEIGHT + lintelH / 2, doorZ);
-
-  if (overDoorH > 0) {
-    const overGeo = new BoxGeometry(this.DOOR_WIDTH, overDoorH, wallThick);
-    this.applyWallUVs(overGeo, this.DOOR_WIDTH, overDoorH, wallThick);
-    this.walls['north_above'] = addWallMesh(
-      overGeo, 0, this.DOOR_HEIGHT + lintelH + overDoorH / 2, doorZ
-    );
-  }
-
-  const voidGeo  = new PlaneGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT);
-  const voidMat  = new MeshBasicMaterial({ color: 0x000000, side: DoubleSide });
-  const voidMesh = new Mesh(voidGeo, voidMat);
-  voidMesh.position.set(0, this.DOOR_HEIGHT / 2, doorZ - 0.4);
-  this.scene.add(voidMesh);
-  this.doorFrameMeshes.push(voidMesh);
-  this._voidMesh = voidMesh;
-
-
-  const slabGeo = new BoxGeometry(this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
-  this.applyWallUVs(slabGeo, this.DOOR_WIDTH, this.DOOR_HEIGHT, wallThick);
-  this.doorSlab = new Mesh(slabGeo, this._slabMat);
-  this.doorSlab.position.set(0, this.DOOR_HEIGHT / 2, doorZ);
-  this.scene.add(this.doorSlab);
-
-  this._circularWalls.push({ theta: doorTheta, sideLen, isDoor: true });
-
-  for (let i = 0; i < N_WALL; i++) {
-    if (i === DOOR_FACE) continue;
-    const theta = i * (2 * Math.PI / N_WALL);
-    const cx    = Math.sin(theta) * OUTER_R;
-    const cz    = Math.cos(theta) * OUTER_R;
-    const geo   = new BoxGeometry(sideLen, wallH, wallThick);
-    this.applyWallUVs(geo, sideLen, wallH, wallThick);
-    const mesh = new Mesh(geo, this.wallMaterial);
-    mesh.position.set(cx, wallH / 2, cz);
-    mesh.rotation.y    = theta;
-    mesh.castShadow    = true;
-    mesh.receiveShadow = true;
-    this.scene.add(mesh);
-    this.walls[`poly_${i}`] = mesh;
-    this._circularWalls.push({ theta, sideLen, isDoor: false });
-  }
+  // ── Outer wall and door ──────────────────────────────────────────────────
+  // Round, with the door in a buttress at the north (see roundWall.js). The
+  // outer ring turns beneath the buttress; a disc it carries into it is
+  // knocked free (GameController, with the turning columns).
+  buildRoundWall.call(this, OUTER_R);
 
   // ── Store ring data for update() ─────────────────────────────────────────
   this.bullseyeRings = {

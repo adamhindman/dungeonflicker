@@ -739,9 +739,13 @@ export class ItemManager {
     this._setButton(this.spectaclesChip, hasSpecs, false,
       `<kbd>Caps</kbd> Specs`,
       specsOn
-        ? 'Spectacles on: your aim shows the path to your first bounce. Turn off Caps Lock to aim normally.'
-        : 'Turn on Caps Lock to see, while you aim, the path to your first bounce and your rebound.');
-    this.spectaclesChip?.classList.toggle('on', specsOn);
+        ? 'Spectacles on: your aim shows your path off up to 3 walls or obstacles. Turn off Caps Lock to aim normally.'
+        : 'Turn on Caps Lock to see, while you aim, your path off up to 3 walls or obstacles (or your rebound off a disc).');
+    // Toggle buttons look pressed in while on (styles: button.toggled)
+    this.ghostRingButton?.classList.toggle('toggled', ghost);
+    this.knifeButton?.classList.toggle('toggled', knifeReady);
+    this.resurrectionPotionButton?.classList.toggle('toggled', flaskReady);
+    this.spectaclesChip?.classList.toggle('toggled', specsOn);
   }
 
   _setButton(button, visible, disabled, html, title) {

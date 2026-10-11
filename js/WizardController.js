@@ -412,7 +412,7 @@ export class WizardController {
     this.mana -= 2;
     this.gc.soundManager.playWizardRadiusBlast(wizardDisc.mesh.position);
 
-    const BLAST_RADIUS = 8;
+    const BLAST_RADIUS = 9;
     const BLAST_FORCE = 3.5;
 
     applyRadiusBlast(this.gc, wizardDisc, BLAST_RADIUS, BLAST_FORCE);

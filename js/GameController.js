@@ -30,7 +30,7 @@ import { pickMirrorGate, setHoveredMirrorGate } from './MirrorGates.js';
 import { makePathChecker, planGateShot, chooseGateShot } from './GateAiming.js';
 import { BlastRings } from './RadiusBlast.js';
 import { BossIntroDialog } from './BossIntroDialog.js';
-import { RoomTitle, ROOM_TITLE_AFTER_FADE_MS } from './RoomTitle.js';
+import { RoomTitle } from './RoomTitle.js';
 import { BouncePreview } from './BouncePreview.js';
 import ExplosionParticles from './ExplosionParticles.js';
 import PitEruption from './PitEruption.js';
@@ -60,6 +60,9 @@ const HIDDEN_OPACITY = 0.3;
 // A throw still moving after this long is stopped by force (see the stuck-throw check in animate()).
 // (Long: a full-power slide across ice can take ~8 s, longer on a slow frame rate.)
 const THROW_SETTLE_TIMEOUT_MS = 20000;
+
+// The boss room's story popup comes up this long after the room's title has faded out.
+const BOSS_INTRO_AFTER_TITLE_MS = 400;
 
 // A Sanctuary room follows every this-many cleared combat rooms.
 const SANCTUARY_INTERVAL = 3;
@@ -348,7 +351,7 @@ export default class GameController {
     this.throwDirectionLine.frustumCulled = false;
     this.throwDirectionLine.visible = false;
     this.scene.add(this.throwDirectionLine);
-    // Caps Lock on while aiming: the throw's path to its first bounce, and on
+    // Caps Lock on while aiming (with Spectacles): the throw's path off up to 3 walls or obstacles
     this.bouncePreview = new BouncePreview(this);
     this.bouncePreviewOn = false;
     this._lastAim = null; // { disc, dirX, dirZ, speed } of the aim on screen, for the preview
@@ -616,7 +619,7 @@ export default class GameController {
       return;
     }
     if (this.wizardController?.flameStrikeTargetingActive || this.itemManager?.teleportTargetingActive ||
-        this.itemManager?.shieldMoveActive) {
+        this.itemManager?.shieldMoveActive || this.rogueController?.potionPlacementActive) {
       return;
     }
     if (this.soundManager) this.soundManager.notifyUserInteraction();
@@ -769,6 +772,7 @@ export default class GameController {
     if (allowAiming && this.currentDisc && this.currentDisc.mesh) { // Ensure currentDisc and its mesh exist
         this.controlsEnabled = false;
         this.controls.enabled = false;
+        this.cameraController.cancelGlide(); // the board holds still while aiming
         // Aim drag, accumulated move by move so Shift can slow it down (precision aiming).
         this._aimDrag = { x: 0, y: 0, lastX: event.clientX, lastY: event.clientY, precision: event.shiftKey };
         if (this.uiManager) {
@@ -927,6 +931,11 @@ export default class GameController {
     // Choosing a new Hardy Shield spot: this release picks the hovered spot (or cancels).
     if (this.itemManager?.shieldMoveActive) {
       this.itemManager.confirmShieldMove();
+      return;
+    }
+    // Choosing a spot for the Rogue's potion: this release sets it down at the hovered spot (or cancels).
+    if (this.rogueController?.potionPlacementActive) {
+      this.rogueController.confirmPotionPlacement();
       return;
     }
 
@@ -1474,8 +1483,8 @@ clamp(value, min, max) {
   _announceRoom({ afterMenu = false } = {}) {
     // The Sanctuary sits between numbered rooms and has no number of its own.
     const number = this.level?.isSanctuary ? null : this.currentLevelNumber;
-    this.roomTitle?.show(this.level?.shape, { slow: afterMenu, number });
-    if (this.level?.isBossRoom) this.bossIntro?.showWhenRoomVisible('paracelsus', ROOM_TITLE_AFTER_FADE_MS);
+    const titleGone = this.roomTitle?.show(this.level?.shape, { slow: afterMenu, number }) ?? Promise.resolve();
+    if (this.level?.isBossRoom) this.bossIntro?.showAfter(titleGone, 'paracelsus', BOSS_INTRO_AFTER_TITLE_MS);
   }
 
   _clearRoomState() {
@@ -1958,7 +1967,7 @@ clamp(value, min, max) {
     }
 
     // Camera panning, rotation, target clamping, and wall-fade
-    this.cameraController.update(deltaTime, this.level);
+    this.cameraController.update(deltaTime, this.level, this.discs[this.currentTurnIndex] ?? null);
 
     if (this.currentDisc) {
       // Reset current disc scale and position.y (skip for Blob to preserve
@@ -2110,6 +2119,7 @@ clamp(value, min, max) {
 
         // Check pillar collisions — columns move with the rings so their obsRef
         // positions are already updated by Level.update() this frame.
+        let knockedFree = false;
         if (this.level) {
           for (const obs of (this.level.obstacles || [])) {
             if (obs.type !== 'pillar') continue;
@@ -2139,8 +2149,33 @@ clamp(value, min, max) {
               disc.velocity.set(nx * 0.25, 0, nz * 0.25);
               disc.moving = true;
               this._ringStepDiscData.splice(i, 1);
+              knockedFree = true;
               break;
             }
+          }
+        }
+
+        // …and the same off solid wall jutting into the room (the door's
+        // buttress), which stays put while the ring carries discs into it.
+        if (this.level && !knockedFree) {
+          const p = disc.mesh.position;
+          for (const zone of this.level.solidZones) {
+            const cx = Math.max(zone.minX, Math.min(p.x, zone.maxX));
+            const cz = Math.max(zone.minZ, Math.min(p.z, zone.maxZ));
+            const dx = p.x - cx, dz = p.z - cz;
+            const dist = Math.hypot(dx, dz);
+            if (dist >= disc.radius) continue;
+            // Away from the nearest point of the wall (or, from inside it, back towards the middle)
+            const nx = dist > 0.001 ? dx / dist : -p.x / (Math.hypot(p.x, p.z) || 1);
+            const nz = dist > 0.001 ? dz / dist : -p.z / (Math.hypot(p.x, p.z) || 1);
+            p.x = cx + nx * disc.radius;
+            p.z = cz + nz * disc.radius;
+            disc.velocity.set(0, 0, 0);
+            disc.updatePosition(); // with no velocity: just brings its spotlight and rings along
+            disc.velocity.set(nx * 0.25, 0, nz * 0.25);
+            disc.moving = true;
+            this._ringStepDiscData.splice(i, 1);
+            break;
           }
         }
       }
@@ -2656,6 +2691,7 @@ disc.isCurrentlyInLavaState = true;
         this.currentDisc.kind !== 'AnimatedDead') {
       this._spawnTurnStartBeam(this.currentDisc);
       this._spawnTurnStartRings(this.currentDisc);
+      this.cameraController.glideToIfNearEdge(this.currentDisc.mesh.position);
       if (this.soundManager) this.soundManager.playBuzz(this.currentDisc.mesh.position.clone());
     }
 

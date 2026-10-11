@@ -1,8 +1,8 @@
 // js/BossIntroDialog.js
 // The popup that opens the boss fight: a title and a few paragraphs of story,
-// dismissed with its button, Enter or Escape. It waits for the room's
-// fade-in to finish, and blocks the board while it's up so a click meant
-// for the dialog can't start a throw.
+// dismissed with its button, Enter or Escape. It comes up just after the
+// room's title banner has faded out, and blocks the board while it's up so a
+// click meant for the dialog can't start a throw.
 
 // The boss's minions keep quiet until the popup has been up this long.
 const CHATTER_DELAY_MS = 1500;
@@ -25,6 +25,7 @@ export class BossIntroDialog {
   constructor() {
     this._el = null;
     this._waitTimer = null;
+    this._pending = null; // set while waiting to show (see showAfter)
     this._shownAt = null; // performance.now() when the popup last appeared
     this._onKeyDown = event => {
       if (event.key === 'Escape' || event.key === 'Enter') {
@@ -41,30 +42,27 @@ export class BossIntroDialog {
 
   /** True while the popup is waiting to appear or has only just appeared: minions stay quiet. */
   get holdsChatter() {
-    if (this._waitTimer) return true;
+    if (this._pending || this._waitTimer) return true;
     return this._shownAt !== null && performance.now() - this._shownAt < CHATTER_DELAY_MS;
   }
 
   /**
-   * Shows the intro for `bossId` once the screen has faded in from black, and
-   * `delayMs` more after that (e.g. for the room's title to come and go).
+   * Shows the intro for `bossId` `delayMs` after `after` settles (e.g. the
+   * room's title banner fading out). Minions stay quiet while it waits; if
+   * the popup is closed meanwhile (e.g. the room is left), it never shows.
    */
-  showWhenRoomVisible(bossId, delayMs = 0) {
+  showAfter(after, bossId, delayMs = 0) {
     this.close();
-    const overlay = document.getElementById('black-overlay');
-    const start = performance.now();
-    const check = () => {
-      const fading = overlay && getComputedStyle(overlay).display !== 'none';
-      if (fading && performance.now() - start < 10000) {
-        this._waitTimer = setTimeout(check, 150);
-      } else {
-        this._waitTimer = setTimeout(() => {
-          this._waitTimer = null;
-          this.show(bossId);
-        }, delayMs);
-      }
-    };
-    check();
+    const token = {};
+    this._pending = token;
+    after.then(() => {
+      if (this._pending !== token) return; // closed or replaced meanwhile
+      this._waitTimer = setTimeout(() => {
+        this._waitTimer = null;
+        this._pending = null;
+        this.show(bossId);
+      }, delayMs);
+    });
   }
 
   show(bossId) {
@@ -92,6 +90,7 @@ export class BossIntroDialog {
   close() {
     clearTimeout(this._waitTimer);
     this._waitTimer = null;
+    this._pending = null;
     if (!this._el) return;
     document.removeEventListener('keydown', this._onKeyDown, true);
     this._el.remove();

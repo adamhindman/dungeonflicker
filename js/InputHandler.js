@@ -134,7 +134,7 @@ export default class InputHandler {
             return;
         }
 
-        // Caps Lock on: preview the throw's first bounce while aiming. (Its
+        // Caps Lock on: preview the throw's bounces while aiming. (Its
         // lock state, not the key: macOS only reports it turning on and off.)
         if (key === 'capslock') {
             this.gameController.setBouncePreviewOn?.(event.getModifierState('CapsLock'));
@@ -167,6 +167,12 @@ export default class InputHandler {
                 event.preventDefault();
                 event.stopPropagation();
                 this.gameController.itemManager.cancelShieldMove();
+                return;
+            }
+            if (this.gameController.rogueController?.potionPlacementActive) {
+                event.preventDefault();
+                event.stopPropagation();
+                this.gameController.rogueController.cancelPotionPlacement();
                 return;
             }
             if (this.isPointerDown) {

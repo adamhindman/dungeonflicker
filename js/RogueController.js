@@ -1,3 +1,4 @@
+import { CylinderGeometry, Mesh, MeshBasicMaterial, Plane, Vector3 } from 'three';
 import Disc from './Disc.js';
 import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
@@ -5,6 +6,19 @@ import { tooltipManager } from './TooltipManager.js';
 const BOMB_CHARGE_COST = 2;
 const SNEAK_ATTACK_CHARGE_COST = 2;
 const POTION_CHARGE_COST = 1;
+
+// The healing potion: the player picks one of three spots around the Rogue to
+// set it down (like the Hardy Shield's spots: fixed world directions, 120°
+// apart, 0° = north), so it can be thrown away from the Rogue without
+// touching them. A spot that's blocked isn't offered.
+const POTION_RADIUS = 0.4;
+const POTION_HEIGHT = 0.3;
+const POTION_COLOR = 0xFF0000;
+const POTION_DISTANCE = 2.0;          // from the Rogue's centre
+const POTION_SLOT_ANGLES = [0, 120, 240].map(deg => deg * Math.PI / 180);
+const POTION_PICK_RADIUS = 1.2;       // a click this close to a spot picks it
+const POTION_GHOST_OPACITY = 0.3;
+const POTION_GHOST_HOVER_OPACITY = 0.7;
 
 // Sneak Attack: hide this turn; if the Rogue deals no damage for the rest of
 // the turn it stays hidden (enemies target anyone else first) until the end of
@@ -27,8 +41,10 @@ export class RogueController {
 
     this.bomb = null;
     this.potions = [];
+    this.potionPlacementActive = false;  // choosing a spot for a new potion
+    this._potionPlace = null;            // { owner, ghosts: [{ x, z, mesh }], hovered }
 
-    this.hideState = 'none';             // 'none' | 'hiding' (this turn) | 'hidden' (until end of next turn)
+    this.hideState = 'none';            // 'none' | 'hiding' (this turn) | 'hidden' (until end of next turn)
     this._revealAfterThrow = false;      // hit an enemy during a strike throw: reveal once it stops
     this.isSneakAttackThrow = false;     // the Rogue throw in flight is striking from hiding
     this.sneakAttackBonusCount = 0;      // wall/obstacle bounces so far in that throw
@@ -151,6 +167,7 @@ export class RogueController {
   }
 
   _handleBombClick() {
+    this.cancelPotionPlacement();
     const rogueDisc = this.getDisc();
     if (!rogueDisc || rogueDisc.dead || this.charges < BOMB_CHARGE_COST || this.bomb) return;
     const spawned = this._spawnBomb(rogueDisc);
@@ -163,6 +180,7 @@ export class RogueController {
   }
 
   _handleSneakAttackClick() {
+    this.cancelPotionPlacement();
     const rogueDisc = this._rogueWhoseTurnItIs();
     if (!rogueDisc || this.charges < SNEAK_ATTACK_CHARGE_COST) return;
     if (this.hideState !== 'none') return;
@@ -175,16 +193,95 @@ export class RogueController {
     if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(rogueDisc);
   }
 
+  /** Starts choosing a spot for a new potion (pressing it again cancels). */
   _handlePotionClick() {
-    const rogueDisc = this.getDisc();
-    if (!rogueDisc || rogueDisc.dead || this.charges < POTION_CHARGE_COST) return;
-    const spawned = this._spawnPotion(rogueDisc);
-    if (spawned) {
-      this.charges -= POTION_CHARGE_COST;
-      firstTimeEvents.track('rogue_potion_used');
-      this.updateActionButtons();
-      if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(rogueDisc);
+    if (this.potionPlacementActive) { this.cancelPotionPlacement(); return; }
+    const rogueDisc = this._rogueWhoseTurnItIs();
+    if (!rogueDisc || this.charges < POTION_CHARGE_COST || this.gc.waitingForDiscToStop) return;
+
+    const ghosts = [];
+    for (const a of POTION_SLOT_ANGLES) {
+      const x = rogueDisc.mesh.position.x + Math.sin(a) * POTION_DISTANCE;
+      const z = rogueDisc.mesh.position.z - Math.cos(a) * POTION_DISTANCE;
+      if (!this.gc.isPositionValid(x, z, POTION_RADIUS, true, [rogueDisc])) continue;
+      const mesh = new Mesh(
+        new CylinderGeometry(POTION_RADIUS, POTION_RADIUS, POTION_HEIGHT, 32),
+        new MeshBasicMaterial({ color: POTION_COLOR, transparent: true, opacity: POTION_GHOST_OPACITY, depthWrite: false }),
+      );
+      const floor = this.gc.level ? this.gc.level.getTerrainHeightAt(x, z) : 0;
+      mesh.position.set(x, floor + POTION_HEIGHT / 2, z);
+      this.gc.scene.add(mesh);
+      ghosts.push({ x, z, mesh });
     }
+    // Hemmed in on every offered side: fall back to the first open spot all the way round.
+    if (!ghosts.length) {
+      if (this._spawnPotion(rogueDisc)) this._potionPlaced(rogueDisc);
+      return;
+    }
+
+    this.potionPlacementActive = true;
+    this._potionPlace = { owner: rogueDisc, ghosts, hovered: null };
+    this.potionButton?.classList.add('toggled');
+    this.gc.controlsEnabled = false;
+    if (this.gc.controls) this.gc.controls.enabled = false;
+    if (this.gc.uiManager) this.gc.uiManager.updateThrowInfo('Click a spot for the potion  •  Esc to cancel', true);
+  }
+
+  /** Called on a click while choosing: sets the potion down at the hovered spot, else cancels. */
+  confirmPotionPlacement() {
+    const place = this._potionPlace;
+    if (!place) return;
+    const ghost = place.hovered;
+    const owner = place.owner;
+    this.cancelPotionPlacement();
+    if (ghost && this._spawnPotionAt(ghost.x, ghost.z)) this._potionPlaced(owner);
+  }
+
+  cancelPotionPlacement() {
+    if (!this.potionPlacementActive) return;
+    for (const g of this._potionPlace.ghosts) {
+      this.gc.scene.remove(g.mesh);
+      g.mesh.geometry.dispose();
+      g.mesh.material.dispose();
+    }
+    this._potionPlace = null;
+    this.potionPlacementActive = false;
+    this.potionButton?.classList.remove('toggled');
+    if (this.gc.renderer) this.gc.renderer.domElement.style.cursor = '';
+    this.gc.controlsEnabled = true;
+    if (this.gc.controls) this.gc.controls.enabled = true;
+    if (this.gc.uiManager) this.gc.uiManager.updateThrowInfo('', false);
+  }
+
+  /** Highlights the spot nearest the cursor (within POTION_PICK_RADIUS). */
+  _updatePotionPlacement() {
+    const place = this._potionPlace;
+    if (!place) return;
+    if (place.owner.dead || !this._rogueWhoseTurnItIs()) { this.cancelPotionPlacement(); return; }
+    const gc = this.gc;
+    gc.raycaster.setFromCamera(gc.mouse, gc.camera);
+    const y = place.ghosts[0].mesh.position.y;
+    const hit = gc.raycaster.ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -y), new Vector3());
+    place.hovered = null;
+    if (hit) {
+      let best = POTION_PICK_RADIUS;
+      for (const g of place.ghosts) {
+        const d = Math.hypot(hit.x - g.x, hit.z - g.z);
+        if (d < best) { best = d; place.hovered = g; }
+      }
+    }
+    for (const g of place.ghosts) {
+      g.mesh.material.opacity = g === place.hovered ? POTION_GHOST_HOVER_OPACITY : POTION_GHOST_OPACITY;
+    }
+    gc.renderer.domElement.style.cursor = place.hovered ? 'pointer' : '';
+  }
+
+  /** Pays for a potion just set down beside `rogueDisc`. */
+  _potionPlaced(rogueDisc) {
+    this.charges -= POTION_CHARGE_COST;
+    firstTimeEvents.track('rogue_potion_used');
+    this.updateActionButtons();
+    if (this.gc.uiManager) this.gc.uiManager.updateCurrentTurnDiscName(rogueDisc);
   }
 
   // ─── Ability spawning ─────────────────────────────────────────────────────────
@@ -213,28 +310,30 @@ export class RogueController {
     return false;
   }
 
+  /** Sets a potion down at the first open spot found going round the Rogue. */
   _spawnPotion(rogueDisc) {
     const roguePos = rogueDisc.mesh.position;
-    const distance = 2.0;
     for (let offsetDeg = 0; offsetDeg < 360; offsetDeg += 5) {
       const angle = offsetDeg * (Math.PI / 180);
-      const px = roguePos.x + distance * Math.cos(angle);
-      const pz = roguePos.z + distance * Math.sin(angle);
-      if (this.gc.isPositionValid(px, pz, 0.4, true, [rogueDisc])) {
-        const potion = new Disc(
-          0.4, 0.3, 0xFF0000, px, pz,
-          this.gc.scene, 'Health Potion', 'player', 'RoguePotion',
-          1, 0, null, false, 0.5, 1.0, false, false, 0,
-          this.gc, this.gc.discDescriptions.RoguePotion
-        );
-        this.gc.discs.push(potion);
-        this.potions.push(potion);
-        potion.setSpotlightIntensity(true);
-        this.gc.updateDiscNames();
-        return true;
-      }
+      const px = roguePos.x + POTION_DISTANCE * Math.cos(angle);
+      const pz = roguePos.z + POTION_DISTANCE * Math.sin(angle);
+      if (this.gc.isPositionValid(px, pz, POTION_RADIUS, true, [rogueDisc])) return this._spawnPotionAt(px, pz);
     }
     return false;
+  }
+
+  _spawnPotionAt(px, pz) {
+    const potion = new Disc(
+      POTION_RADIUS, POTION_HEIGHT, POTION_COLOR, px, pz,
+      this.gc.scene, 'Health Potion', 'player', 'RoguePotion',
+      1, 0, null, false, 0.5, 1.0, false, false, 0,
+      this.gc, this.gc.discDescriptions.RoguePotion
+    );
+    this.gc.discs.push(potion);
+    this.potions.push(potion);
+    potion.setSpotlightIntensity(true);
+    this.gc.updateDiscNames();
+    return true;
   }
 
   // ─── Bomb explosion ───────────────────────────────────────────────────────────
@@ -409,6 +508,7 @@ export class RogueController {
 
   /** Called for every turn end (anyone's); gc.currentTurnIndex is still the turn that is ending. */
   onTurnEnd() {
+    this.cancelPotionPlacement();
     const ending = this.gc.discs[this.gc.currentTurnIndex];
     if (ending && ending.kind === 'Rogue' && ending.type === 'player') {
       if (this.hideState === 'hidden') {
@@ -510,6 +610,7 @@ export class RogueController {
   }
 
   onLevelStart() {
+    this.cancelPotionPlacement();
     this.throwsRemaining = 2;
     this.bomb = null;
     this.potions = [];
@@ -525,6 +626,7 @@ export class RogueController {
   }
 
   onGameRestart() {
+    this.cancelPotionPlacement();
     this.charges = 0;
     this.throwsRemaining = 2;
     this.bomb = null;
@@ -580,5 +682,6 @@ export class RogueController {
   update(deltaTime) {
     // A dead Rogue can't stay hidden.
     if (this.hideState !== 'none' && !this.getDisc()) this._reveal();
+    this._updatePotionPlacement();
   }
 }

@@ -26,14 +26,13 @@ const BEAT_MS = 700;        // "Room N" fades in first; the name follows this mu
 const FADE_IN_MS = 2000;
 const HOLD_MS = 700;      // on screen after the black has gone
 const FADE_OUT_MS = 1100;
-/** How long the banner lasts once the room is fully visible (the boss popup waits this long). */
-export const ROOM_TITLE_AFTER_FADE_MS = HOLD_MS + FADE_OUT_MS;
 
 export class RoomTitle {
   constructor() {
     this._el = null;
     this._waitTimer = null;
     this._doneTimer = null;
+    this._resolveDone = null; // settles the promise show() returned
   }
 
   /**
@@ -41,11 +40,14 @@ export class RoomTitle {
    * and fades it out a moment after the room has faded in. `slow`: fade in
    * twice as slowly (the first room after the menu, whose black screen lasts
    * longer). `number`: shown as "Room N" above the title (null: none).
+   * @returns {Promise} settles once the banner has gone (faded out, cleared
+   *   early, or never shown), e.g. for the boss popup to follow it
    */
   show(shape, { slow = false, number = null } = {}) {
     this.clear();
     const title = ROOM_TITLES[shape];
-    if (!title) return;
+    if (!title) return Promise.resolve();
+    const done = new Promise(resolve => { this._resolveDone = resolve; });
     const fadeInMs = slow ? FADE_IN_MS * 2 : FADE_IN_MS;
     const beatMs = slow ? BEAT_MS * 2 : BEAT_MS;
     const el = document.createElement('div');
@@ -69,6 +71,7 @@ export class RoomTitle {
     // Fades in straight away, over the black screen, while the room is still
     // loading behind it.
     this._holdUntilRoomVisible(el, START_DELAY_MS + beatMs + fadeInMs);
+    return done;
   }
 
   /**
@@ -101,5 +104,7 @@ export class RoomTitle {
     this._doneTimer = null;
     this._el?.remove();
     this._el = null;
+    this._resolveDone?.();
+    this._resolveDone = null;
   }
 }

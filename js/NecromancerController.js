@@ -490,6 +490,7 @@ export class NecromancerController {
     } else {
       this.drainLifeButton.innerHTML = `<kbd>2</kbd> Drain Life`;
     }
+    this.drainLifeButton.classList.toggle('toggled', !!this.drainLifeActive);
   }
 
   _updateDrainLifeButtonVisibility() {
@@ -527,6 +528,7 @@ export class NecromancerController {
     } else {
       this.carrionFeastButton.innerHTML = '<kbd>4</kbd> Carrion Feast';
     }
+    this.carrionFeastButton.classList.toggle('toggled', !!this.carrionFeastActive);
   }
 
   _updateCarrionFeastButtonVisibility() {
