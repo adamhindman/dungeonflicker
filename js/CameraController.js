@@ -525,7 +525,8 @@ export class CameraController {
     const FADE_END     = 3;
     const BOUNDARY_TOL = 1.5; // mesh must be within this many units of a boundary
     const ROUND_TOL    = 3;   // round rooms: within this of the circle (takes in the door's buttress)
-    const FADED  = 0.6;
+    const FADED  = 0.6;       // obstacles inside the room
+    const GONE   = 0.1;      // the room's outer walls: just a ghost
     const OPAQUE = 1.0;
     const SPEED  = 80;        // opacity per second
     const fadeFor = d => Math.max(0, Math.min(1, (d + FADE_START) / (FADE_START + FADE_END)));
@@ -537,6 +538,7 @@ export class CameraController {
 
       // Start from raycaster result (handles internal obstacles)
       let fadeAmount = hits.has(mesh) ? 1.0 : 0.0;
+      const faded = mesh.userData.interior ? FADED : GONE;
 
       if (radius) {
         const rho = Math.hypot(wx, wz);
@@ -544,7 +546,7 @@ export class CameraController {
           const d = (cam.x * wx + cam.z * wz) / rho - rho;
           fadeAmount = Math.max(fadeAmount, fadeFor(d));
         }
-        this._fadeMesh(mesh, fadeAmount > 0 ? FADED : OPAQUE, SPEED * dt);
+        this._fadeMesh(mesh, fadeAmount > 0 ? faded : OPAQUE, SPEED * dt);
         continue;
       }
 
@@ -554,7 +556,7 @@ export class CameraController {
       if (Math.abs(wx - fw) < BOUNDARY_TOL) fadeAmount = Math.max(fadeAmount, fadeFor(cam.x - fw));
       if (Math.abs(wx + fw) < BOUNDARY_TOL) fadeAmount = Math.max(fadeAmount, fadeFor(-cam.x - fw));
 
-      this._fadeMesh(mesh, fadeAmount > 0 ? FADED : OPAQUE, SPEED * dt);
+      this._fadeMesh(mesh, fadeAmount > 0 ? faded : OPAQUE, SPEED * dt);
     }
   }
 
@@ -588,6 +590,8 @@ export class CameraController {
         const delta = targetOpacity - mat.opacity;
         mat.opacity += Math.sign(delta) * Math.min(Math.abs(delta), maxStep);
         mat.opacity  = Math.max(0, Math.min(1, mat.opacity));
+        // All but gone: stop writing depth too, so it can't hide anything.
+        mat.depthWrite = mat.opacity > 0.15;
       }
     }
   }

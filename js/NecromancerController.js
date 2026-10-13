@@ -373,7 +373,7 @@ export class NecromancerController {
     const necPos = necDisc.mesh.position;
     let totalDrained = 0;
     this.gc.discs.forEach(d => {
-      if (d.type !== 'NPC' || d.dead) return;
+      if (d.type !== 'NPC' || d.dead || d.kind === 'Mortar') return; // no life in a mortar to drain
       const dx = d.mesh.position.x - necPos.x;
       const dz = d.mesh.position.z - necPos.z;
       if (dx * dx + dz * dz > DRAIN_LIFE_RADIUS * DRAIN_LIFE_RADIUS) return;
@@ -788,7 +788,7 @@ export class NecromancerController {
 
   applyDrainLifeToNPC(npcDisc) {
     if (!this.drainLifeActive) return;
-    if (!npcDisc || npcDisc.dead) return;
+    if (!npcDisc || npcDisc.dead || npcDisc.kind === 'Mortar') return; // no life in a mortar to drain
     const necDisc = this.getDisc();
     if (!necDisc || necDisc.dead) return;
 
@@ -860,7 +860,7 @@ export class NecromancerController {
       const canCast = this.canCastSpells(disc);
 
       if (activeAnimatedCount === 0 && !canCast) {
-        // A readied Throwing Knife or Resurrection flask keeps the turn open (turn-end effects wait for End Turn)
+        // A readied Throwing Knife or Resurrection flask, or a Hardy Shield, keeps the turn open (turn-end effects wait for End Turn)
         if (this.gc.itemManager?.holdTurnForReadiedItem()) return;
         this._applyDrainLifeOnTurnEnd();
         this._applyCarrionFeastOnTurnEnd();

@@ -4,7 +4,7 @@ const CHARACTERS = [
     name: 'Barbarian',
     image: '/images/barbarian-nobg.webp',
     color: '#0088ff',
-    hp: 5,
+    hp: 6,
     summary: 'A hulking brawler who charges into the thick of the fight.',
     skills: [
       'Plows through crowds of enemies',
@@ -17,7 +17,7 @@ const CHARACTERS = [
     name: 'Wizard',
     image: '/images/wizard-nobg.webp',
     color: '#00C0C0',
-    hp: 3,
+    hp: 4,
     summary: 'A master of the arcane who blasts foes and mends friends.',
     skills: [
       'Hurls volatile orbs of magic',
@@ -30,7 +30,7 @@ const CHARACTERS = [
     name: 'Necromancer',
     image: '/images/necromancer-nobg.webp',
     color: '#9944EE',
-    hp: 3,
+    hp: 4,
     summary: 'A dark sorcerer who commands the dead.',
     skills: [
       'Raises fallen enemies',

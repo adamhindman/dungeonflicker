@@ -51,7 +51,7 @@ export class PhysicsEngine {
         // and so is a locked-away exit (open from the start).
         if ((gc.roundWon || gc.pursuerController?.isPresent || gc.level.lockedExit) && disc.type === "player" && disc.kind !== "Orb" && disc.kind !== "HealingOrb" && disc.kind !== "AnimatedDead" && disc.kind !== "Bomb" && disc.kind !== "RoguePotion" && disc.kind !== "Fireball") {
           if (gc.level.checkPortalCollision(disc.mesh.position.x, disc.mesh.position.z, disc.radius)) {
-            await gc.startNextLevel(disc);
+            await gc.leaveThroughGate(disc);
             return true; // signal animate() to exit early
           }
         }

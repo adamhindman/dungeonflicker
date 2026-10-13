@@ -19,19 +19,23 @@ import { BoxGeometry, BufferGeometry, DoubleSide, Float32BufferAttribute, Mesh, 
 // Every wall is axis-aligned, so the standard AABB wall collision is exact.
 // The room is centred on the origin because the field-edge clamp assumes
 // ±fieldWidth/2 and ±fieldDepth/2.
-const WEST_X   = -25;   // the outer walls
-const EAST_X   = 25;
-const NORTH_Z  = -19;
-const SOUTH_Z  = 19;
-const INNER_X  = -1;    // the west arm's east wall (the L's inside corner is at INNER_X, INNER_Z)
-const INNER_Z  = -5;    // the south arm's north wall, where the gate is
-const GATE_X   = 6.5;   // the gate's centre, along the inner wall
+//
+// The layout below is scaled up by SCALE (positions only: the gaps, wall
+// thickness and pillar sizes stay as they are).
+const SCALE    = 1.1;
+const WEST_X   = -25 * SCALE;   // the outer walls
+const EAST_X   = 25 * SCALE;
+const NORTH_Z  = -19 * SCALE;
+const SOUTH_Z  = 19 * SCALE;
+const INNER_X  = -1 * SCALE;    // the west arm's east wall (the L's inside corner is at INNER_X, INNER_Z)
+const INNER_Z  = -5 * SCALE;    // the south arm's north wall, where the gate is
+const GATE_X   = 6.5 * SCALE;   // the gate's centre, along the inner wall
 
 // The mortars' wall: three segments with two gaps, across the south arm.
-const MORTAR_WALL_X = 18.5;
+const MORTAR_WALL_X = 18.5 * SCALE;
 const MORTAR_WALL_THICKNESS = 1.5;
 const GAP_WIDTH = 4.5;  // a party member fits; a Warden doesn't
-const SEGMENT_LENGTH = ((SOUTH_Z - INNER_Z) - 2 * GAP_WIDTH) / 3; // 5
+const SEGMENT_LENGTH = ((SOUTH_Z - INNER_Z) - 2 * GAP_WIDTH) / 3; // 5.8
 const SEGMENTS = [0, 1, 2].map(i => {
   const z0 = INNER_Z + i * (SEGMENT_LENGTH + GAP_WIDTH);
   return { z0, z1: z0 + SEGMENT_LENGTH };
@@ -39,25 +43,25 @@ const SEGMENTS = [0, 1, 2].map(i => {
 
 // Cover in the elbow, where the two arms meet: two pillars.
 const ELBOW_COVER = [
-  { x: -10, z: 1,  width: 2, depth: 2, type: 'pillar', rotY: 0 },
-  { x: -19, z: 10, width: 2, depth: 2, type: 'pillar', rotY: 0 },
+  { x: -10 * SCALE, z: 1 * SCALE,  width: 2, depth: 2, type: 'pillar', rotY: 0 },
+  { x: -19 * SCALE, z: 10 * SCALE, width: 2, depth: 2, type: 'pillar', rotY: 0 },
 ];
 
 // Each mortar sits behind a wall segment.
-const MORTAR_X = 22;
+const MORTAR_X = 22 * SCALE;
 const MORTAR_SPOTS = SEGMENTS.map(({ z0, z1 }) => ({ x: MORTAR_X, z: (z0 + z1) / 2 }));
 
 // Where the party starts: the top of the west arm.
 const PC_SLOTS = [
   { x: -15, z: -14 }, { x: -11, z: -14 },
   { x: -15, z: -10 }, { x: -11, z: -10 },
-];
+].map(({ x, z }) => ({ x: x * SCALE, z: z * SCALE }));
 
 // Monsters start along the south arm, short of the mortars' wall.
-const NPC_SPAWN_AREA = { minX: -21, maxX: MORTAR_WALL_X - 4, minZ: 3, maxZ: SOUTH_Z - 3 };
+const NPC_SPAWN_AREA = { minX: -21 * SCALE, maxX: MORTAR_WALL_X - 4, minZ: 3 * SCALE, maxZ: SOUTH_Z - 3 };
 
-// A touch bigger than the standard rooms: pull the camera back a little.
-const CAMERA_VIEW = { distance: 42, targetZ: 0 };
+// Bigger than the standard rooms: pull the camera back.
+const CAMERA_VIEW = { distance: 46, targetZ: 0 };
 
 export function loadSiege() {
   const wallH     = this.wallHeight;
@@ -131,7 +135,8 @@ export function loadSiege() {
   const wallAlongZ = (name, z0, z1, x) =>
     addWall(name, wallThick, z1 - z0 + wallThick, x, (z0 + z1) / 2);
 
-  wallAlongX('north', WEST_X, INNER_X, NORTH_Z);
+  // (Not called 'north': _createDoor removes a wall by that name.)
+  wallAlongX('north_arm', WEST_X, INNER_X, NORTH_Z);
   wallAlongZ('west', NORTH_Z, SOUTH_Z, WEST_X);
   wallAlongX('south', WEST_X, EAST_X, SOUTH_Z);
   wallAlongZ('east', INNER_Z, SOUTH_Z, EAST_X);

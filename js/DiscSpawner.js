@@ -8,7 +8,7 @@ import Alembic from './Alembic.js';
 import Mortar from './Mortar.js';
 import { placeKegClusters } from './PowderKegs.js';
 
-const NECROMANCER_MAX_HEALTH = 6;
+const NECROMANCER_MAX_HEALTH = 7;
 
 // Pre-converted hex color values for NPCs
 const NPC_HEX_COLORS = [
@@ -42,19 +42,24 @@ const NPC_HEX_COLORS = [
 // Per-room enemy tweaks, keyed by room id (Level.shape). `kinds` are the only
 // kinds the room's budget may buy (null = any); `bonus` are free extras on top
 // of it; `mortars` (settings over MORTAR_DEFAULTS) puts a mortar on each of the
-// room's level.mortarSpots; `maxBlobLevel` caps the size Blobs start at.
-// Rooms not listed use DEFAULT_ROSTER.
+// room's level.mortarSpots; `maxBlobLevel` caps the size Blobs start at;
+// `extraPoints` adds to the room's budget. Rooms not listed use DEFAULT_ROSTER.
 const DEFAULT_ROSTER = { kinds: null, bonus: { kind: 'Skeleton', min: 3, max: 5 } };
 const ROOM_ROSTERS = {
   // The lava pit room is all lava-proof Fire Elementals.
   donut: { kinds: ['FireElemental'], bonus: { kind: 'FireElemental', min: 1, max: 2 } },
   // Mortar test room: mortars aimed at the party, destroyed when beaten.
   siege: { ...DEFAULT_ROSTER, mortars: { targeting: 'party', onDefeat: 'destroy' } },
+  // The Bastion: a big room, so more monsters; the fort's guns are destroyed when beaten.
+  bastion: { ...DEFAULT_ROSTER, extraPoints: 4, mortars: { targeting: 'party', onDefeat: 'destroy' } },
   // Powder Store: only small Blobs. A big one can't move without bumping (and
   // setting off) kegs, which would blow the room up before the party can act.
   powder: { ...DEFAULT_ROSTER, maxBlobLevel: 1 },
 };
 const MORTAR_POINTS = 3; // what a mortar adds to the room's enemy points (for the Pursuer's timing)
+// The biggest a Blob starts (it can still grow in play). A room's points past
+// what a Blob this size costs buy other monsters instead.
+const MAX_BLOB_START_LEVEL = 10;
 
 // Free bonus NPC templates by kind.
 const BONUS_TEMPLATES = {
@@ -92,7 +97,8 @@ export class DiscSpawner {
       if (remaining >= 3) options.push({ kind: 'FireElemental', cost: 3, skillLevel: 85 });
       if (remaining >= 3) options.push({ kind: 'Warden', cost: 3, skillLevel: 85 });
       if (remaining >= 3) {
-        const maxLevel = Math.min(Math.max(1, budget - 2), remaining - 2, roster.maxBlobLevel ?? Infinity);
+        const maxLevel = Math.min(Math.max(1, budget - 2), remaining - 2,
+          roster.maxBlobLevel ?? Infinity, MAX_BLOB_START_LEVEL);
         const level = 1 + Math.floor(Math.random() * maxLevel);
         options.push({ kind: 'Blob', cost: level + 2, skillLevel: 75, startingLevel: level });
       }
@@ -305,7 +311,7 @@ export class DiscSpawner {
       /* discName: */ "Barbarian",
       /* type: */ "player",
       /* kind: */ "Barbarian",
-      /* hitPoints: */ 5,
+      /* hitPoints: */ 6,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/barbarian-nobg.webp",
       /* canDoReboundDamage: */ false,
@@ -336,7 +342,7 @@ export class DiscSpawner {
       /* discName: */ "Wizard",
       /* type: */ "player",
       /* kind: */ "Wizard",
-      /* hitPoints: */ 3,
+      /* hitPoints: */ 4,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/wizard-nobg.webp",
       /* canDoReboundDamage: */ false,
@@ -367,7 +373,7 @@ export class DiscSpawner {
       /* discName: */ "Necromancer",
       /* type: */ "player",
       /* kind: */ "Necromancer",
-      /* hitPoints: */ 3,
+      /* hitPoints: */ 4,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/necromancer-nobg.webp",
       /* canDoReboundDamage: */ false,
@@ -398,7 +404,7 @@ export class DiscSpawner {
       /* discName: */ "Rogue",
       /* type: */ "player",
       /* kind: */ "Rogue",
-      /* hitPoints: */ 3,
+      /* hitPoints: */ 4,
       /* skillLevel: */ 100,
       /* imagePath: */ "images/rogue-nobg.webp",
       /* canDoReboundDamage: */ false,
@@ -441,9 +447,9 @@ export class DiscSpawner {
       return discs;
     }
 
-    // Budget: 10 points on level 1, +2 per room cleared
-    const budget = 9 + (gc.currentLevelNumber - 1) * 2;
+    // Budget: 9 points on level 1, +2 per room cleared, plus the room's extra
     const roster = ROOM_ROSTERS[gc.level?.shape] ?? DEFAULT_ROSTER;
+    const budget = 9 + (gc.currentLevelNumber - 1) * 2 + (roster.extraPoints ?? 0);
     const baseNpcDefinitions = this._buildNpcPool(budget, roster);
 
     // Free bonus NPCs on top of the budget composition (3-5 skeletons unless the room says otherwise)

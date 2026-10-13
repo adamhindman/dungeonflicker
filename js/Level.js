@@ -2,7 +2,7 @@ import {
   TextureLoader, RepeatWrapping, MeshStandardMaterial, AmbientLight,
   DirectionalLight, Plane, Vector3, Color, BoxGeometry, Mesh,
   MeshBasicMaterial, DoubleSide, PointLight, PlaneGeometry, CylinderGeometry,
-  ExtrudeGeometry, Shape, Vector2,
+  ExtrudeGeometry, Shape, Vector2, Box3,
 } from "three";
 import { loadRectangular } from "./levels/rectangular.js";
 import { loadCircular, resetCircularState } from "./levels/circular.js";
@@ -13,6 +13,7 @@ import { loadCrusher, setCrusherLength, stepCrushers, updateCrusherAnimation, di
 import { loadSanctuary } from "./levels/sanctuary.js";
 import { loadBoss } from "./levels/boss.js";
 import { loadSiege } from "./levels/siege.js";
+import { loadBastion } from "./levels/bastion.js";
 import { loadMirror } from "./levels/mirror.js";
 import { loadLocked } from "./levels/locked.js";
 import { loadIce } from "./levels/ice.js";
@@ -26,6 +27,33 @@ const INTERIOR_WALL_PREFIXES = ['obstacle_', 'donut_col_', 'hex_col_', 'sanctuar
 
 // How far random obstacles keep from the doorway (see generateRandomObstacles).
 const DOOR_CLEARANCE = 7;
+
+const _wallBox = new Box3();
+
+/** Does the segment (x0, z0)–(x1, z1) pass through the rectangle? (Slab test, on the floor plane.) */
+function segmentHitsRect(x0, z0, x1, z1, minX, maxX, minZ, maxZ) {
+  let t0 = 0, t1 = 1;
+  for (const [p, d, lo, hi] of [[x0, x1 - x0, minX, maxX], [z0, z1 - z0, minZ, maxZ]]) {
+    if (Math.abs(d) < 1e-9) {
+      if (p < lo || p > hi) return false;
+      continue;
+    }
+    let a = (lo - p) / d, b = (hi - p) / d;
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+    if (t0 > t1) return false;
+  }
+  return true;
+}
+
+/** Does the segment (x0, z0)–(x1, z1) come within `r` of (cx, cz)? */
+function segmentHitsCircle(x0, z0, x1, z1, cx, cz, r) {
+  const dx = x1 - x0, dz = z1 - z0;
+  const lenSq = dx * dx + dz * dz;
+  const t = lenSq > 0 ? Math.max(0, Math.min(1, ((cx - x0) * dx + (cz - z0) * dz) / lenSq)) : 0;
+  return Math.hypot(x0 + dx * t - cx, z0 + dz * t - cz) < r;
+}
 
 export default class Level {
   constructor(scene) {
@@ -109,6 +137,7 @@ export default class Level {
     this.icePatches = [];           // the room's ice (see IcePatches.js)
     this.noLava = false;            // true: LavaManager adds no random lava pools
     this.kegClusters = null;        // { clusters: [min, max], kegs: [min, max] } of powder kegs (see PowderKegs.js); null = none
+    this.lighting = null;           // { ambient, directional } intensities for a brighter room (see _addLighting); null = the usual
     this.solidZones = [];           // [{ minX, maxX, minZ, maxZ }] of solid wall inside the boundary: nothing spawns there
     this.homunculiGrown = 0;        // homunculi grown so far in this room (names them)
     // Any room: its own default camera view { distance, targetZ }, or null = standard
@@ -269,11 +298,15 @@ export default class Level {
 
   /**
    * Gives every visual wall mesh its own cloned material so the camera-
-   * occlusion system can set opacity independently per mesh.
+   * occlusion system can set opacity independently per mesh. Obstacles and
+   * crushers are marked `userData.interior` (the camera only half-fades them;
+   * the room's outer walls vanish entirely).
    * Called once after all geometry is built.
    */
   _initTransparency() {
+    const crushers = new Set(this._crusherMeshes || []);
     for (const mesh of this.getVisualWalls()) {
+      if (mesh.material === this.obstacleMaterial || crushers.has(mesh)) mesh.userData.interior = true;
       const clone = mesh.material.clone();
       clone.transparent = true;
       clone.opacity = 1.0;
@@ -300,6 +333,8 @@ export default class Level {
       this._loadSanctuary();
     } else if (shape === 'siege') {
       loadSiege.call(this);
+    } else if (shape === 'bastion') {
+      loadBastion.call(this);
     } else if (shape === 'mirror') {
       loadMirror.call(this);
     } else if (shape === 'locked') {
@@ -345,12 +380,15 @@ export default class Level {
     return { fx: 0, fz: 0 };
   }
 
-  /** Shared lighting setup used by both room shapes. */
+  /**
+   * Shared lighting setup used by every room: dim, so each disc's own
+   * spotlight carries the scene. A room can ask for more (`this.lighting`).
+   */
   _addLighting() {
-    this._ambientLight = new AmbientLight(0xffffff, 0);
+    this._ambientLight = new AmbientLight(0xffffff, this.lighting?.ambient ?? 0);
     this.scene.add(this._ambientLight);
 
-    this._directionalLight = new DirectionalLight(0xffffff, 0.2);
+    this._directionalLight = new DirectionalLight(0xffffff, this.lighting?.directional ?? 0.2);
     this._directionalLight.position.set(10, 20, 10);
     this._directionalLight.castShadow = true;
     this._directionalLight.shadow.mapSize.width = 512;
@@ -999,6 +1037,24 @@ export default class Level {
     return true;
   }
 
+  /**
+   * True if a wall, obstacle or the closed door stands between (x0, z0) and
+   * (x1, z1), e.g. between an explosion and a disc. Uses the same shapes as
+   * collisions: the wall meshes' boxes, and circles for round obstacles.
+   */
+  wallBetween(x0, z0, x1, z1) {
+    for (const mesh of this.getAllWalls()) {
+      _wallBox.setFromObject(mesh);
+      if (segmentHitsRect(x0, z0, x1, z1, _wallBox.min.x, _wallBox.max.x, _wallBox.min.z, _wallBox.max.z)) return true;
+    }
+    for (const obs of this.obstacles) {
+      // (Blocks and wall obstacles are wall meshes, covered above.)
+      if (obs.type !== 'pillar' && obs.type !== 'triangle' && obs.type !== 'polygon') continue;
+      if (segmentHitsCircle(x0, z0, x1, z1, obs.x, obs.z, obs.width / 2)) return true;
+    }
+    return false;
+  }
+
   /** Show or hide the door-frame hover highlight (call from GameController on hover). */
   setDoorHovered(hovered) {
     this._doorHovered = hovered && this.doorIsOpen;
@@ -1171,6 +1227,7 @@ export default class Level {
     this.warpArea = null;
     this.noLava = false;
     this.kegClusters = null;
+    this.lighting = null;
     this.solidZones = [];
     this.homunculiGrown = 0;
     this.cameraView = null;

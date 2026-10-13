@@ -115,10 +115,12 @@ export function makeSpectaclesModel() {
 export const SHIELD_THICKNESS = 0.2;
 export const SHIELD_HEIGHT = 0.9;
 const SHIELD_STEEL = 0xb8c0cc;
+const SHIELD_WORN_TRACK = 0x1c1f24; // the top edge where the coloured strip has worn away
 
 /**
  * The in-game shield, `length` long, with its bottom on the floor and a strip
- * of the item's colour along the top edge.
+ * of the item's colour along the top edge. The strip doubles as a health bar
+ * (see setShieldWear).
  */
 export function makeShieldMesh(length, trimColor) {
   const slab = new Mesh(
@@ -137,9 +139,29 @@ export function makeShieldMesh(length, trimColor) {
     new MeshStandardMaterial({ color: trimColor, emissive: trimColor, emissiveIntensity: 0.8 }),
   );
   trim.position.y = SHIELD_HEIGHT;
+  // A dark track just inside the strip, showing through where it has worn away
+  const track = new Mesh(
+    new BoxGeometry(length, 0.1, SHIELD_THICKNESS * 1.25),
+    new MeshStandardMaterial({ color: SHIELD_WORN_TRACK, roughness: 0.8 }),
+  );
+  track.position.y = SHIELD_HEIGHT;
   const shield = new Group();
-  shield.add(slab, trim);
+  shield.add(slab, track, trim);
+  shield.userData.wearStrip = { mesh: trim, length };
   return shield;
+}
+
+/**
+ * Shortens a shield's coloured top strip to `fraction` (0–1) of its length,
+ * from one end, like a bar chart seen from above.
+ */
+export function setShieldWear(shield, fraction) {
+  const strip = shield.userData.wearStrip;
+  if (!strip) return;
+  const f = Math.max(0, Math.min(1, fraction));
+  strip.mesh.visible = f > 0;
+  strip.mesh.scale.x = Math.max(f, 1e-4);
+  strip.mesh.position.x = -strip.length / 2 * (1 - f);
 }
 
 // Shop shield size: a classic heater shield (flat top, straight sides, curving

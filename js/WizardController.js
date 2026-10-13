@@ -669,7 +669,7 @@ export class WizardController {
           const dz = disc.mesh.position.z - targetZ;
           const dist = Math.sqrt(dx * dx + dz * dz);
           if (dist <= STRIKE_RADIUS) {
-            if (this.gc.itemManager?.shieldBlocks(disc, targetX, targetZ)) return; // Hardy Shield
+            if (this.gc.itemManager?.shieldBlocks(disc, targetX, targetZ, 4)) return; // Hardy Shield
             const force = 0.5 * (1 - dist / STRIKE_RADIUS);
             const length = dist > 0 ? dist : 0.1;
             disc.velocity.x += (dx / length) * force;

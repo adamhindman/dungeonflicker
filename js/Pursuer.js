@@ -6,7 +6,7 @@ import { slideDistanceForSpeed } from './RangeOverlay.js';
 // ── Tuning ───────────────────────────────────────────────────────────────────
 // It arrives at the start of round ARRIVAL_BASE_ROUNDS + (the room's enemy
 // points ÷ POINTS_PER_ROUND), so rooms with more to fight give more time.
-const ARRIVAL_BASE_ROUNDS = 3;
+const ARRIVAL_BASE_ROUNDS = 4;
 const POINTS_PER_ROUND = 2;
 // TESTING: arrive at this round in every room; null for the normal timing.
 const ARRIVAL_ROUND_OVERRIDE = null;

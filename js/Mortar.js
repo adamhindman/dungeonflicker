@@ -13,6 +13,7 @@ export const MORTAR_DEFAULTS = {
   everyRound: false,      // false: mark on one turn, fire the next; true: fire and re-mark every turn
   damage: 2,
   radius: 7,
+  scatter: 3,             // a mark aimed at a disc lands up to this far from it
   force: 3.5,             // knockback at the centre, like the Wizard's Radius Blast
 };
 const HIT_POINTS = 3;
@@ -24,6 +25,19 @@ const SHELL_SECONDS = 0.9;
 const SHELL_ARC_HEIGHT = 10;
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * The marked circle ({ x, z, radius }) whose shell would hurt a monster at
+ * (x, z), counting `margin` past its edge, or null if there's none.
+ */
+export function monsterShellMarkAt(gc, x, z, margin = 0) {
+  for (const d of gc.discs) {
+    if (d.kind !== 'Mortar' || d.dead || !d.mark || !d.config.damagesMonsters) continue;
+    const { radius } = d.config;
+    if (Math.hypot(x - d.mark.x, z - d.mark.z) < radius + margin) return { x: d.mark.x, z: d.mark.z, radius };
+  }
+  return null;
+}
 
 /**
  * A mortar: fixed in place, it marks a circle on the floor on one turn and
@@ -143,12 +157,13 @@ export default class Mortar extends Disc {
    * Each target draws only one mortar's mark at a time: a mortar aimed at the
    * party with nobody left unmarked picks a random spot instead, so a lone
    * survivor isn't shelled by every gun at once. (Captured mortars double up
-   * on monsters rather than shell the floor at random.)
+   * on monsters rather than shell the floor at random.) A mark aimed at a
+   * disc lands at a random spot up to `scatter` from it.
    */
   _chooseTarget() {
     const gc = this.gameController;
     const pick = list => list[Math.floor(Math.random() * list.length)];
-    const at = disc => ({ x: disc.mesh.position.x, z: disc.mesh.position.z, target: disc });
+    const at = disc => ({ ...this._scattered(disc.mesh.position.x, disc.mesh.position.z), target: disc });
     const marked = new Set(gc.discs
       .filter(d => d !== this && d.kind === 'Mortar' && d.mark?.target)
       .map(d => d.mark.target));
@@ -173,6 +188,20 @@ export default class Mortar extends Disc {
       if (level.isPositionValid(x, z, 0)) return { x, z };
     }
     return null;
+  }
+
+  /** A random open spot on the floor up to `scatter` from (x, z), or (x, z) itself if none turns up. */
+  _scattered(x, z) {
+    const { scatter } = this.config;
+    const level = this.gameController.level;
+    for (let attempt = 0; attempt < 20 && scatter > 0; attempt++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = scatter * Math.sqrt(Math.random()); // evenly over the disc of radius `scatter`
+      const sx = x + Math.cos(angle) * r;
+      const sz = z + Math.sin(angle) * r;
+      if (level.isPositionValid(sx, sz, 0)) return { x: sx, z: sz };
+    }
+    return { x, z };
   }
 
   _clearMark() {

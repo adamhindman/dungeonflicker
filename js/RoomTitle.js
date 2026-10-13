@@ -13,6 +13,7 @@ export const ROOM_TITLES = {
   donut: 'The Caldera',
   crusher: 'The Crushing Hall',
   siege: 'The Siege Works',
+  bastion: 'The Bastion',
   ice: 'The Ice Cave',
   powder: 'The Powder Store',
   locked: 'The Locked Gate',

@@ -16,7 +16,7 @@ export function applyRadiusBlast(gc, caster, radius, force) {
     const dz = disc.mesh.position.z - origin.z;
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist > 0 && dist <= radius) {
-      if (gc.itemManager?.shieldBlocks(disc, origin.x, origin.z)) return; // Hardy Shield
+      if (gc.itemManager?.shieldBlocks(disc, origin.x, origin.z, 1)) return; // Hardy Shield
       if (!disc.immovable) { // e.g. Paracelsus's alembics: hurt but not shoved
         const push = force * (1 - dist / radius);
         disc.velocity.x += (dx / dist) * push;
@@ -35,8 +35,9 @@ export function applyRadiusBlast(gc, caster, radius, force) {
  * within `radius` is shoved away from the centre (harder the closer it
  * stood) and, if `shouldDamage(disc)` says so, takes `damage`. A Hardy Shield
  * between the centre and its owner takes 1 off the damage but not the shove.
- * Ghost Ring discs, items and anything `skip(disc)` names aren't touched,
- * except that a powder keg in reach is set off.
+ * Walls and obstacles stop it: a disc with one between it and the centre
+ * isn't touched at all. Ghost Ring discs, items and anything `skip(disc)`
+ * names aren't touched either, except that a powder keg in reach is set off.
  * Returns the discs it reached.
  */
 export function applyBlastAt(gc, x, z, radius, force, { damage = 1, shouldDamage = () => true, skip = () => false } = {}) {
@@ -47,6 +48,7 @@ export function applyBlastAt(gc, x, z, radius, force, { damage = 1, shouldDamage
     const dz = disc.mesh.position.z - z;
     const dist = Math.sqrt(dx * dx + dz * dz);
     if (dist > radius) return;
+    if (gc.level?.wallBetween(x, z, disc.mesh.position.x, disc.mesh.position.z)) return; // sheltered
     // A powder keg in the blast goes off too; other items aren't touched.
     if (disc.kind === 'PowderKeg') { disc.takeHit(damage, null); return; }
     if (disc.type === 'item') return;
@@ -61,7 +63,7 @@ export function applyBlastAt(gc, x, z, radius, force, { damage = 1, shouldDamage
       disc.moving = true;
     }
     if (shouldDamage(disc)) {
-      const shielded = gc.itemManager?.shieldBlocks(disc, x, z);
+      const shielded = gc.itemManager?.shieldBlocks(disc, x, z, Math.min(1, damage));
       const amount = shielded ? damage - 1 : damage;
       if (amount > 0) disc.takeHit(amount, null);
     }

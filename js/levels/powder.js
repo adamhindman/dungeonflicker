@@ -7,12 +7,12 @@ import { BoxGeometry, DoubleSide, Mesh, MeshStandardMaterial, PlaneGeometry, Rep
 //
 // The kegs themselves are placed by DiscSpawner (they're discs), from
 // `kegClusters`, after the party and before the monsters.
-const HALF_W = 21;   // 42 × 30: about 2/3 of the standard room, so the kegs are never far from the fight
-const HALF_D = 15;
+const HALF_W = 23.1; // 46.2 × 33: a bit under 3/4 of the standard room, so the kegs are never far from the fight
+const HALF_D = 16.5;
 // About a third of the kegs stand alone out by the walls, out of reach of any
 // chain reaction, so some survive "the big explosion" as obstacles.
 const KEG_CLUSTERS = { clusters: [4, 5], kegs: [3, 5], great: [1, 2], spacing: 9, loners: 0.35 };
-const CAMERA_VIEW = { distance: 38, targetZ: 0 };
+const CAMERA_VIEW = { distance: 42, targetZ: 0 };
 
 export function loadPowder() {
   this.circleRadius   = null;

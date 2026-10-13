@@ -452,6 +452,9 @@ export class BarbarianController {
   }
 
   onLevelStart() {
+    // The room's discs are rebuilt, so an Exhausted turn cut short by leaving
+    // through the door ends here: stop its breathing too.
+    this.gc.soundManager?.stopExhaustedBreath();
     this.hasMoved = false;
     this.rageOfferedAfterMove = false;
     this._slamTargets.clear();

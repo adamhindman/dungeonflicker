@@ -36,17 +36,22 @@ import ExplosionParticles from './ExplosionParticles.js';
 import PitEruption from './PitEruption.js';
 import { PursuerController } from './Pursuer.js';
 import { PowderKegManager, KEG_DESCRIPTION } from './PowderKegs.js';
+import { monsterShellMarkAt } from './Mortar.js';
+import { recordPlayed, recordBeaten, recordWiped } from './LevelStats.js';
 
-// Flick tuning: drag length (screen px × camera distance) → throw speed.
-const THROW_DRAG_THRESHOLD = 2;    // drags shorter than this (in world-drag units) don't throw
-const THROW_SENSITIVITY = 0.004;
+// Flick tuning: drag length in screen px → share of full power, the same at
+// any camera zoom and for every character. Full power takes a drag of
+// FULL_POWER_DRAG_FRACTION of the window's height, and power rises along a
+// curve (THROW_POWER_CURVE > 1) so short drags give fine control.
+const THROW_DRAG_THRESHOLD = 3;    // drags of this many px or fewer don't throw
+const FULL_POWER_DRAG_FRACTION = 1 / 6;
+const MIN_FULL_POWER_DRAG = 80;    // px, so small windows still give a usable range
+const THROW_POWER_CURVE = 1.6;
 const THROW_MIN_SPEED = 0.05;
-const ROGUE_CURVE_RANGE = 220;     // Rogue's gentler low-end response curve
-// Precision aiming (hold Shift), for short, exact flicks: mouse movement is
-// slowed so that PRECISION_DRAG_RANGE px of it spans 0 → PRECISION_POWER_CAP
-// of full power, whatever the camera zoom or character. (Normal drags reach
-// full power within a few pixels, so a fixed ratio wouldn't give a usable range.)
-const PRECISION_DRAG_RANGE = 150;
+// Precision aiming (hold Shift), for short, exact flicks: mouse movement
+// changes the power PRECISION_SLOWDOWN times more slowly, up to
+// PRECISION_POWER_CAP of full power.
+const PRECISION_SLOWDOWN = 3;
 const PRECISION_POWER_CAP = 0.5;
 // Precision aiming turns the aim as the pointer swings round the press point,
 // except within this many px of it, where a twitch would swing it wildly.
@@ -60,6 +65,10 @@ const HIDDEN_OPACITY = 0.3;
 // A throw still moving after this long is stopped by force (see the stuck-throw check in animate()).
 // (Long: a full-power slide across ice can take ~8 s, longer on a slow frame rate.)
 const THROW_SETTLE_TIMEOUT_MS = 20000;
+
+// How often a monster pays no mind to the mortars' marked circles on its turn.
+const MORTAR_CARELESSNESS = 0.3;
+const SHELL_EDGE_MARGIN = 1.5; // how far outside a marked circle a wary monster stops
 
 // The boss room's story popup comes up this long after the room's title has faded out.
 const BOSS_INTRO_AFTER_TITLE_MS = 400;
@@ -181,7 +190,7 @@ export default class GameController {
         RoguePotion: "A healing flask thrown by the Rogue. Restores 2 HP to the first ally it touches.",
         Paracelsus: "An alchemist who grows homunculi in the image of his enemies, in alembics around the room. He avoids a fair fight: he flees anyone who comes close, and blasts away anyone who lingers near him. His pendant shields him once he has taken 2 damage in a round.",
         Homunculus: "A small, imperfect copy of one of the party, grown in Paracelsus's flasks. 2 HP, 1 damage.",
-        Mortar: "A siege engine dug in where it stands. It marks a circle on the floor, then shells it on its next turn: 2 damage and a hard shove to everything inside, friend or foe. 3 HP; in some rooms, beating it turns it on the monsters.",
+        Mortar: "A siege engine dug in where it stands. It marks a circle on the floor, then shells it on its next turn: 2 damage and a hard shove to everything inside, friend or foe. 3 HP.",
         Pursuer: "An inconceivable being from another dimension who arrives when you have stayed too long in this room. It is implacable and pitiless. It cannot be persuaded or destroyed, only fled. It wants you to leave or die.",
         PowderKeg: KEG_DESCRIPTION,
         Alembic: "One of Paracelsus's flasks. Grows 1–3 homunculi every round until it's broken. The flasks break when he falls, but the homunculi fight on."
@@ -633,7 +642,7 @@ export default class GameController {
     if (this.roundWon && this.level && this.level.doorIsOpen && !this.level.lockedExit && this.level.doorFrameMeshes.length) {
       const hits = this.raycaster.intersectObjects(this.level.doorFrameMeshes, false);
       if (hits.length > 0) {
-        this.startNextLevel(this.currentDisc);
+        this.leaveThroughGate(this.currentDisc);
         return;
       }
     }
@@ -1179,9 +1188,12 @@ export default class GameController {
         const cos = Math.cos(turn), sin = Math.sin(turn);
         [aim.x, aim.y] = [aim.x * cos - aim.y * sin, aim.x * sin + aim.y * cos];
       }
-      // Power: by how much nearer or further it moved, slowed down
+      // Power: by how much nearer or further it moved, slowed down. A drag
+      // already past the precision cap (e.g. Shift pressed at full power)
+      // starts from the cap, so pulling back takes effect straight away.
       const len = Math.hypot(aim.x, aim.y);
-      const newLen = Math.max(0, len + (nextLen - prevLen) * this._precisionDragScale(this.currentDisc));
+      const capLen = this._dragForPower(PRECISION_POWER_CAP);
+      const newLen = Math.max(0, Math.min(len, capLen) + (nextLen - prevLen) / PRECISION_SLOWDOWN);
       if (len > 1e-6) {
         aim.x *= newLen / len;
         aim.y *= newLen / len;
@@ -1206,50 +1218,33 @@ export default class GameController {
    * @returns {{speed: number, fraction: number}|null} fraction is of full power
    */
   _throwPower(disc, dragPx, precision) {
-    const effectiveWorldDrag = dragPx * this.controls.getDistance();
-    if (effectiveWorldDrag <= THROW_DRAG_THRESHOLD) return null;
+    if (dragPx <= THROW_DRAG_THRESHOLD) return null;
 
-    let adjustedWorldDrag = effectiveWorldDrag;
-    if (disc.kind === 'Rogue') {
-      // Rogue-only low-end response curve: short drags are much easier to
-      // control, while long drags still reach full strength.
-      const beyond = effectiveWorldDrag - THROW_DRAG_THRESHOLD;
-      const normalized = Math.min(ROGUE_CURVE_RANGE, beyond) / ROGUE_CURVE_RANGE;
-      const curvedDrag = normalized * normalized * ROGUE_CURVE_RANGE;
-      const linearRemainder = Math.max(0, beyond - ROGUE_CURVE_RANGE);
-      adjustedWorldDrag = THROW_DRAG_THRESHOLD + curvedDrag + linearRemainder;
-    }
-
-    let multiplier = disc.throwPowerMultiplier;
-    if (disc.rageIsActiveForNextThrow) multiplier *= 2.5;
+    const t = Math.min(1, (dragPx - THROW_DRAG_THRESHOLD) / (this._fullPowerDrag() - THROW_DRAG_THRESHOLD));
     const maxSpeed = disc.kind === 'Bomb' ? 1.8 : 1;
     const limit = maxSpeed * this._throwPowerScale(disc); // an Exhausted Barbarian throws weaker
     const cap = precision ? limit * PRECISION_POWER_CAP : limit;
-    const raw = (adjustedWorldDrag * THROW_SENSITIVITY * multiplier) / disc.mass;
-    const speed = Math.max(Math.min(raw, cap), THROW_MIN_SPEED);
+    const speed = Math.max(Math.min(Math.pow(t, THROW_POWER_CURVE) * limit, cap), THROW_MIN_SPEED);
     return { speed, fraction: speed / maxSpeed };
+  }
+
+  /** Drag length in screen px that reaches full power. */
+  _fullPowerDrag() {
+    return Math.max(MIN_FULL_POWER_DRAG, window.innerHeight * FULL_POWER_DRAG_FRACTION);
+  }
+
+  /**
+   * Drag length in screen px that reaches `share` of the disc's top power
+   * (the inverse of _throwPower's curve; the same for every disc).
+   */
+  _dragForPower(share) {
+    return THROW_DRAG_THRESHOLD +
+      Math.pow(share, 1 / THROW_POWER_CURVE) * (this._fullPowerDrag() - THROW_DRAG_THRESHOLD);
   }
 
   /** Scale on the disc's maximum throw power (1 unless e.g. the Barbarian is Exhausted). */
   _throwPowerScale(disc) {
     return this.barbarianController?.throwPowerScale(disc) ?? 1;
-  }
-
-  /**
-   * How much a pixel of Shift-held mouse movement counts as, so that
-   * PRECISION_DRAG_RANGE px of it reaches the precision power cap for `disc`
-   * at the current zoom. Found by bisection, so it also covers the Rogue's curve.
-   */
-  _precisionDragScale(disc) {
-    if (!disc) return 1;
-    const capFraction = PRECISION_POWER_CAP * this._throwPowerScale(disc);
-    let lo = 0, hi = 1000;
-    for (let i = 0; i < 30; i++) {
-      const mid = (lo + hi) / 2;
-      const power = this._throwPower(disc, mid, false);
-      if (power && power.fraction >= capFraction) hi = mid; else lo = mid;
-    }
-    return hi / PRECISION_DRAG_RANGE;
   }
 
   cancelAiming() {
@@ -1428,6 +1423,7 @@ clamp(value, min, max) {
       if (this.uiManager) this.uiManager.showGameOver(true);
       return;
     }
+    recordWiped(this.level?.shape);
 
     // Player lost: wait for the last death cry to finish, then pause 500ms before showing UI/sound
     const deathCryDone = this.soundManager?._lastDeathCryPromise ?? Promise.resolve();
@@ -1481,6 +1477,7 @@ clamp(value, min, max) {
    * initDiscs), so the title fades in more slowly to match.
    */
   _announceRoom({ afterMenu = false } = {}) {
+    recordPlayed(this.level?.shape); // every room start comes through here
     // The Sanctuary sits between numbered rooms and has no number of its own.
     const number = this.level?.isSanctuary ? null : this.currentLevelNumber;
     const titleGone = this.roomTitle?.show(this.level?.shape, { slow: afterMenu, number }) ?? Promise.resolve();
@@ -1567,8 +1564,16 @@ clamp(value, min, max) {
     // Testing: the first room can be forced to a given room type.
     if (n === 1 && FIRST_ROOM_OVERRIDE) return FIRST_ROOM_OVERRIDE;
     // Level sequence cycles through the authored room types, ending with the boss.
-    const sequence = ['rect', 'circle', 'ice', 'powder', 'crusher', 'donut', 'siege', 'locked', 'bullseye', 'boss'];
+    // (The Siege Works, 'siege', is out of the rotation but still loads: e.g. via FIRST_ROOM_OVERRIDE.)
+    const sequence = ['rect', 'circle', 'ice', 'powder', 'crusher', 'donut', 'bastion', 'locked', 'bullseye', 'boss'];
     return sequence[(n - 1) % sequence.length];
+  }
+
+  /** The party leaves through the room's gate (a disc went in, or the doorway was clicked). */
+  async leaveThroughGate(triggeringDisc = null) {
+    if (this.levelTransitionInProgress) return;
+    recordBeaten(this.level?.shape);
+    await this.startNextLevel(triggeringDisc);
   }
 
   async startNextLevel(triggeringDisc = null) {
@@ -2447,7 +2452,8 @@ disc.isCurrentlyInLavaState = true;
       return;
     }
     // A turn ending on its own after the character's move stays open while
-    // they still have a readied Throwing Knife or Resurrection flask to throw.
+    // they still have a readied Throwing Knife or Resurrection flask to throw,
+    // or a Hardy Shield they may want to move.
     const autoTurnEnd = this._autoTurnEnd;
     this._autoTurnEnd = false;
     if (autoTurnEnd && this.itemManager?.holdTurnForReadiedItem()) return;
@@ -3156,7 +3162,15 @@ disc.isCurrentlyInLavaState = true;
     // Select closest player disc as target, leaving alone anyone standing
     // where a smoking powder keg will blow (unless that's everyone)
     const outOfDanger = alivePlayers.filter(p => !this.powderKegs.inDangerAt(p.mesh.position.x, p.mesh.position.z));
-    const candidates = outOfDanger.length ? outOfDanger : alivePlayers;
+    let candidates = outOfDanger.length ? outOfDanger : alivePlayers;
+    // Most turns it also passes over anyone in a mortar's marked circle, so as
+    // not to end up there itself.
+    const shellMarkAt = (x, z) => monsterShellMarkAt(this, x, z, disc.radius);
+    const heedsShells = Math.random() >= MORTAR_CARELESSNESS;
+    if (heedsShells) {
+      const unshelled = candidates.filter(p => !shellMarkAt(p.mesh.position.x, p.mesh.position.z));
+      if (unshelled.length) candidates = unshelled;
+    }
     let target = candidates[0];
     let minDist = disc.mesh.position.distanceTo(target.mesh.position);
     for (let i = 1; i < candidates.length; i++) {
@@ -3183,14 +3197,27 @@ disc.isCurrentlyInLavaState = true;
       minDist = gateShot.length;
     }
 
+    // Everyone it could go for stands under a shell: it stops just outside
+    // the circle instead (or steps out, if it's standing in one).
+    const markOnTarget = heedsShells && !gateShot && shellMarkAt(target.mesh.position.x, target.mesh.position.z);
+    const edge = markOnTarget && this._shellMarkEdge(disc, markOnTarget, shellMarkAt);
+    if (edge) {
+      idealDir = edge.clone().sub(disc.mesh.position);
+      idealDir.y = 0;
+      minDist = idealDir.length();
+      idealDir.normalize();
+    }
+
     // Calculate maximum allowed attempts to find a non-blocked throw direction
     const maxAttempts = gateShot ? 1 : 999; // a gate shot is already clear (just wobble)
     const maxFuzzDegrees = 15;
     const fuzzFactor = (100 - disc.skillLevel) / 100;
 
     let bestDir = idealDir;
+    // (Unskilled throws fall short, which is fine for an attack, but a monster
+    // stepping out of a circle has to clear it.)
     let bestSpeed =
-      Math.min(minDist / 10, 1) * (0.7 + 0.3 * (disc.skillLevel / 100));
+      Math.min(minDist / 10, 1) * (edge ? 1 : 0.7 + 0.3 * (disc.skillLevel / 100));
     let fuzzAngleRad = 0;
     let foundClearPath = false;
 
@@ -3232,6 +3259,23 @@ disc.isCurrentlyInLavaState = true;
     disc.onAttackLaunched?.();
     this.thrownDisc = disc; // Set thrownDisc for AI turns
     this.waitingForDiscToStop = true;
+  }
+
+  /**
+   * Where `disc` should stop to stay clear of `mark` (a marked circle): the
+   * nearest open spot just outside it that no other mark covers, trying a
+   * little way round the circle either side. Null if there's none.
+   */
+  _shellMarkEdge(disc, mark, shellMarkAt) {
+    const pos = disc.mesh.position;
+    const away = Math.atan2(pos.z - mark.z, pos.x - mark.x);
+    const r = mark.radius + disc.radius + SHELL_EDGE_MARGIN;
+    for (const turn of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9]) {
+      const x = mark.x + Math.cos(away + turn) * r;
+      const z = mark.z + Math.sin(away + turn) * r;
+      if (this.level.isPositionValid(x, z, disc.radius) && !shellMarkAt(x, z)) return new Vector3(x, pos.y, z);
+    }
+    return null;
   }
 
   setCameraRotation(direction) {

@@ -358,7 +358,8 @@ export class RogueController {
       // actually inside the blast radius.
       const edgeDist = Math.max(0, dist - (disc.radius || 0));
       if (edgeDist <= EXPLODE_RADIUS) {
-        if (this.gc.itemManager?.shieldBlocks(disc, bombPos.x, bombPos.z)) return; // Hardy Shield
+        if (this.gc.level?.wallBetween(bombPos.x, bombPos.z, disc.mesh.position.x, disc.mesh.position.z)) return; // sheltered
+        if (this.gc.itemManager?.shieldBlocks(disc, bombPos.x, bombPos.z, EXPLODE_DAMAGE)) return; // Hardy Shield
         const wasAliveNpc = disc.type === 'NPC' && disc.hitPoints > 0 && !disc.dead;
         disc.takeHit(EXPLODE_DAMAGE, this.bomb);
         if (wasAliveNpc && disc.hitPoints <= 0 && !this.gc.npcsKilledForRageCharge.has(disc.discName)) {

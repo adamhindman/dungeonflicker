@@ -15,7 +15,7 @@ import { firstTimeEvents } from './FirstTimeEvents.js';
 import { tooltipManager } from './TooltipManager.js';
 import {
   KNIFE_BLADE_THICKNESS, KNIFE_STEEL, SHIELD_THICKNESS, makeKnifeBlade, makeKnifeHandle, makeShieldMesh,
-  makeHealingFlaskModel, makeResurrectionFlaskModel,
+  makeHealingFlaskModel, makeResurrectionFlaskModel, setShieldWear,
 } from './ItemModels.js';
 import { getResource, formatAmount, isMainPC, resurrectAlly } from './PartyResources.js';
 
@@ -79,22 +79,27 @@ export const ITEMS = {
   },
   hardyShield: {
     name: 'Hardy Shield',
-    cost: 3,
+    cost: 2,
+    maxHp: 12,       // damage it soaks up before it breaks
     color: 0xff8c1a, // blaze orange
     model: 'shield',
     description: 'A steel shield that stands beside you and faces a fixed direction. Discs bounce ' +
-      'off it, and it blocks blasts and explosions coming from its side. On your turn, click it ' +
-      '(or press 9) to move it to one of its other two spots for free.',
+      'off it, and it blocks blasts and explosions coming from its side. Every blow it stops ' +
+      'wears it down: it takes 12 damage before it breaks, and the strip along its top shows ' +
+      'how much is left. On your turn, click it (or press 9) to move it to one of its other two ' +
+      'spots for free.',
     helpIntro: 'A notched and scarred slab of very heavy metal, probably from a meteor or something.',
     help: [
       'Blocks all incoming damage from a single direction, but you can\'t deal damage by ' +
         'charging in that direction either.',
+      'It wears out: the orange strip along its top shrinks with each blow it stops, and it ' +
+        'breaks after 12 damage.',
       'Click the shield (or press <kbd>9</kbd>) to reposition it around yourself on your turn.',
     ],
   },
   healingPotion: {
     name: 'Healing',
-    cost: 2,
+    cost: 1,
     heal: 3,
     stackable: true,
     color: 0xff2e4d, // the Healing Orb's red
@@ -110,7 +115,7 @@ export const ITEMS = {
   },
   resurrectionPotion: {
     name: 'Resurrection',
-    cost: 2,
+    cost: 1,
     stackable: true,
     color: 0xffc83d, // the Big Golden Orb's gold
     model: 'resurrectionFlask',
@@ -339,14 +344,15 @@ export class ItemManager {
 
   /**
    * Spends the buyer's own mana/charges and adds the item to their inventory
-   * (a stackable item adds 1 to their count).
+   * (a stackable item adds 1 to their count; one that wears out, e.g. the
+   * Hardy Shield, holds its HP left).
    */
   purchase(itemId, buyer) {
     if (this.purchaseBlocker(itemId, buyer)) return false;
     const res = getResource(this.gc, buyer.kind);
     res.controller[res.field] -= ITEMS[itemId].cost;
     const inv = this.getInventory(buyer.kind);
-    inv[itemId] = ITEMS[itemId].stackable ? (inv[itemId] || 0) + 1 : true;
+    inv[itemId] = ITEMS[itemId].stackable ? (inv[itemId] || 0) + 1 : (ITEMS[itemId].maxHp ?? true);
     this._buttonStateKey = ''; // force a button refresh
     return true;
   }
@@ -691,6 +697,7 @@ export class ItemManager {
     const knifeBlocker = hasKnife && !knifeReady ? this._knifeBlocker(disc) : null;
 
     const hasShield = !!(inv && inv.hardyShield && this._shields[disc.kind]);
+    const shieldHp = hasShield ? this._shieldHp(disc.kind) : 0;
 
     const potions = inv ? inv.healingPotion || 0 : 0;
     const potionBlocker = potions > 0 ? this._potionBlocker(disc) : null;
@@ -705,7 +712,7 @@ export class ItemManager {
 
     // Only touch the DOM when something changed.
     const key = [hasWarp, warpCost, warpBlocker, hasRing, ghost, busy, ringBlocker,
-      hasKnife, knifeReady, knifeBlocker, hasShield, potions, potionBlocker,
+      hasKnife, knifeReady, knifeBlocker, hasShield, shieldHp, potions, potionBlocker,
       revives, flaskReady, reviveBlocker, hasSpecs, specsOn].join('|');
     if (key === this._buttonStateKey) return;
     this._buttonStateKey = key;
@@ -725,7 +732,8 @@ export class ItemManager {
         : 'Ready the Throwing Knife beside you, then flick it at an enemy (1 damage).'));
     this._setButton(this.shieldButton, hasShield, busy,
       `<kbd>${SHIELD_KEY}</kbd> Move Shield`,
-      'Move the Hardy Shield to one of its other two spots (free). You can also click the shield itself.');
+      'Move the Hardy Shield to one of its other two spots (free). You can also click the shield itself. ' +
+        `It can take ${shieldHp} more damage before it breaks.`);
     this._setButton(this.healingPotionButton, potions > 0, busy || !!potionBlocker,
       `<kbd>${HEALING_POTION_KEY}</kbd> Healing ${this._countBadge('healingPotion', potions)}`,
       potionBlocker || `Drink a Healing potion to restore ${ITEMS.healingPotion.heal} HP (doesn't use your move). ` +
@@ -1059,9 +1067,10 @@ export class ItemManager {
 
   /**
    * Called when a turn is about to end on its own after the character's move.
-   * If they still have a readied, unthrown knife or Resurrection flask, the
-   * turn stays open for it (End Turn still ends it). Returns true if the turn
-   * was held.
+   * If they still have a readied, unthrown knife or Resurrection flask, or a
+   * Hardy Shield they may want to move, the turn stays open (End Turn still
+   * ends it). The shield doesn't hold a turn the Barbarian spent Raging.
+   * Returns true if the turn was held.
    */
   holdTurnForReadiedItem() {
     const disc = this.activeCharacter();
@@ -1069,8 +1078,11 @@ export class ItemManager {
     const flask = disc ? this._flasks[disc.kind] : null;
     const knifeReady = !!(knife && !knife.landed);
     const flaskReady = !!(flask && !flask.thrown);
-    if (!knifeReady && !flaskReady) return false;
-    this._turnHeldForKnife = true;
+    const raged = disc?.kind === 'Barbarian' && !!this.gc.barbarianController?.rampaging;
+    const shieldHolds = !!(disc && this._shields[disc.kind]?.owner === disc) && !raged;
+    if (!knifeReady && !flaskReady && !shieldHolds) return false;
+    // Throwing the knife or flask ends the turn, unless the shield still keeps it open.
+    this._turnHeldForKnife = !shieldHolds;
     this._returnControlTo(disc);
     return true;
   }
@@ -1148,10 +1160,12 @@ export class ItemManager {
         if (shield) this._removeShield(disc.kind);
         const mesh = makeShieldMesh(disc.radius * SHIELD_LENGTH_FACTOR, ITEMS.hardyShield.color);
         gc.scene.add(mesh);
-        shield = this._shields[disc.kind] = { mesh, owner: disc };
+        shield = this._shields[disc.kind] = { mesh, owner: disc, struckBy: new Set() };
         this._buttonStateKey = '';
       }
       this._placeShieldMesh(shield.mesh, disc, this._shieldSlots[disc.kind] ?? 0);
+      setShieldWear(shield.mesh, this._shieldHp(disc.kind) / ITEMS.hardyShield.maxHp);
+      if (!gc.thrownDisc) shield.struckBy.clear(); // between throws: a fresh throw can wear it again
       // A ghostly owner's shield is ghostly too (it doesn't block anything then).
       const ghostly = !!disc.isGhost;
       shield.mesh.traverse(o => {
@@ -1163,6 +1177,35 @@ export class ItemManager {
     for (const kind of Object.keys(this._shields)) {
       if (!owners.has(kind)) this._removeShield(kind);
     }
+  }
+
+  /** HP left on `kind`'s Hardy Shield. */
+  _shieldHp(kind) {
+    const hp = this.getInventory(kind).hardyShield;
+    return typeof hp === 'number' ? hp : ITEMS.hardyShield.maxHp;
+  }
+
+  /**
+   * `kind`'s Hardy Shield soaks up `damage`: its strip shrinks, and at 0 HP
+   * it breaks and is gone from their inventory.
+   */
+  _wearShield(kind, damage) {
+    const inv = this.getInventory(kind);
+    if (!inv.hardyShield || damage <= 0) return;
+    const hp = this._shieldHp(kind) - damage;
+    const shield = this._shields[kind];
+    if (hp > 0) {
+      inv.hardyShield = hp;
+      if (shield) setShieldWear(shield.mesh, hp / ITEMS.hardyShield.maxHp);
+      return;
+    }
+    delete inv.hardyShield;
+    delete this._shieldSlots[kind];
+    if (shield) {
+      this.gc.uiManager?.showFloatingLabel(shield.owner, 'Shield broken!', '#ff8c1a');
+      this.gc.soundManager?.playDiscHit(shield.owner.mesh.position.clone());
+    }
+    this._removeShield(kind);
   }
 
   _removeShield(kind) {
@@ -1178,11 +1221,14 @@ export class ItemManager {
    * Bounces discs off every shield. Called by PhysicsEngine after disc-to-disc
    * collisions. A shield acts as part of its owner's body: the impulse is shared
    * with the owner by mass, so a shield hit nudges its owner, and a moving
-   * owner shoves discs with their shield. Shield contact never deals damage.
+   * owner shoves discs with their shield. Shield contact never deals damage,
+   * but a monster that strikes it on its own move wears it down by the
+   * damage it would have dealt (once per throw, unless it can rebound).
    */
   resolveShieldCollisions() {
     this._syncShields();
     const gc = this.gc;
+    const worn = [];
     for (const shield of Object.values(this._shields)) {
       const owner = shield.owner;
       if (owner.isGhost) continue;
@@ -1229,22 +1275,34 @@ export class ItemManager {
         disc.moving = true;
         owner.moving = true;
         if (gc.soundManager && relVn < -0.05) gc.soundManager.playWardenHit(disc.mesh.position.clone());
+
+        const attacking = gc.thrownDisc !== null && disc.type === 'NPC' &&
+          (disc === gc.currentDisc || disc.kind === 'Fireball');
+        if (attacking && (disc.canDoReboundDamage || !shield.struckBy.has(disc))) {
+          shield.struckBy.add(disc);
+          worn.push([owner.kind, disc.attackDamage || 1]);
+        }
       }
     }
+    // After the loop: a broken shield leaves this._shields
+    for (const [kind, damage] of worn) this._wearShield(kind, damage);
   }
 
   /**
    * True if `disc`'s own Hardy Shield stands between it and an area attack
    * centred at (sx, sz), i.e. the line from the blast to the disc crosses the shield.
+   * A shield that blocks soaks up `damage` (what it saved its owner from).
    */
-  shieldBlocks(disc, sx, sz) {
+  shieldBlocks(disc, sx, sz, damage = 0) {
     const shield = disc && this._shields[disc.kind];
     if (!shield || shield.owner !== disc || disc.isGhost) return false;
     const pose = this._shieldPose(disc, this._shieldSlots[disc.kind] ?? 0);
     const ax = pose.x - pose.tx * pose.halfLength, az = pose.z - pose.tz * pose.halfLength;
     const bx = pose.x + pose.tx * pose.halfLength, bz = pose.z + pose.tz * pose.halfLength;
     const px = disc.mesh.position.x, pz = disc.mesh.position.z;
-    return segmentsCross(sx, sz, px, pz, ax, az, bx, bz);
+    const blocks = segmentsCross(sx, sz, px, pz, ax, az, bx, bz);
+    if (blocks) this._wearShield(disc.kind, damage);
+    return blocks;
   }
 
   /** @returns {object|null} the current character's shield if the ray hits it. */
@@ -1272,6 +1330,7 @@ export class ItemManager {
     for (let slot = 0; slot < SHIELD_SLOT_ANGLES.length; slot++) {
       if (slot === current) continue;
       const mesh = makeShieldMesh(disc.radius * SHIELD_LENGTH_FACTOR, ITEMS.hardyShield.color);
+      setShieldWear(mesh, this._shieldHp(disc.kind) / ITEMS.hardyShield.maxHp);
       mesh.traverse(o => {
         if (!o.material) return;
         o.material.transparent = true;
